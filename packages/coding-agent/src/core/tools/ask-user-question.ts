@@ -26,7 +26,10 @@ export interface AskUserQuestionDetails {
 	answer: string | null;
 }
 
-export function createAskUserQuestionToolDefinition(): ToolDefinition<typeof askUserQuestionSchema, AskUserQuestionDetails> {
+export function createAskUserQuestionToolDefinition(): ToolDefinition<
+	typeof askUserQuestionSchema,
+	AskUserQuestionDetails
+> {
 	return {
 		name: "ask_user_question",
 		label: "ask_user_question",

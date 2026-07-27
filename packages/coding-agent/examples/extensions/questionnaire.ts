@@ -6,15 +6,7 @@
  */
 
 import type { ExtensionAPI } from "@dongzijie1/pi-coding-agent";
-import {
-	Editor,
-	type EditorTheme,
-	Key,
-	matchesKey,
-	Text,
-	visibleWidth,
-	wrapTextWithAnsi,
-} from "@dongzijie1/pi-tui";
+import { Editor, type EditorTheme, Key, matchesKey, Text, visibleWidth, wrapTextWithAnsi } from "@dongzijie1/pi-tui";
 import { Type } from "typebox";
 
 // Types

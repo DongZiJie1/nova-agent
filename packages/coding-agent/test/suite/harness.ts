@@ -8,12 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage, AgentTool } from "@dongzijie1/pi-agent-core";
 import { Agent } from "@dongzijie1/pi-agent-core";
-import type {
-	FauxModelDefinition,
-	FauxProviderRegistration,
-	FauxResponseStep,
-	Model,
-} from "@dongzijie1/pi-ai/compat";
+import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@dongzijie1/pi-ai/compat";
 import { registerFauxProvider, streamSimple } from "@dongzijie1/pi-ai/compat";
 import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
