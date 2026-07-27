@@ -3,9 +3,9 @@ import type {
 	SessionEntryCursorOptions,
 	SessionStorage,
 	SessionTreeEntry,
-} from "@earendil-works/pi-agent-core";
-import { SessionError } from "@earendil-works/pi-agent-core";
-import { uuidv7 } from "@earendil-works/pi-ai";
+} from "@dongzijie1/pi-agent-core";
+import { SessionError } from "@dongzijie1/pi-agent-core";
+import { uuidv7 } from "@dongzijie1/pi-ai";
 import type { SqliteDatabase, SqliteSessionMetadata } from "../types.ts";
 import { getMaterializedBranchPathOrCompaction } from "./branch-entries.ts";
 import { decodeEntry, encodeEntry, type SessionEntryRow } from "./session-entries.ts";

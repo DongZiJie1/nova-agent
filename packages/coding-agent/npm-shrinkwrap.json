@@ -1,17 +1,17 @@
 {
-	"name": "@earendil-works/pi-coding-agent",
+	"name": "@dongzijie1/pi-coding-agent",
 	"version": "0.82.1",
 	"lockfileVersion": 3,
 	"requires": true,
 	"packages": {
 		"": {
-			"name": "@earendil-works/pi-coding-agent",
+			"name": "@dongzijie1/pi-coding-agent",
 			"version": "0.82.1",
 			"license": "MIT",
 			"dependencies": {
-				"@earendil-works/pi-agent-core": "^0.82.1",
-				"@earendil-works/pi-ai": "^0.82.1",
-				"@earendil-works/pi-tui": "^0.82.1",
+				"@dongzijie1/pi-agent-core": "^0.82.1",
+				"@dongzijie1/pi-ai": "^0.82.1",
+				"@dongzijie1/pi-tui": "^0.82.1",
 				"@silvia-odwyer/photon-node": "0.3.4",
 				"chalk": "5.6.2",
 				"cross-spawn": "7.0.6",
@@ -473,12 +473,12 @@
 				"node": ">=6.9.0"
 			}
 		},
-		"node_modules/@earendil-works/pi-agent-core": {
+		"node_modules/@dongzijie1/pi-agent-core": {
 			"version": "0.82.1",
-			"resolved": "https://registry.npmjs.org/@earendil-works/pi-agent-core/-/pi-agent-core-0.82.1.tgz",
+			"resolved": "https://registry.npmjs.org/@dongzijie1/pi-agent-core/-/pi-agent-core-0.82.1.tgz",
 			"license": "MIT",
 			"dependencies": {
-				"@earendil-works/pi-ai": "^0.82.1",
+				"@dongzijie1/pi-ai": "^0.82.1",
 				"diff": "8.0.4",
 				"ignore": "7.0.5",
 				"typebox": "1.1.38",
@@ -488,9 +488,9 @@
 				"node": ">=22.19.0"
 			}
 		},
-		"node_modules/@earendil-works/pi-ai": {
+		"node_modules/@dongzijie1/pi-ai": {
 			"version": "0.82.1",
-			"resolved": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-0.82.1.tgz",
+			"resolved": "https://registry.npmjs.org/@dongzijie1/pi-ai/-/pi-ai-0.82.1.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"@anthropic-ai/sdk": "0.91.1",
@@ -512,9 +512,9 @@
 				"node": ">=22.19.0"
 			}
 		},
-		"node_modules/@earendil-works/pi-tui": {
+		"node_modules/@dongzijie1/pi-tui": {
 			"version": "0.82.1",
-			"resolved": "https://registry.npmjs.org/@earendil-works/pi-tui/-/pi-tui-0.82.1.tgz",
+			"resolved": "https://registry.npmjs.org/@dongzijie1/pi-tui/-/pi-tui-0.82.1.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"get-east-asian-width": "1.6.0",

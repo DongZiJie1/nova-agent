@@ -5,11 +5,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const packages = [
-	{ directory: "packages/ai", name: "@earendil-works/pi-ai" },
-	{ directory: "packages/agent", name: "@earendil-works/pi-agent-core" },
-	{ directory: "packages/storage/sqlite-node", name: "@earendil-works/pi-storage-sqlite-node" },
-	{ directory: "packages/tui", name: "@earendil-works/pi-tui" },
-	{ directory: "packages/coding-agent", name: "@earendil-works/pi-coding-agent" },
+	{ directory: "packages/ai", name: "@dongzijie1/pi-ai" },
+	{ directory: "packages/agent", name: "@dongzijie1/pi-agent-core" },
+	{ directory: "packages/storage/sqlite-node", name: "@dongzijie1/pi-storage-sqlite-node" },
+	{ directory: "packages/tui", name: "@dongzijie1/pi-tui" },
+	{ directory: "packages/coding-agent", name: "@dongzijie1/pi-coding-agent" },
 ];
 
 const dryRun = process.argv.includes("--dry-run");

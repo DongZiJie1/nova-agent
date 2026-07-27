@@ -1,11 +1,11 @@
-import type { Session, SessionStorage, SessionTreeEntry } from "@earendil-works/pi-agent-core";
+import type { Session, SessionStorage, SessionTreeEntry } from "@dongzijie1/pi-agent-core";
 import {
 	createSessionId,
 	getEntriesToFork,
 	getFileSystemResultOrThrow,
 	SessionError,
 	toSession,
-} from "@earendil-works/pi-agent-core";
+} from "@dongzijie1/pi-agent-core";
 import { applyMigrations } from "./migrations.ts";
 import { SqliteSessionStorage } from "./storage/index.ts";
 import { rowToMetadata, type SessionRow } from "./storage/sessions.ts";

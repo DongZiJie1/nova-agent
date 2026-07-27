@@ -5,7 +5,7 @@
  * Multiple questions: tab bar navigation between questions
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@dongzijie1/pi-coding-agent";
 import {
 	Editor,
 	type EditorTheme,
@@ -14,7 +14,7 @@ import {
 	Text,
 	visibleWidth,
 	wrapTextWithAnsi,
-} from "@earendil-works/pi-tui";
+} from "@dongzijie1/pi-tui";
 import { Type } from "typebox";
 
 // Types

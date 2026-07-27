@@ -1,4 +1,4 @@
-import type { Usage } from "@earendil-works/pi-ai/compat";
+import type { Usage } from "@dongzijie1/pi-ai/compat";
 import type { SessionEntry } from "./session-manager.ts";
 
 export interface UsageTotals {

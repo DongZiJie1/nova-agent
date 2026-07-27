@@ -1,5 +1,5 @@
 {
-	"name": "@earendil-works/pi-evals",
+	"name": "@dongzijie1/pi-evals",
 	"version": "0.82.1",
 	"private": true,
 	"type": "module",
@@ -8,7 +8,7 @@
 		"eval": "node scripts/run-evals.mjs"
 	},
 	"devDependencies": {
-		"@earendil-works/pi-coding-agent": "^0.82.1",
+		"@dongzijie1/pi-coding-agent": "^0.82.1",
 		"@types/node": "24.12.4",
 		"shx": "0.4.0",
 		"typescript": "5.9.3",
