@@ -1,4 +1,11 @@
 export {
+	type AskUserQuestionDetails,
+	type AskUserQuestionOption,
+	type AskUserQuestionToolInput,
+	type AskUserQuestionToolOptions,
+	createAskUserQuestionTool,
+} from "./ask-user-question.ts";
+export {
 	type BashExecution,
 	type BashPrepare,
 	type BashToolDetails,
