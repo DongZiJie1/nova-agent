@@ -25,9 +25,9 @@ Configure via `package.json`:
 
 ```json
 {
-  "piConfig": {
+  "novaConfig": {
     "name": "pi",
-    "configDir": ".pi"
+    "configDir": ".nova"
   }
 }
 ```
@@ -48,7 +48,7 @@ Never use `__dirname` directly for package assets.
 
 ## Debug Command
 
-`/debug` (hidden) writes to `~/.pi/agent/pi-debug.log`:
+`/debug` (hidden) writes to `~/.nova/agent/pi-debug.log`:
 - Rendered TUI lines with ANSI codes
 - Last messages sent to the LLM
 

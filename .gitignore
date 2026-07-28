@@ -39,6 +39,6 @@ out.html
 packages/nova/binaries/
 todo.md
 plans/
-.pi/hf-sessions/
-.pi/hf-sessions-backup/
+.nova/hf-sessions/
+.nova/hf-sessions-backup/
 collect.sh

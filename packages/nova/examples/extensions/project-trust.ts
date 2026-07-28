@@ -3,14 +3,14 @@
  *
  * Demonstrates the project_trust event. Install globally or pass via -e:
  *
- *   mkdir -p ~/.pi/agent/extensions
- *   cp packages/nova/examples/extensions/project-trust.ts ~/.pi/agent/extensions/
+ *   mkdir -p ~/.nova/agent/extensions
+ *   cp packages/nova/examples/extensions/project-trust.ts ~/.nova/agent/extensions/
  *
  * Or:
  *
  *   pi -e packages/nova/examples/extensions/project-trust.ts
  *
- * Try it in a project containing .pi, AGENTS.md/CLAUDE.md, or .agents/skills.
+ * Try it in a project containing .nova, AGENTS.md/CLAUDE.md, or .agents/skills.
  */
 
 import type { ExtensionAPI, ProjectTrustEventResult } from "@dongzijie1/nova";

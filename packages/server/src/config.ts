@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const CONFIG_DIR_NAME = ".pi";
+const CONFIG_DIR_NAME = ".nova";
 const ENV_SERVER_DIR = "PI_SERVER_DIR";
 
 const __filename = fileURLToPath(import.meta.url);

@@ -12,7 +12,7 @@
 # Setup required before this works:
 #   1. Create a `pi-analyze` GitHub environment on the repo and add a
 #      `PI_AUTH_JSON` secret containing the contents of a pi auth.json
-#      (~/.pi/agent/auth.json).
+#      (~/.nova/agent/auth.json).
 #   2. Create the `pi-analyze` label.
 #   3. Add a repository secret `EARENDIL_ORG_READ_TOKEN` with permission to
 #      read `earendil-works` org membership. The authorization job uses it to
@@ -42,7 +42,7 @@
 #
 # The session runs in a high-entropy checkout directory so the recorded cwd is
 # a unique string. Import the session into a local checkout with the
-# /ir extension command (.pi/extensions/import-repro.ts):
+# /ir extension command (.nova/extensions/import-repro.ts):
 #   pi "/ir <gist-id | gist-url | pi.dev/session URL>"
 
 name: Issue Analysis
