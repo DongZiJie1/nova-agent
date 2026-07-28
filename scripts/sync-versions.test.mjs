@@ -1,0 +1,75 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import test from "node:test";
+
+const syncVersionsScript = fileURLToPath(new URL("./sync-versions.js", import.meta.url));
+
+async function writeManifest(root, relativeDirectory, manifest) {
+	const directory = join(root, relativeDirectory);
+	await mkdir(directory, { recursive: true });
+	await writeFile(join(directory, "package.json"), `${JSON.stringify(manifest, null, "\t")}\n`);
+}
+
+async function readManifest(root, relativeDirectory) {
+	return JSON.parse(await readFile(join(root, relativeDirectory, "package.json"), "utf8"));
+}
+
+function runSyncVersions(root) {
+	return spawnSync(process.execPath, [syncVersionsScript, join(root, "packages")], {
+		cwd: root,
+		encoding: "utf8",
+	});
+}
+
+test("synchronizes private dependencies without touching registry aliases, generated manifests, or published lockstep", async () => {
+	const root = await mkdtemp(join(tmpdir(), "pi-sync-versions-"));
+	try {
+		await writeManifest(root, "packages/ai", {
+			name: "@dongzijie1/pi-ai",
+			version: "2.0.0",
+		});
+		await writeManifest(root, "packages/nova", {
+			name: "@dongzijie1/nova",
+			version: "2.0.0",
+		});
+		await writeManifest(root, "packages/evals", {
+			name: "@dongzijie1/pi-evals",
+			version: "9.9.9",
+			private: true,
+			dependencies: {
+				"@dongzijie1/nova": "^1.0.0",
+				"@mariozechner/pi-ai": "npm:@dongzijie1/pi-ai@1.0.0",
+			},
+		});
+		await writeManifest(root, "packages/nova/install-lock", {
+			name: "generated-install-lock",
+			version: "0.0.0",
+			private: true,
+			dependencies: {
+				"@dongzijie1/nova": "^1.0.0",
+			},
+		});
+
+		const result = runSyncVersions(root);
+		assert.equal(result.status, 0, result.stderr);
+
+		const evalsManifest = await readManifest(root, "packages/evals");
+		assert.equal(evalsManifest.dependencies["@dongzijie1/nova"], "^2.0.0");
+		assert.equal(evalsManifest.dependencies["@mariozechner/pi-ai"], "npm:@dongzijie1/pi-ai@1.0.0");
+		const generatedManifest = await readManifest(root, "packages/nova/install-lock");
+		assert.equal(generatedManifest.dependencies["@dongzijie1/nova"], "^1.0.0");
+
+		await writeManifest(root, "packages/ai", {
+			name: "@dongzijie1/pi-ai",
+			version: "3.0.0",
+		});
+		const lockstepFailure = runSyncVersions(root);
+		assert.equal(lockstepFailure.status, 1, lockstepFailure.stderr);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});

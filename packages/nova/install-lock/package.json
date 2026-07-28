@@ -1,0 +1,19 @@
+{
+	"name": "@dongzijie1/nova-install",
+	"version": "0.84.0",
+	"private": true,
+	"description": "Lockfile root used by the Nova installer and updater.",
+	"dependencies": {
+		"@dongzijie1/nova": "0.84.0"
+	},
+	"overrides": {
+		"protobufjs": "7.6.5",
+		"rimraf": "6.1.2",
+		"gaxios": {
+			"rimraf": "6.1.2"
+		}
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	}
+}

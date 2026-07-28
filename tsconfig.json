@@ -1,0 +1,30 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"paths": {
+			"*": ["./*"],
+			"@dongzijie1/pi-ai": ["./packages/ai/src/index.ts"],
+			"@dongzijie1/pi-ai/oauth": ["./packages/ai/src/oauth.ts"],
+			"@dongzijie1/pi-ai/*": ["./packages/ai/src/*.ts", "./packages/ai/src/providers/*.ts"],
+			"@dongzijie1/pi-ai/dist/*": ["./packages/ai/src/*"],
+			"@dongzijie1/pi-agent-core": ["./packages/agent/src/index.ts"],
+			"@dongzijie1/pi-agent-core/*": ["./packages/agent/src/*"],
+			"@dongzijie1/pi-agent-sqlite-node": ["./packages/storage/sqlite-node/src/index.ts"],
+			"@dongzijie1/nova": ["./packages/nova/src/index.ts"],
+			"@dongzijie1/nova/hooks": ["./packages/nova/src/core/hooks/index.ts"],
+			"@dongzijie1/nova/*": ["./packages/nova/src/*"],
+			"@dongzijie1/pi-server": ["./packages/server/src/index.ts"],
+			"@dongzijie1/pi-server/*": ["./packages/server/src/*"],
+			"typebox": ["./node_modules/typebox"],
+			"@dongzijie1/pi-tui": ["./packages/tui/src/index.ts"],
+			"@dongzijie1/pi-tui/*": ["./packages/tui/src/*"],
+			"@dongzijie1/pi-agent-old": ["./packages/agent-old/src/index.ts"],
+			"@dongzijie1/pi-agent-old/*": ["./packages/agent-old/src/*"]
+		}
+	},
+	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/storage/*/src/**/*", "packages/storage/*/test/**/*", "packages/nova/examples/**/*"],
+	"exclude": ["**/dist/**", "packages/nova/examples/extensions/gondolin/**"]
+}

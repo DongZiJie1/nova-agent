@@ -1,0 +1,17 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"outDir": "./dist",
+		"paths": {
+			"@dongzijie1/pi-agent-core": ["../agent/dist/index.d.ts"],
+			"@dongzijie1/pi-agent-core/*": ["../agent/dist/*.d.ts"],
+			"@dongzijie1/pi-ai": ["../ai/dist/index.d.ts"],
+			"@dongzijie1/pi-ai/*": ["../ai/dist/*.d.ts", "../ai/dist/providers/*.d.ts"],
+			"@dongzijie1/pi-tui": ["../tui/dist/index.d.ts"],
+			"@dongzijie1/pi-tui/*": ["../tui/dist/*.d.ts", "../tui/dist/components/*.d.ts"]
+		},
+		"rootDir": "./src"
+	},
+	"include": ["src/**/*.ts", "src/**/*.d.ts"],
+	"exclude": ["node_modules", "dist"]
+}
