@@ -769,7 +769,7 @@ export class InteractiveMode {
 			);
 			const onboarding = theme.fg(
 				"dim",
-				`Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.`,
+				`告诉 Nova 你想要什么，它会自己想办法搞定。思考、规划、执行、验证——它不只是工具，它是你的智能搭档。\nTell Nova what you want. It thinks, plans, executes, and verifies — not just a tool, but your intelligent partner.`,
 			);
 			this.builtInHeader = new ExpandableText(
 				() => `${logo}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
