@@ -7,7 +7,7 @@ This page gets you from install to a useful first pi session.
 Pi is distributed as an npm package:
 
 ```bash
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+npm install -g --ignore-scripts @dongzijie1/nova
 ```
 
 `--ignore-scripts` disables dependency lifecycle scripts during install. Pi does not require install scripts for normal npm installs.
@@ -18,34 +18,34 @@ Use the package manager that installed pi. The curl installer uses npm globally,
 
 ```bash
 # curl installer or npm install -g
-npm uninstall -g @earendil-works/pi-coding-agent
+npm uninstall -g @dongzijie1/nova
 
 # pnpm
-pnpm remove -g @earendil-works/pi-coding-agent
+pnpm remove -g @dongzijie1/nova
 
 # Yarn
-yarn global remove @earendil-works/pi-coding-agent
+yarn global remove @dongzijie1/nova
 
 # Bun
-bun uninstall -g @earendil-works/pi-coding-agent
+bun uninstall -g @dongzijie1/nova
 ```
 
-Uninstalling pi leaves settings, credentials, sessions, and installed pi packages in `~/.pi/agent/`.
+Uninstalling pi leaves settings, credentials, sessions, and installed pi packages in `~/.nova/agent/`.
 
 Then start pi in the project directory you want it to work on:
 
 ```bash
 cd /path/to/project
-pi
+nova
 ```
 
 ## Authenticate
 
-Pi can use subscription providers through `/login`, or API-key providers through environment variables or the auth file.
+Nova can use subscription providers through `/login`, or API-key providers through environment variables or the auth file.
 
 ### Option 1: subscription login
 
-Start pi and run:
+Start nova and run:
 
 ```text
 /login
@@ -55,37 +55,37 @@ Then select a provider. Built-in subscription logins include Claude Pro/Max, Cha
 
 ### Option 2: API key
 
-Set an API key before launching pi:
+Set an API key before launching nova:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-pi
+nova
 ```
 
-You can also run `/login` and select an API-key provider to store the key in `~/.pi/agent/auth.json`.
+You can also run `/login` and select an API-key provider to store the key in `~/.nova/agent/auth.json`.
 
 See [Providers](providers.md) for all supported providers, environment variables, and cloud-provider setup.
 
 ## First session
 
-Once pi starts, type a request and press Enter:
+Once nova starts, type a request and press Enter:
 
 ```text
 Summarize this repository and tell me how to run its checks.
 ```
 
-By default, pi gives the model four tools:
+By default, nova gives the model four tools:
 
 - `read` - read files
 - `write` - create or overwrite files
 - `edit` - patch files
 - `bash` - run shell commands
 
-Additional built-in read-only tools (`grep`, `find`, `ls`) are available through tool options. Pi runs in your current working directory and can modify files there. Use git or another checkpointing workflow if you want easy rollback.
+Additional built-in read-only tools (`grep`, `find`, `ls`) are available through tool options. Nova runs in your current working directory and can modify files there. Use git or another checkpointing workflow if you want easy rollback.
 
 ## Give pi project instructions
 
-Pi loads context files at startup. Add an `AGENTS.md` file to tell it how to work in a project:
+Nova loads context files at startup. Add an `AGENTS.md` file to tell it how to work in a project:
 
 ```markdown
 # Project Instructions
@@ -95,12 +95,12 @@ Pi loads context files at startup. Add an `AGENTS.md` file to tell it how to wor
 - Keep responses concise.
 ```
 
-Pi loads:
+Nova loads:
 
-- `~/.pi/agent/AGENTS.md` for global instructions
+- `~/.nova/agent/AGENTS.md` for global instructions
 - `AGENTS.md` or `CLAUDE.md` from parent directories and the current directory
 
-Restart pi, or run `/reload`, after changing context files.
+Restart nova, or run `/reload`, after changing context files.
 
 ## Common things to try
 
@@ -109,8 +109,8 @@ Restart pi, or run `/reload`, after changing context files.
 Type `@` in the editor to fuzzy-search files, or pass files on the command line:
 
 ```bash
-pi @README.md "Summarize this"
-pi @src/app.ts @src/app.test.ts "Review these together"
+nova @README.md "Summarize this"
+nova @src/app.ts @src/app.test.ts "Review these together"
 ```
 
 Images or text can be pasted with Ctrl+V (Alt+V on Windows); images can also be dragged into supported terminals.
@@ -134,10 +134,10 @@ Use `/model` or Ctrl+L to choose a model. Use Shift+Tab to cycle thinking level.
 Sessions are saved automatically:
 
 ```bash
-pi -c                  # Continue most recent session
-pi -r                  # Browse previous sessions
-pi --name "my task"    # Set session display name at startup
-pi --session <path|id> # Open a specific session
+nova -c                  # Continue most recent session
+nova -r                  # Browse previous sessions
+nova --name "my task"    # Set session display name at startup
+nova --session <path|id> # Open a specific session
 ```
 
 Inside pi, use `/resume`, `/new`, `/tree`, `/fork`, and `/clone` to manage sessions.
@@ -147,9 +147,9 @@ Inside pi, use `/resume`, `/new`, `/tree`, `/fork`, and `/clone` to manage sessi
 For one-shot prompts:
 
 ```bash
-pi -p "Summarize this codebase"
-cat README.md | pi -p "Summarize this text"
-pi -p @screenshot.png "What's in this image?"
+nova -p "Summarize this codebase"
+cat README.md | nova -p "Summarize this text"
+nova -p @screenshot.png "What's in this image?"
 ```
 
 Use `--mode json` for JSON event output or `--mode rpc` for process integration.

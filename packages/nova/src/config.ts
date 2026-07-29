@@ -464,13 +464,13 @@ export function getBundledInteractiveAssetPath(name: string): string {
 }
 
 // =============================================================================
-// App Config (from package.json piConfig)
+// App Config (from package.json novaConfig)
 // =============================================================================
 
 interface PackageJson {
 	name?: string;
 	version?: string;
-	piConfig?: {
+	novaConfig?: {
 		name?: string;
 		configDir?: string;
 	};
@@ -484,11 +484,11 @@ try {
 	if (err.code !== "ENOENT") throw e;
 }
 
-const piConfigName: string | undefined = pkg.piConfig?.name;
+const novaConfigName: string | undefined = pkg.novaConfig?.name;
 export const PACKAGE_NAME: string = pkg.name || "@dongzijie1/nova";
-export const APP_NAME: string = piConfigName || "pi";
-export const APP_TITLE: string = piConfigName ? APP_NAME : "π";
-export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".pi";
+export const APP_NAME: string = novaConfigName || "pi";
+export const APP_TITLE: string = novaConfigName ? APP_NAME : "π";
+export const CONFIG_DIR_NAME: string = pkg.novaConfig?.configDir || ".nova";
 export const VERSION: string = pkg.version || "0.0.0";
 
 // e.g., PI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
@@ -508,10 +508,10 @@ export function getShareViewerUrl(gistId: string): string {
 }
 
 // =============================================================================
-// User Config Paths (~/.pi/agent/*)
+// User Config Paths (~/.nova/agent/*)
 // =============================================================================
 
-/** Get the agent config directory (e.g., ~/.pi/agent/) */
+/** Get the agent config directory (e.g., ~/.nova/agent/) */
 export function getAgentDir(): string {
 	const envDir = process.env[ENV_AGENT_DIR];
 	if (envDir) {

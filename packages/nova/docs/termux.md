@@ -17,13 +17,13 @@ pkg update && pkg upgrade
 pkg install nodejs termux-api git
 
 # Install pi
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+npm install -g --ignore-scripts @dongzijie1/nova
 
 # Create config directory
-mkdir -p ~/.pi/agent
+mkdir -p ~/.nova/agent
 
-# Run pi
-pi
+# Run nova
+nova
 ```
 
 ## Clipboard Support
@@ -34,7 +34,7 @@ Image clipboard is not supported on Termux (the `ctrl+v` image paste feature wil
 
 ## Example AGENTS.md for Termux
 
-Create `~/.pi/agent/AGENTS.md` to help the agent understand the Termux environment:
+Create `~/.nova/agent/AGENTS.md` to help the agent understand the Termux environment:
 
 ````markdown
 # Agent Environment: Termux on Android

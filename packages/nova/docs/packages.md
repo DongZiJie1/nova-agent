@@ -20,38 +20,38 @@ Pi packages bundle extensions, skills, prompt templates, and themes so you can s
 > **Security:** Pi packages run with full system access. Extensions execute arbitrary code, and skills can instruct the model to perform any action including running executables. Review source code before installing third-party packages.
 
 ```bash
-pi install npm:@foo/bar@1.0.0
-pi install git:github.com/user/repo@v1
-pi install https://github.com/user/repo  # raw URLs work too
-pi install /absolute/path/to/package
-pi install ./relative/path/to/package
+nova install npm:@foo/bar@1.0.0
+nova install git:github.com/user/repo@v1
+nova install https://github.com/user/repo  # raw URLs work too
+nova install /absolute/path/to/package
+nova install ./relative/path/to/package
 
-pi remove npm:@foo/bar
-pi list                     # show installed packages from settings
-pi update                   # update pi only
-pi update --all             # update pi, update packages, and reconcile pinned git refs
-pi update --extensions      # update packages and reconcile pinned git refs only
-pi update --models          # refresh model catalogs only
-pi update --self            # update pi only
-pi update --self --force    # reinstall pi even if current
-pi update npm:@foo/bar      # update one package
-pi update --extension npm:@foo/bar
+nova remove npm:@foo/bar
+nova list                     # show installed packages from settings
+nova update                   # update nova only
+nova update --all             # update nova, update packages, and reconcile pinned git refs
+nova update --extensions      # update packages and reconcile pinned git refs only
+nova update --models          # refresh model catalogs only
+nova update --self            # update nova only
+nova update --self --force    # reinstall nova even if current
+nova update npm:@foo/bar      # update one package
+nova update --extension npm:@foo/bar
 ```
 
-These commands manage pi packages and `pi update` can update the pi CLI installation. To uninstall pi itself, see [Quickstart](quickstart.md#uninstall).
+These commands manage nova packages and `nova update` can update the nova CLI installation. To uninstall nova itself, see [Quickstart](quickstart.md#uninstall).
 
-By default, `install` and `remove` write to user settings (`~/.pi/agent/settings.json`). Use `-l` to write to project settings (`.pi/settings.json`) instead. Project settings can be shared with your team, and pi installs any missing packages automatically on startup after the project is trusted.
+By default, `install` and `remove` write to user settings (`~/.nova/agent/settings.json`). Use `-l` to write to project settings (`.nova/settings.json`) instead. Project settings can be shared with your team, and nova installs any missing packages automatically on startup after the project is trusted.
 
 To try a package without installing it, use `--extension` or `-e`. This installs to a temporary directory for the current run only:
 
 ```bash
-pi -e npm:@foo/bar
-pi -e git:github.com/user/repo
+nova -e npm:@foo/bar
+nova -e git:github.com/user/repo
 ```
 
 ## Package Sources
 
-Pi accepts three source types in settings and `pi install`.
+Nova accepts three source types in settings and `nova install`.
 
 ### npm
 
@@ -60,9 +60,9 @@ npm:@scope/pkg@1.2.3
 npm:pkg
 ```
 
-- Versioned specs are pinned and skipped by package updates (`pi update --extensions`, `pi update --all`).
-- User installs go under `~/.pi/agent/npm/`.
-- Project installs go under `.pi/npm/`.
+- Versioned specs are pinned and skipped by package updates (`nova update --extensions`, `nova update --all`).
+- User installs go under `~/.nova/agent/npm/`.
+- Project installs go under `.nova/npm/`.
 - Set `npmCommand` in `settings.json` to pin npm package lookup and install operations to a specific wrapper command such as `mise` or `asdf`.
 
 Example:
@@ -87,21 +87,21 @@ ssh://git@github.com/user/repo@v1
 - HTTPS and SSH URLs are both supported.
 - SSH URLs use your configured SSH keys automatically (respects `~/.ssh/config`).
 - For non-interactive runs (for example CI), you can set `GIT_TERMINAL_PROMPT=0` to disable credential prompts and set `GIT_SSH_COMMAND` (for example `ssh -o BatchMode=yes -o ConnectTimeout=5`) to fail fast.
-- Refs are pinned tags or commits. `pi update --extensions` and `pi update --all` do not move them to newer refs, but they do reconcile an existing clone to the configured ref.
-- Use `pi install git:host/user/repo@new-ref` to update settings and move an existing package to a new pinned ref.
-- Cloned to `~/.pi/agent/git/<host>/<path>` (global) or `.pi/git/<host>/<path>` (project).
+- Refs are pinned tags or commits. `nova update --extensions` and `nova update --all` do not move them to newer refs, but they do reconcile an existing clone to the configured ref.
+- Use `nova install git:host/user/repo@new-ref` to update settings and move an existing package to a new pinned ref.
+- Cloned to `~/.nova/agent/git/<host>/<path>` (global) or `.nova/git/<host>/<path>` (project).
 - When reconciliation changes the checkout, pi resets and cleans the clone, then runs `npm install` if `package.json` exists.
 
 **SSH examples:**
 ```bash
 # git@host:path shorthand (requires git: prefix)
-pi install git:git@github.com:user/repo
+nova install git:git@github.com:user/repo
 
 # ssh:// protocol format
-pi install ssh://git@github.com/user/repo
+nova install ssh://git@github.com/user/repo
 
 # With version ref
-pi install git:git@github.com:user/repo@v1.0.0
+nova install git:git@github.com:user/repo@v1.0.0
 ```
 
 ### Local Paths
@@ -111,7 +111,7 @@ pi install git:git@github.com:user/repo@v1.0.0
 ./relative/path/to/package
 ```
 
-Local paths point to files or directories on disk and are added to settings without copying. Relative paths are resolved against the settings file they appear in. If the path is a file, it loads as a single extension. If it is a directory, pi loads resources using package rules.
+Local paths point to files or directories on disk and are added to settings without copying. Relative paths are resolved against the settings file they appear in. If the path is a file, it loads as a single extension. If it is a directory, nova loads resources using package rules.
 
 ## Creating a Pi Package
 
@@ -157,7 +157,7 @@ If both are set, video takes precedence.
 
 ### Convention Directories
 
-If no `pi` manifest is present, pi auto-discovers resources from these directories:
+If no `pi` manifest is present, nova auto-discovers resources from these directories:
 
 - `extensions/` loads `.ts` and `.js` files
 - `skills/` recursively finds `SKILL.md` folders and loads top-level `.md` files as skills
@@ -166,9 +166,9 @@ If no `pi` manifest is present, pi auto-discovers resources from these directori
 
 ## Dependencies
 
-Third party runtime dependencies belong in `dependencies` in `package.json`. Dependencies that do not register extensions, skills, prompt templates, or themes also belong in `dependencies`. When pi installs a package from npm or git, it runs `npm install`, so those dependencies are installed automatically.
+Third party runtime dependencies belong in `dependencies` in `package.json`. Dependencies that do not register extensions, skills, prompt templates, or themes also belong in `dependencies`. When nova installs a package from npm or git, it runs `npm install`, so those dependencies are installed automatically.
 
-Pi bundles core packages for extensions and skills. If you import any of these, list them in `peerDependencies` with a `"*"` range and do not bundle them: `@earendil-works/pi-ai`, `@earendil-works/pi-agent-core`, `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`, `typebox`.
+Pi bundles core packages for extensions and skills. If you import any of these, list them in `peerDependencies` with a `"*"` range and do not bundle them: `@earendil-works/pi-ai`, `@earendil-works/pi-agent-core`, `@dongzijie1/nova`, `@earendil-works/pi-tui`, `typebox`.
 
 Other pi packages must be bundled in your tarball. Add them to `dependencies` and `bundledDependencies`, then reference their resources through `node_modules/` paths. Pi loads packages with separate module roots, so separate installs do not collide or share modules.
 
@@ -217,7 +217,7 @@ Filter what a package loads using the object form in settings:
 
 ## Enable and Disable Resources
 
-Use `pi config` to enable or disable extensions, skills, prompt templates, and themes from installed packages and local directories. `pi config` starts in global settings (`~/.pi/agent/settings.json`); press Tab to switch between global and project-local modes. Use `pi config -l` to start in project overrides (`.pi/settings.json`) with inherited global resources dimmed.
+Use `nova config` to enable or disable extensions, skills, prompt templates, and themes from installed packages and local directories. `nova config` starts in global settings (`~/.nova/agent/settings.json`); press Tab to switch between global and project-local modes. Use `nova config -l` to start in project overrides (`.nova/settings.json`) with inherited global resources dimmed.
 
 ## Scope and Deduplication
 

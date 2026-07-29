@@ -6,8 +6,8 @@
  * and can be activated via CLI flag, /preset command, or Ctrl+Shift+U to cycle.
  *
  * Config files (merged, project takes precedence):
- * - ~/.pi/agent/presets.json (global)
- * - <cwd>/.pi/presets.json (project-local)
+ * - ~/.nova/agent/presets.json (global)
+ * - <cwd>/.nova/presets.json (project-local)
  *
  * Example presets.json:
  * ```json

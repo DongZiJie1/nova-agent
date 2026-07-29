@@ -24,8 +24,8 @@ Use the [example extension](../examples/extensions/gondolin) when you want `pi` 
 Setup:
 
 ```bash
-cp -R packages/nova/examples/extensions/gondolin ~/.pi/agent/extensions/gondolin
-cd ~/.pi/agent/extensions/gondolin
+cp -R packages/nova/examples/extensions/gondolin ~/.nova/agent/extensions/gondolin
+cd ~/.nova/agent/extensions/gondolin
 npm install --ignore-scripts
 ```
 
@@ -33,7 +33,7 @@ Run from the project you want mounted:
 
 ```bash
 cd /path/to/project
-pi -e ~/.pi/agent/extensions/gondolin
+nova -e ~/.nova/agent/extensions/gondolin
 ```
 
 The extension mounts the host cwd at `/workspace` in the VM and overrides `read`, `write`, `edit`, `bash`, `grep`, `find`, and `ls`.
@@ -54,27 +54,27 @@ FROM node:24-bookworm-slim
 RUN apt-get update \
   && apt-get install -y --no-install-recommends bash ca-certificates git ripgrep \
   && rm -rf /var/lib/apt/lists/*
-RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+RUN npm install -g --ignore-scripts @dongzijie1/nova
 
 WORKDIR /workspace
-ENTRYPOINT ["pi"]
+ENTRYPOINT ["nova"]
 ```
 
 Build and run:
 
 ```bash
-docker build -t pi-sandbox -f Dockerfile.pi .
+docker build -t nova-sandbox -f Dockerfile.pi .
 
 docker run --rm -it \
   -e ANTHROPIC_API_KEY \
   -v "$PWD:/workspace" \
-  -v pi-agent-home:/root/.pi/agent \
-  pi-sandbox
+  -v nova-agent-home:/root/.nova/agent \
+  nova-sandbox
 ```
 
 The `-v "$PWD:/workspace"` mounts your current directory into the container at /workspace such that reads and writes in `/workspace` inside Docker directly affect your host files, like in the Gondolin example.
 
-Use a named volume for `/root/.pi/agent` if you want container-local settings and sessions. Mounting your host `~/.pi/agent` exposes host auth and session files to the container.
+Use a named volume for `/root/.nova/agent` if you want container-local settings and sessions. Mounting your host `~/.nova/agent` exposes host auth and session files to the container.
 
 ## OpenShell
 
@@ -89,23 +89,23 @@ openshell gateway add <gateway-url> --name <name>
 openshell gateway select <name>
 ```
 
-Launch `pi` inside an OpenShell sandbox:
+Launch `nova` inside an OpenShell sandbox:
 
 ```bash
-openshell sandbox create --name pi-sandbox --from pi -- pi
+openshell sandbox create --name nova-sandbox --from nova -- nova
 ```
 
-In this pattern, the whole `pi` process runs inside the sandbox.
+In this pattern, the whole `nova` process runs inside the sandbox.
 Built-in tools, `!` commands, and extension tools execute inside the OpenShell boundary.
 
 If the gateway is remote, project files are not bind-mounted from the host, meaning writes in the sandbox are not reflected on your machine.
 Clone the repository inside the sandbox or use OpenShell file transfer commands:
 
 ```bash
-openshell sandbox upload pi-sandbox ./repo /workspace
-openshell sandbox download pi-sandbox /workspace/repo ./repo-out
+openshell sandbox upload nova-sandbox ./repo /workspace
+openshell sandbox download nova-sandbox /workspace/repo ./repo-out
 ```
 
 OpenShell providers can keep raw model API keys outside the sandbox.
 When inference routing is configured, code inside the sandbox can call `https://inference.local`, and the gateway injects the configured provider credentials upstream.
-Configure Pi to use the corresponding OpenAI-compatible or Anthropic-compatible endpoint if you want model traffic to use this route.
+Configure Nova to use the corresponding OpenAI-compatible or Anthropic-compatible endpoint if you want model traffic to use this route.

@@ -9,7 +9,7 @@ LLMs have limited context windows. When conversations grow too long, pi uses com
 - [`packages/nova/src/core/session-manager.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/nova/src/core/session-manager.ts) - Entry types (`CompactionEntry`, `BranchSummaryEntry`)
 - [`packages/nova/src/core/extensions/types.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/nova/src/core/extensions/types.ts) - Extension event types
 
-For TypeScript definitions in your project, inspect `node_modules/@earendil-works/pi-coding-agent/dist/`.
+For TypeScript definitions in your project, inspect `node_modules/@dongzijie1/nova/dist/`.
 
 ## Overview
 
@@ -32,13 +32,13 @@ Auto-compaction triggers when:
 contextTokens > contextWindow - reserveTokens
 ```
 
-By default, `reserveTokens` is 16384 tokens (configurable in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settings.json`). This leaves room for the LLM's response.
+By default, `reserveTokens` is 16384 tokens (configurable in `~/.nova/agent/settings.json` or `<project-dir>/.nova/settings.json`). This leaves room for the LLM's response.
 
 You can also trigger manually with `/compact [instructions]`, where optional instructions focus the summary.
 
 ### How It Works
 
-1. **Find cut point**: Walk backwards from newest message, accumulating token estimates until `keepRecentTokens` (default 20k, configurable in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settings.json`) is reached
+1. **Find cut point**: Walk backwards from newest message, accumulating token estimates until `keepRecentTokens` (default 20k, configurable in `~/.nova/agent/settings.json` or `<project-dir>/.nova/settings.json`) is reached
 2. **Extract messages**: Collect messages from the previous kept boundary (or session start) up to the cut point
 3. **Generate summary**: Call LLM to summarize with structured format, passing the previous summary as iterative context when present
 4. **Append entry**: Save `CompactionEntry` with summary and `firstKeptEntryId`
@@ -314,7 +314,7 @@ pi.on("session_before_compact", async (event, ctx) => {
 To generate a summary with your own model, convert messages to text using `serializeConversation`:
 
 ```typescript
-import { convertToLlm, serializeConversation } from "@earendil-works/pi-coding-agent";
+import { convertToLlm, serializeConversation } from "@dongzijie1/nova";
 
 pi.on("session_before_compact", async (event, ctx) => {
   const { preparation } = event;
@@ -380,7 +380,7 @@ See `SessionBeforeTreeEvent` and `TreePreparation` in the types file.
 
 ## Settings
 
-Configure compaction in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settings.json`:
+Configure compaction in `~/.nova/agent/settings.json` or `<project-dir>/.nova/settings.json`:
 
 ```json
 {

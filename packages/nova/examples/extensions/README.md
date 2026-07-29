@@ -9,7 +9,7 @@ Example extensions for nova.
 pi --extension examples/extensions/permission-gate.ts
 
 # Or copy to extensions directory for auto-discovery
-cp permission-gate.ts ~/.pi/agent/extensions/
+cp permission-gate.ts ~/.nova/agent/extensions/
 ```
 
 ## Examples
