@@ -19,6 +19,7 @@ import { time } from "./timings.ts";
 import {
 	createBashTool,
 	createCodingTools,
+	createDefaultActiveToolNames,
 	createEditTool,
 	createFindTool,
 	createGrepTool,
@@ -242,7 +243,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = clampThinkingLevel(model, thinkingLevel) as ThinkingLevel;
 	}
 
-	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "ask_user_question"];
+	const defaultActiveToolNames: ToolName[] = createDefaultActiveToolNames();
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const excludedToolNames = options.excludeTools;
 	const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;

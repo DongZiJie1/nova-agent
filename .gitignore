@@ -37,6 +37,7 @@ out.jsonl
 pi-*.html
 out.html
 packages/nova/binaries/
+nova-studio/
 todo.md
 plans/
 .nova/hf-sessions/

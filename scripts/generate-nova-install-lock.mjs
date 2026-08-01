@@ -11,7 +11,9 @@ const outputDir = join(codingAgentDir, "install-lock");
 const rootLockfilePath = join(repoRoot, "package-lock.json");
 const outputPackageJsonPath = join(outputDir, "package.json");
 const outputLockfilePath = join(outputDir, "package-lock.json");
-const internalPackagePrefix = "@dongzijie1/pi-";
+// All @dongzijie1/* packages are monorepo workspaces, including @dongzijie1/nova
+// itself (which the installer depends on directly).
+const internalPackagePrefix = "@dongzijie1/";
 const installPackageName = "@dongzijie1/nova-install";
 const allowedInstallScriptPackages = new Map([
 	["@google/genai@1.52.0", "preinstall is a no-op in the published package"],
@@ -37,6 +39,14 @@ function packageDependencies(entry) {
 		...(entry.dependencies ?? {}),
 		...(entry.optionalDependencies ?? {}),
 	};
+}
+
+function optionalPackageDependencies(entry) {
+	return entry.optionalDependencies ?? {};
+}
+
+function isOptionalDependency(entry, dependencyName) {
+	return optionalPackageDependencies(entry)[dependencyName] !== undefined;
 }
 
 function sortedObject(object) {
@@ -209,11 +219,15 @@ function addInternalWorkspace(installLockPackages, addedPaths, queue, name, work
 	addedPaths.add(outputPath);
 
 	for (const dependencyName of Object.keys(packageDependencies(packageJson))) {
-		queue.push({ name: dependencyName, from: outputPath });
+		queue.push({
+			name: dependencyName,
+			from: outputPath,
+			optional: isOptionalDependency(packageJson, dependencyName),
+		});
 	}
 }
 
-function addExternalPackage(lockPackages, installLockPackages, addedPaths, queue, name, from) {
+function addExternalPackage(lockPackages, installLockPackages, addedPaths, queue, name, from, optional) {
 	const lockPath = resolveExternalDependency(lockPackages, name, from);
 	if (addedPaths.has(lockPath)) {
 		return;
@@ -224,7 +238,11 @@ function addExternalPackage(lockPackages, installLockPackages, addedPaths, queue
 	addedPaths.add(lockPath);
 
 	for (const dependencyName of Object.keys(packageDependencies(entry))) {
-		queue.push({ name: dependencyName, from: lockPath });
+		queue.push({
+			name: dependencyName,
+			from: lockPath,
+			optional: isOptionalDependency(entry, dependencyName),
+		});
 	}
 }
 
@@ -327,6 +345,11 @@ function validateGeneratedFiles(installerPackageJson, installLock, internalNames
 
 	for (const [lockPath, entry] of Object.entries(installLock.packages)) {
 		for (const [dependencyName, dependencySpec] of Object.entries(packageDependencies(entry))) {
+			// Optional platform packages never installed on this host are
+			// legitimately absent from the generated lock.
+			if (isOptionalDependency(entry, dependencyName)) {
+				continue;
+			}
 			let dependencyLockPath;
 			try {
 				dependencyLockPath = resolveExternalDependency(installLock.packages, dependencyName, lockPath);
@@ -370,7 +393,11 @@ function generateInstallLock() {
 	};
 	const addedPaths = new Set([""]);
 	const internalNames = new Set();
-	const queue = Object.keys(packageDependencies(installerPackageJson)).map((name) => ({ name, from: "" }));
+	const queue = Object.keys(packageDependencies(installerPackageJson)).map((name) => ({
+		name,
+		from: "",
+		optional: isOptionalDependency(installerPackageJson, name),
+	}));
 
 	while (queue.length > 0) {
 		const item = queue.shift();
@@ -388,7 +415,17 @@ function generateInstallLock() {
 			continue;
 		}
 
-		addExternalPackage(lockPackages, installLockPackages, addedPaths, queue, item.name, item.from);
+		try {
+			addExternalPackage(lockPackages, installLockPackages, addedPaths, queue, item.name, item.from, item.optional);
+		} catch (err) {
+			// Optional platform packages (e.g. @mariozechner/clipboard-darwin-x64 on
+			// an arm64 host) have no lockfile entry on this platform — that is
+			// expected, so skip them instead of failing the build.
+			if (item.optional && err instanceof Error && err.message.startsWith("Cannot resolve ")) {
+				continue;
+			}
+			throw err;
+		}
 	}
 
 	const installLock = {

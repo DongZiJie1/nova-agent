@@ -1,0 +1,227 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ExtensionContext } from "../src/core/extensions/types.ts";
+import {
+	createHubAskAgentToolDefinition,
+	createHubListAgentsToolDefinition,
+	createHubSpawnAgentToolDefinition,
+} from "../src/core/tools/hub.ts";
+
+const ctx = {} as ExtensionContext;
+
+const HUB_ENV = {
+	NOVA_HUB_URL: "http://127.0.0.1:9528",
+	NOVA_HUB_TOKEN: "test-token",
+	NOVA_AGENT_ID: "agent-self1",
+	NOVA_ASK_DEPTH: "0",
+};
+
+const savedEnv: Record<string, string | undefined> = {};
+
+beforeEach(() => {
+	for (const key of Object.keys(HUB_ENV)) {
+		savedEnv[key] = process.env[key];
+		process.env[key] = HUB_ENV[key as keyof typeof HUB_ENV];
+	}
+});
+
+afterEach(() => {
+	for (const key of Object.keys(HUB_ENV)) {
+		if (savedEnv[key] === undefined) {
+			delete process.env[key];
+		} else {
+			process.env[key] = savedEnv[key];
+		}
+	}
+	vi.unstubAllGlobals();
+});
+
+function stubFetch(payload: unknown, status = 200) {
+	const fn = vi.fn(
+		async () =>
+			new Response(JSON.stringify(payload), {
+				status,
+				headers: { "content-type": "application/json" },
+			}),
+	);
+	vi.stubGlobal("fetch", fn);
+	return fn;
+}
+
+/** Extract the first text content part of a tool result (all hub tools return one). */
+function resultText(result: { content: Array<{ type: string; text?: string }> }): string {
+	const first = result.content[0];
+	return first && first.type === "text" ? (first.text ?? "") : "";
+}
+
+function fetchCallArgs(fn: ReturnType<typeof stubFetch>, i: number): [string, RequestInit] {
+	return fn.mock.calls[i] as unknown as [string, RequestInit];
+}
+
+describe("hub tools without hub env", () => {
+	it("report collaboration as unavailable", async () => {
+		delete process.env.NOVA_HUB_URL;
+
+		const list = await createHubListAgentsToolDefinition().execute("t1", {}, undefined, undefined, ctx);
+		expect(resultText(list)).toContain("not available");
+
+		const spawn = await createHubSpawnAgentToolDefinition().execute("t2", { cwd: "/tmp" }, undefined, undefined, ctx);
+		expect(resultText(spawn)).toContain("not available");
+
+		const ask = await createHubAskAgentToolDefinition().execute(
+			"t3",
+			{ agent_id: "agent-x", question: "hi" },
+			undefined,
+			undefined,
+			ctx,
+		);
+		expect(resultText(ask)).toContain("not available");
+	});
+});
+
+describe("hub_list_agents", () => {
+	it("lists agents and marks the caller", async () => {
+		const fetchMock = stubFetch([
+			{ id: "agent-self1", status: "idle", cwd: "/a", model: "m1" },
+			{ id: "agent-other2", status: "streaming", cwd: "/b", model: null },
+		]);
+
+		const result = await createHubListAgentsToolDefinition().execute("t1", {}, undefined, undefined, ctx);
+
+		expect(resultText(result)).toContain("agent-self1 (you)");
+		expect(resultText(result)).toContain("agent-other2");
+		expect(result.details?.agents).toHaveLength(2);
+
+		const [url, init] = fetchCallArgs(fetchMock, 0);
+		expect(url).toBe("http://127.0.0.1:9528/agents");
+		expect((init.headers as Record<string, string>)["x-nova-token"]).toBe("test-token");
+	});
+});
+
+describe("hub_spawn_agent", () => {
+	it("spawns and returns the new agent id", async () => {
+		const fetchMock = stubFetch({ agent_id: "agent-new99", info: {} });
+
+		const result = await createHubSpawnAgentToolDefinition().execute(
+			"t1",
+			{ cwd: "/tmp/proj", model: "mimo" },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		expect(resultText(result)).toContain("agent-new99");
+		expect(result.details?.agentId).toBe("agent-new99");
+
+		const [url, init] = fetchCallArgs(fetchMock, 0);
+		expect(url).toBe("http://127.0.0.1:9528/agents");
+		expect(JSON.parse(init.body as string)).toEqual({ cwd: "/tmp/proj", model: "mimo", depth: 1 });
+	});
+
+	it("propagates depth+1 when the caller is itself an agent", async () => {
+		process.env.NOVA_ASK_DEPTH = "1";
+		const fetchMock = stubFetch({ agent_id: "agent-deep", info: {} });
+
+		await createHubSpawnAgentToolDefinition().execute("t1", { cwd: "/tmp" }, undefined, undefined, ctx);
+
+		const [url, init] = fetchCallArgs(fetchMock, 0);
+		expect(url).toBe("http://127.0.0.1:9528/agents");
+		expect(JSON.parse(init.body as string)).toEqual({ cwd: "/tmp", depth: 2 });
+	});
+
+	it("refuses to spawn at the depth limit", async () => {
+		process.env.NOVA_ASK_DEPTH = "2";
+		const fetchMock = stubFetch({});
+
+		const result = await createHubSpawnAgentToolDefinition().execute(
+			"t1",
+			{ cwd: "/tmp" },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		expect(resultText(result)).toContain("depth limit");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+});
+
+describe("hub_ask_agent", () => {
+	it("asks and returns the reply", async () => {
+		const fetchMock = stubFetch({ reply: "the answer is 42" });
+
+		const result = await createHubAskAgentToolDefinition().execute(
+			"t1",
+			{ agent_id: "agent-other2", question: "what is the answer?" },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		expect(resultText(result)).toContain("the answer is 42");
+		expect(result.details?.truncated).toBe(false);
+
+		const [url, init] = fetchCallArgs(fetchMock, 0);
+		expect(url).toBe("http://127.0.0.1:9528/agents/agent-other2/ask");
+		expect(JSON.parse(init.body as string)).toEqual({ question: "what is the answer?", timeout_secs: 300 });
+	});
+
+	it("truncates long replies", async () => {
+		stubFetch({ reply: "x".repeat(6000) });
+
+		const result = await createHubAskAgentToolDefinition().execute(
+			"t1",
+			{ agent_id: "agent-other2", question: "q" },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		expect(result.details?.truncated).toBe(true);
+		expect(result.details?.reply?.length).toBeLessThan(4300);
+	});
+
+	it("refuses to ask itself", async () => {
+		const fetchMock = stubFetch({});
+
+		const result = await createHubAskAgentToolDefinition().execute(
+			"t1",
+			{ agent_id: "agent-self1", question: "q" },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		expect(resultText(result)).toContain("yourself");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("refuses to ask at the depth limit", async () => {
+		process.env.NOVA_ASK_DEPTH = "2";
+		const fetchMock = stubFetch({});
+
+		const result = await createHubAskAgentToolDefinition().execute(
+			"t1",
+			{ agent_id: "agent-other2", question: "q" },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		expect(resultText(result)).toContain("depth limit");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("surfaces hub errors", async () => {
+		stubFetch({ error: "Agent not found" }, 404);
+
+		const result = await createHubAskAgentToolDefinition().execute(
+			"t1",
+			{ agent_id: "agent-nope", question: "q" },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		expect(resultText(result)).toContain("Agent not found");
+	});
+});
