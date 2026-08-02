@@ -1,10 +1,10 @@
 {
 	"name": "@dongzijie1/nova-install",
-	"version": "0.86.1",
+	"version": "0.86.2",
 	"private": true,
 	"description": "Lockfile root used by the Pi installer and updater.",
 	"dependencies": {
-		"@dongzijie1/nova": "0.86.1"
+		"@dongzijie1/nova": "0.86.2"
 	},
 	"overrides": {
 		"protobufjs": "7.6.5",

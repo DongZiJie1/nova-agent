@@ -152,6 +152,7 @@ export type AgentSessionEvent =
 	| { type: "compaction_start"; reason: "manual" | "threshold" | "overflow" }
 	| { type: "entry_appended"; entry: SessionEntry }
 	| { type: "session_info_changed"; name: string | undefined }
+	| { type: "agent_name_update"; name: string }
 	| { type: "thinking_level_changed"; level: ThinkingLevel }
 	| {
 			type: "compaction_end";
@@ -1215,6 +1216,11 @@ export class AgentSession {
 				timestamp: Date.now(),
 			});
 
+			// Fire-and-forget agent name generation on first user message
+			if (!this.messages.some((m) => m.role === "user")) {
+				this._generateAgentName(expandedText).catch(() => {});
+			}
+
 			// Inject any pending "nextTurn" messages as context alongside the user message
 			for (const msg of this._pendingNextTurnMessages) {
 				messages.push(msg);
@@ -1262,6 +1268,44 @@ export class AgentSession {
 
 		preflightResult?.(true);
 		await this._runAgentPrompt(messages);
+	}
+
+	/**
+	 * Generate an agent display name from the first user message.
+	 * Fire-and-forget: emits `agent_name_update` on success, silently fails otherwise.
+	 */
+	private async _generateAgentName(userMessage: string): Promise<void> {
+		const apiKey = process.env.ANTHROPIC_API_KEY;
+		if (!apiKey) return;
+
+		try {
+			const res = await fetch("https://api.anthropic.com/v1/messages", {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-api-key": apiKey,
+					"anthropic-version": "2023-06-01",
+				},
+				body: JSON.stringify({
+					model: "claude-haiku-4-5-20251001",
+					max_tokens: 20,
+					messages: [
+						{
+							role: "user",
+							content: `用 3-6 个字概括以下对话主题，作为 agent 名称。只输出名称，不要其他内容，不要引号。\n\n${userMessage.slice(0, 500)}`,
+						},
+					],
+				}),
+			});
+			if (!res.ok) return;
+			const data = (await res.json()) as { content?: Array<{ text?: string }> };
+			const name = data.content?.[0]?.text?.trim();
+			if (name) {
+				this._emit({ type: "agent_name_update", name });
+			}
+		} catch {
+			// Silently ignore name generation failures
+		}
 	}
 
 	/**
