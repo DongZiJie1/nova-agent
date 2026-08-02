@@ -114,7 +114,12 @@ describe("hub_spawn_agent", () => {
 
 		const [url, init] = fetchCallArgs(fetchMock, 0);
 		expect(url).toBe("http://127.0.0.1:9528/agents");
-		expect(JSON.parse(init.body as string)).toEqual({ cwd: "/tmp/proj", model: "mimo", depth: 1 });
+		expect(JSON.parse(init.body as string)).toEqual({
+			cwd: "/tmp/proj",
+			model: "mimo",
+			depth: 1,
+			parent_agent_id: "agent-self1",
+		});
 	});
 
 	it("propagates depth+1 when the caller is itself an agent", async () => {
@@ -125,7 +130,11 @@ describe("hub_spawn_agent", () => {
 
 		const [url, init] = fetchCallArgs(fetchMock, 0);
 		expect(url).toBe("http://127.0.0.1:9528/agents");
-		expect(JSON.parse(init.body as string)).toEqual({ cwd: "/tmp", depth: 2 });
+		expect(JSON.parse(init.body as string)).toEqual({
+			cwd: "/tmp",
+			depth: 2,
+			parent_agent_id: "agent-self1",
+		});
 	});
 
 	it("refuses to spawn at the depth limit", async () => {

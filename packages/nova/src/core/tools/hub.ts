@@ -196,7 +196,12 @@ export function createHubSpawnAgentToolDefinition(): ToolDefinition<typeof hubSp
 				// The new agent is one hop deeper in the delegation chain, so the
 				// hub injects depth+1 into its NOVA_ASK_DEPTH env var. At the
 				// limit this is already refused above, so depth stays < MAX_ASK_DEPTH.
-				const res = await hubRequest("POST", "/agents", { cwd, model, depth: hub.depth + 1 });
+				const res = await hubRequest("POST", "/agents", {
+					cwd,
+					model,
+					depth: hub.depth + 1,
+					parent_agent_id: hub.agentId,
+				});
 				const data = res.data as { agent_id?: string; info?: { status?: string }; error?: string };
 				if (!res.ok || !data.agent_id) {
 					const msg = data.error ?? `hub returned status ${res.status}`;
