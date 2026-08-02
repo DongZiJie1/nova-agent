@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.86.3] - 2026-08-02
+
+### Fixed
+
+- Fixed RPC agent display names to start as `Nova` and then update from the first user message using the active session model and configured provider credentials, instead of requiring a separate Anthropic environment key.
+
 ## [0.83.0] - 2026-07-27
 
 ## [0.82.1] - 2026-07-25

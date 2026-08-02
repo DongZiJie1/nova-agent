@@ -41,6 +41,17 @@ export {
 	type GrepToolOptions,
 } from "./grep.ts";
 export {
+	createHubAskAgentToolDefinition,
+	createHubListAgentsToolDefinition,
+	createHubSpawnAgentToolDefinition,
+	type HubAskAgentDetails,
+	type HubAskAgentToolInput,
+	type HubListAgentsDetails,
+	type HubSpawnAgentDetails,
+	type HubSpawnAgentToolInput,
+	hubRequest,
+} from "./hub.ts";
+export {
 	createLsTool,
 	createLsToolDefinition,
 	type LsOperations,
@@ -81,6 +92,11 @@ import { type BashToolOptions, createBashTool, createBashToolDefinition } from "
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.ts";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.ts";
 import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.ts";
+import {
+	createHubAskAgentToolDefinition,
+	createHubListAgentsToolDefinition,
+	createHubSpawnAgentToolDefinition,
+} from "./hub.ts";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
@@ -88,7 +104,18 @@ import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } fro
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
-export type ToolName = "read" | "bash" | "edit" | "write" | "grep" | "find" | "ls" | "ask_user_question";
+export type ToolName =
+	| "read"
+	| "bash"
+	| "edit"
+	| "write"
+	| "grep"
+	| "find"
+	| "ls"
+	| "ask_user_question"
+	| "hub_list_agents"
+	| "hub_spawn_agent"
+	| "hub_ask_agent";
 export const allToolNames: Set<ToolName> = new Set([
 	"read",
 	"bash",
@@ -98,6 +125,9 @@ export const allToolNames: Set<ToolName> = new Set([
 	"find",
 	"ls",
 	"ask_user_question",
+	"hub_list_agents",
+	"hub_spawn_agent",
+	"hub_ask_agent",
 ]);
 
 export interface ToolsOptions {
@@ -128,6 +158,12 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createLsToolDefinition(cwd, options?.ls);
 		case "ask_user_question":
 			return createAskUserQuestionToolDefinition();
+		case "hub_list_agents":
+			return createHubListAgentsToolDefinition();
+		case "hub_spawn_agent":
+			return createHubSpawnAgentToolDefinition();
+		case "hub_ask_agent":
+			return createHubAskAgentToolDefinition();
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -151,6 +187,12 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createLsTool(cwd, options?.ls);
 		case "ask_user_question":
 			return wrapToolDefinition(createAskUserQuestionToolDefinition());
+		case "hub_list_agents":
+			return wrapToolDefinition(createHubListAgentsToolDefinition());
+		case "hub_spawn_agent":
+			return wrapToolDefinition(createHubSpawnAgentToolDefinition());
+		case "hub_ask_agent":
+			return wrapToolDefinition(createHubAskAgentToolDefinition());
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -184,6 +226,9 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		find: createFindToolDefinition(cwd, options?.find),
 		ls: createLsToolDefinition(cwd, options?.ls),
 		ask_user_question: createAskUserQuestionToolDefinition(),
+		hub_list_agents: createHubListAgentsToolDefinition(),
+		hub_spawn_agent: createHubSpawnAgentToolDefinition(),
+		hub_ask_agent: createHubAskAgentToolDefinition(),
 	};
 }
 
@@ -215,5 +260,21 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		find: createFindTool(cwd, options?.find),
 		ls: createLsTool(cwd, options?.ls),
 		ask_user_question: wrapToolDefinition(createAskUserQuestionToolDefinition()),
+		hub_list_agents: wrapToolDefinition(createHubListAgentsToolDefinition()),
+		hub_spawn_agent: wrapToolDefinition(createHubSpawnAgentToolDefinition()),
+		hub_ask_agent: wrapToolDefinition(createHubAskAgentToolDefinition()),
 	};
+}
+
+/**
+ * Tools active by default in a new session. Hub collaboration tools are
+ * included only when the agent runs under Nova Studio (NOVA_HUB_URL is
+ * injected by the host); a standalone CLI never sees them.
+ */
+export function createDefaultActiveToolNames(): ToolName[] {
+	const names: ToolName[] = ["read", "bash", "edit", "write", "ask_user_question"];
+	if (process.env.NOVA_HUB_URL) {
+		names.push("hub_list_agents", "hub_spawn_agent", "hub_ask_agent");
+	}
+	return names;
 }

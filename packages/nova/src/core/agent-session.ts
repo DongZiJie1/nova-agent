@@ -104,7 +104,7 @@ import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
-import { createAllToolDefinitions } from "./tools/index.ts";
+import { createAllToolDefinitions, createDefaultActiveToolNames } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
 import { addUsageToTotals, createUsageTotals } from "./usage-totals.ts";
 
@@ -152,6 +152,7 @@ export type AgentSessionEvent =
 	| { type: "compaction_start"; reason: "manual" | "threshold" | "overflow" }
 	| { type: "entry_appended"; entry: SessionEntry }
 	| { type: "session_info_changed"; name: string | undefined }
+	| { type: "agent_name_update"; name: string }
 	| { type: "thinking_level_changed"; level: ThinkingLevel }
 	| {
 			type: "compaction_end";
@@ -360,6 +361,7 @@ export class AgentSession {
 	private _extensionErrorUnsubscriber?: () => void;
 
 	private _modelRuntime: ModelRuntime;
+	private _agentNameGenerationStarted = false;
 
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
@@ -1215,6 +1217,16 @@ export class AgentSession {
 				timestamp: Date.now(),
 			});
 
+			// Generate the display name alongside the first prompt without delaying the main response.
+			if (
+				this._extensionMode === "rpc" &&
+				!this._agentNameGenerationStarted &&
+				!this.messages.some((m) => m.role === "user")
+			) {
+				this._agentNameGenerationStarted = true;
+				void this._generateAgentName(expandedText);
+			}
+
 			// Inject any pending "nextTurn" messages as context alongside the user message
 			for (const msg of this._pendingNextTurnMessages) {
 				messages.push(msg);
@@ -1262,6 +1274,44 @@ export class AgentSession {
 
 		preflightResult?.(true);
 		await this._runAgentPrompt(messages);
+	}
+
+	/**
+	 * Generate an agent display name from the first user message.
+	 * Fire-and-forget: emits `agent_name_update` on success, silently fails otherwise.
+	 */
+	private async _generateAgentName(userMessage: string): Promise<void> {
+		try {
+			const model = this.model;
+			if (!model) return;
+			const { apiKey, headers, env } = await this._getRequiredRequestAuth(model);
+			const response = await this._modelRuntime.completeSimple(
+				model,
+				{
+					systemPrompt:
+						"Generate a concise display name for an AI agent from the user's first message. " +
+						"Use the same language as the user, prefer 3-6 Chinese characters or 2-5 words, and output only the name.",
+					messages: [
+						{
+							role: "user",
+							content: [{ type: "text", text: userMessage.slice(0, 500) }],
+							timestamp: Date.now(),
+						},
+					],
+				},
+				{ apiKey, headers, env, maxTokens: 30, cacheRetention: "none" },
+			);
+			const name = contentText(response.content, " ")
+				.trim()
+				.split(/\r?\n/, 1)[0]
+				?.replace(/^["'“‘]+|["'”’]+$/g, "")
+				.trim();
+			if (name) {
+				this._emit({ type: "agent_name_update", name: name.slice(0, 50) });
+			}
+		} catch {
+			// Silently ignore name generation failures
+		}
 	}
 
 	/**
@@ -2590,7 +2640,7 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write", "ask_user_question"];
+			: createDefaultActiveToolNames();
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,

@@ -36,6 +36,14 @@ function packageDependencies(entry) {
 	};
 }
 
+function optionalPackageDependencies(entry) {
+	return entry.optionalDependencies ?? {};
+}
+
+function isOptionalDependency(entry, dependencyName) {
+	return optionalPackageDependencies(entry)[dependencyName] !== undefined;
+}
+
 function sortedObject(object) {
 	return Object.fromEntries(Object.entries(object).sort(([a], [b]) => a.localeCompare(b)));
 }
@@ -202,11 +210,15 @@ function addInternalWorkspace(shrinkwrapPackages, addedPaths, queue, name, works
 	addedPaths.add(outputPath);
 
 	for (const dependencyName of Object.keys(packageDependencies(packageJson))) {
-		queue.push({ name: dependencyName, from: outputPath });
+		queue.push({
+			name: dependencyName,
+			from: outputPath,
+			optional: isOptionalDependency(packageJson, dependencyName),
+		});
 	}
 }
 
-function addExternalPackage(lockPackages, shrinkwrapPackages, addedPaths, queue, name, from) {
+function addExternalPackage(lockPackages, shrinkwrapPackages, addedPaths, queue, name, from, optional) {
 	const lockPath = resolveExternalDependency(lockPackages, name, from);
 	if (addedPaths.has(lockPath)) {
 		return;
@@ -217,7 +229,11 @@ function addExternalPackage(lockPackages, shrinkwrapPackages, addedPaths, queue,
 	addedPaths.add(lockPath);
 
 	for (const dependencyName of Object.keys(packageDependencies(entry))) {
-		queue.push({ name: dependencyName, from: lockPath });
+		queue.push({
+			name: dependencyName,
+			from: lockPath,
+			optional: isOptionalDependency(entry, dependencyName),
+		});
 	}
 }
 
@@ -268,6 +284,11 @@ function validateShrinkwrap(shrinkwrap, internalNames) {
 
 	for (const [lockPath, entry] of Object.entries(shrinkwrap.packages)) {
 		for (const dependencyName of Object.keys(packageDependencies(entry))) {
+			// Optional platform packages that were never installed on this host
+			// are legitimately absent from the shrinkwrap.
+			if (isOptionalDependency(entry, dependencyName)) {
+				continue;
+			}
 			const dependencyIncluded = [...includedPaths].some(
 				(candidate) => candidate === `node_modules/${dependencyName}` || candidate.endsWith(`/node_modules/${dependencyName}`),
 			);
@@ -301,7 +322,11 @@ function generateShrinkwrap() {
 	};
 	const addedPaths = new Set([""]);
 	const internalNames = new Set();
-	const queue = Object.keys(packageDependencies(codingAgentPackage)).map((name) => ({ name, from: "" }));
+	const queue = Object.keys(packageDependencies(codingAgentPackage)).map((name) => ({
+		name,
+		from: "",
+		optional: isOptionalDependency(codingAgentPackage, name),
+	}));
 
 	while (queue.length > 0) {
 		const item = queue.shift();
@@ -319,7 +344,17 @@ function generateShrinkwrap() {
 			continue;
 		}
 
-		addExternalPackage(lockPackages, shrinkwrapPackages, addedPaths, queue, item.name, item.from);
+		try {
+			addExternalPackage(lockPackages, shrinkwrapPackages, addedPaths, queue, item.name, item.from, item.optional);
+		} catch (err) {
+			// Optional platform packages (e.g. @mariozechner/clipboard-darwin-x64 on
+			// an arm64 host) have no lockfile entry on this platform — that is
+			// expected, so skip them instead of failing the build.
+			if (item.optional && err instanceof Error && err.message.startsWith("Cannot resolve ")) {
+				continue;
+			}
+			throw err;
+		}
 	}
 
 	const shrinkwrap = {
