@@ -361,6 +361,7 @@ export class AgentSession {
 	private _extensionErrorUnsubscriber?: () => void;
 
 	private _modelRuntime: ModelRuntime;
+	private _agentNameGenerationStarted = false;
 
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
@@ -1216,9 +1217,14 @@ export class AgentSession {
 				timestamp: Date.now(),
 			});
 
-			// Fire-and-forget agent name generation on first user message
-			if (!this.messages.some((m) => m.role === "user")) {
-				this._generateAgentName(expandedText).catch(() => {});
+			// Generate the display name alongside the first prompt without delaying the main response.
+			if (
+				this._extensionMode === "rpc" &&
+				!this._agentNameGenerationStarted &&
+				!this.messages.some((m) => m.role === "user")
+			) {
+				this._agentNameGenerationStarted = true;
+				void this._generateAgentName(expandedText);
 			}
 
 			// Inject any pending "nextTurn" messages as context alongside the user message
@@ -1275,33 +1281,33 @@ export class AgentSession {
 	 * Fire-and-forget: emits `agent_name_update` on success, silently fails otherwise.
 	 */
 	private async _generateAgentName(userMessage: string): Promise<void> {
-		const apiKey = process.env.ANTHROPIC_API_KEY;
-		if (!apiKey) return;
-
 		try {
-			const res = await fetch("https://api.anthropic.com/v1/messages", {
-				method: "POST",
-				headers: {
-					"content-type": "application/json",
-					"x-api-key": apiKey,
-					"anthropic-version": "2023-06-01",
-				},
-				body: JSON.stringify({
-					model: "claude-haiku-4-5-20251001",
-					max_tokens: 20,
+			const model = this.model;
+			if (!model) return;
+			const { apiKey, headers, env } = await this._getRequiredRequestAuth(model);
+			const response = await this._modelRuntime.completeSimple(
+				model,
+				{
+					systemPrompt:
+						"Generate a concise display name for an AI agent from the user's first message. " +
+						"Use the same language as the user, prefer 3-6 Chinese characters or 2-5 words, and output only the name.",
 					messages: [
 						{
 							role: "user",
-							content: `用 3-6 个字概括以下对话主题，作为 agent 名称。只输出名称，不要其他内容，不要引号。\n\n${userMessage.slice(0, 500)}`,
+							content: [{ type: "text", text: userMessage.slice(0, 500) }],
+							timestamp: Date.now(),
 						},
 					],
-				}),
-			});
-			if (!res.ok) return;
-			const data = (await res.json()) as { content?: Array<{ text?: string }> };
-			const name = data.content?.[0]?.text?.trim();
+				},
+				{ apiKey, headers, env, maxTokens: 30, cacheRetention: "none" },
+			);
+			const name = contentText(response.content, " ")
+				.trim()
+				.split(/\r?\n/, 1)[0]
+				?.replace(/^["'“‘]+|["'”’]+$/g, "")
+				.trim();
 			if (name) {
-				this._emit({ type: "agent_name_update", name });
+				this._emit({ type: "agent_name_update", name: name.slice(0, 50) });
 			}
 		} catch {
 			// Silently ignore name generation failures
