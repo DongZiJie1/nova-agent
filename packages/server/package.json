@@ -1,6 +1,6 @@
 {
 	"name": "@dongzijie1/pi-server",
-	"version": "0.86.2",
+	"version": "0.86.3",
 	"description": "experimental server package for pi",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -40,7 +40,7 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@dongzijie1/nova": "0.86.2"
+		"@dongzijie1/nova": "0.86.3"
 	},
 	"devDependencies": {
 		"shx": "0.4.0"
