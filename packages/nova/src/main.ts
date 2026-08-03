@@ -351,7 +351,10 @@ async function createSessionManager(
 		);
 	}
 
-	return SessionManager.create(cwd, sessionDir, { id: parsed.sessionId });
+	return SessionManager.create(cwd, sessionDir, {
+		id: parsed.sessionId,
+		parentSession: parsed.parentSession ? normalizePath(parsed.parentSession) : undefined,
+	});
 }
 
 function buildSessionOptions(
@@ -521,6 +524,34 @@ export async function main(args: string[], options?: MainOptions) {
 	if (parsed.version) {
 		console.log(VERSION);
 		process.exit(0);
+	}
+
+	if (parsed.listSessions) {
+		const envSessionDir = process.env[ENV_SESSION_DIR];
+		const sessionDir =
+			(parsed.sessionDir ? normalizePath(parsed.sessionDir) : undefined) ??
+			(envSessionDir ? expandTildePath(envSessionDir) : undefined) ??
+			bootstrapSettingsManager.getSessionDir();
+		const sessions = await SessionManager.listAll(sessionDir);
+		const sessionIdByPath = new Map(sessions.map((session) => [normalizePath(session.path), session.id]));
+		console.log(
+			JSON.stringify({
+				sessions: sessions.map((session) => ({
+					sessionId: session.id,
+					cwd: session.cwd,
+					sessionFile: session.path,
+					name: session.name,
+					parentSessionId: session.parentSessionPath
+						? (sessionIdByPath.get(normalizePath(session.parentSessionPath)) ?? null)
+						: null,
+					createdAt: session.created.toISOString(),
+					modifiedAt: session.modified.toISOString(),
+					messageCount: session.messageCount,
+					firstMessage: session.firstMessage,
+				})),
+			}),
+		);
+		return;
 	}
 
 	if (parsed.export) {

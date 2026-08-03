@@ -329,6 +329,20 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--list-sessions flag", () => {
+		test("parses --list-sessions flag", () => {
+			const result = parseArgs(["--list-sessions"]);
+			expect(result.listSessions).toBe(true);
+		});
+	});
+
+	describe("--parent-session flag", () => {
+		test("parses --parent-session path", () => {
+			const result = parseArgs(["--parent-session", "/tmp/parent.jsonl"]);
+			expect(result.parentSession).toBe("/tmp/parent.jsonl");
+		});
+	});
+
 	describe("tool flags", () => {
 		test("parses --no-tools flag", () => {
 			const result = parseArgs(["--no-tools"]);
