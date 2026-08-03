@@ -301,6 +301,25 @@ const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "hi
 // AgentSession Class
 // ============================================================================
 
+function normalizeAgentDisplayName(raw: string): string {
+	const firstLine = raw
+		.trim()
+		.split(/\r?\n/, 1)[0]
+		.replace(/^(?:name|label|名称|标题)\s*[:：-]\s*/i, "")
+		.replace(/^[-*•]\s*/, "")
+		.replace(/^["'“‘]+|["'”’]+$/g, "")
+		.trim();
+	if (!firstLine) return "";
+
+	// A model may ignore the one-label instruction and append an explanation.
+	// Keep only the first clause, then enforce a small display-safe limit.
+	const firstClause = firstLine.split(/[，,。.!！?？；;:：]/, 1)[0].trim();
+	if (!firstClause) return "";
+	const words = firstClause.split(/\s+/).filter(Boolean);
+	const limited = words.length > 4 ? words.slice(0, 4).join(" ") : firstClause;
+	return Array.from(limited).slice(0, 12).join("").trim();
+}
+
 export class AgentSession {
 	readonly agent: Agent;
 	readonly sessionManager: SessionManager;
@@ -1289,8 +1308,9 @@ export class AgentSession {
 				model,
 				{
 					systemPrompt:
-						"Generate a concise display name for an AI agent from the user's first message. " +
-						"Use the same language as the user, prefer 3-6 Chinese characters or 2-5 words, and output only the name.",
+						"Generate a very short display label for an AI agent from the user's first message. " +
+						"Use the same language as the user. Prefer 2-8 Chinese characters or 1-4 English words. " +
+						"Output only the label, with no sentence, explanation, prefix, quotes, or punctuation.",
 					messages: [
 						{
 							role: "user",
@@ -1299,15 +1319,11 @@ export class AgentSession {
 						},
 					],
 				},
-				{ apiKey, headers, env, maxTokens: 30, cacheRetention: "none" },
+				{ apiKey, headers, env, maxTokens: 12, cacheRetention: "none" },
 			);
-			const name = contentText(response.content, " ")
-				.trim()
-				.split(/\r?\n/, 1)[0]
-				?.replace(/^["'“‘]+|["'”’]+$/g, "")
-				.trim();
+			const name = normalizeAgentDisplayName(contentText(response.content, " "));
 			if (name) {
-				this._emit({ type: "agent_name_update", name: name.slice(0, 50) });
+				this._emit({ type: "agent_name_update", name });
 			}
 		} catch {
 			// Silently ignore name generation failures
