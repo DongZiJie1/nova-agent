@@ -22,6 +22,7 @@ describe("agent display name generation", () => {
 		await harness.session.prompt("继续检查事件转发");
 
 		expect(harness.eventsOfType("agent_name_update")).toEqual([{ type: "agent_name_update", name: "修复会话命名" }]);
+		expect(harness.session.sessionName).toBe("修复会话命名");
 		expect(harness.getPendingResponseCount()).toBe(0);
 	});
 

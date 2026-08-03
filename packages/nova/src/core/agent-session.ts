@@ -1323,6 +1323,9 @@ export class AgentSession {
 			);
 			const name = normalizeAgentDisplayName(contentText(response.content, " "));
 			if (name) {
+				// Keep the generated label in Nova's session file so every client
+				// (including Studio after a restart) sees the same name.
+				this.setSessionName(name);
 				this._emit({ type: "agent_name_update", name });
 			}
 		} catch {
