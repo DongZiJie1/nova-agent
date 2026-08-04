@@ -25,6 +25,7 @@ export interface Args {
 	noSession?: boolean;
 	session?: string;
 	sessionId?: string;
+	parentSession?: string;
 	fork?: string;
 	sessionDir?: string;
 	models?: string[];
@@ -44,6 +45,7 @@ export interface Args {
 	noThemes?: boolean;
 	noContextFiles?: boolean;
 	listModels?: string | true;
+	listSessions?: boolean;
 	offline?: boolean;
 	verbose?: boolean;
 	projectTrustOverride?: boolean;
@@ -107,6 +109,8 @@ export function parseArgs(args: string[]): Args {
 			result.session = args[++i];
 		} else if (arg === "--session-id" && i + 1 < args.length) {
 			result.sessionId = args[++i];
+		} else if (arg === "--parent-session" && i + 1 < args.length) {
+			result.parentSession = args[++i];
 		} else if (arg === "--fork" && i + 1 < args.length) {
 			result.fork = args[++i];
 		} else if (arg === "--session-dir" && i + 1 < args.length) {
@@ -175,6 +179,8 @@ export function parseArgs(args: string[]): Args {
 			} else {
 				result.listModels = true;
 			}
+		} else if (arg === "--list-sessions") {
+			result.listSessions = true;
 		} else if (arg === "--verbose") {
 			result.verbose = true;
 		} else if (arg === "--approve" || arg === "-a") {
@@ -246,6 +252,7 @@ ${chalk.bold("Options:")}
   --resume, -r                   Select a session to resume
   --session <path|id>            Use specific session file or partial UUID
   --session-id <id>              Use exact project session ID, creating it if missing
+  --parent-session <path>        Record a parent session when creating a new session
   --fork <path|id>               Fork specific session file or partial UUID into a new session
   --session-dir <dir>            Directory for session storage and lookup
   --no-session                   Don't save session (ephemeral)
@@ -270,6 +277,7 @@ ${chalk.bold("Options:")}
   --no-context-files, -nc        Disable AGENTS.md and CLAUDE.md discovery and loading
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
+  --list-sessions               List all persisted sessions as JSON and exit
   --verbose                      Force verbose startup (overrides quietStartup setting)
   --approve, -a                  Trust project-local files for this run
   --no-approve, -na              Ignore project-local files for this run

@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added a machine-readable `--list-sessions` catalog and `--parent-session` creation metadata for desktop clients that discover and restore project sessions.
+
 ## [0.86.3] - 2026-08-02
 
 ### Fixed

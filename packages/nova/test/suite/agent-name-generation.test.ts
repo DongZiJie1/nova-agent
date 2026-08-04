@@ -22,6 +22,22 @@ describe("agent display name generation", () => {
 		await harness.session.prompt("继续检查事件转发");
 
 		expect(harness.eventsOfType("agent_name_update")).toEqual([{ type: "agent_name_update", name: "修复会话命名" }]);
+		expect(harness.session.sessionName).toBe("修复会话命名");
 		expect(harness.getPendingResponseCount()).toBe(0);
+	});
+
+	it("limits sentence-like model output to a short label", async () => {
+		harness = await createHarness();
+		await harness.session.bindExtensions({ mode: "rpc" });
+		harness.setResponses([
+			fauxAssistantMessage("这是一个用于查询天气的智能助手，可以帮助你获取天气信息。"),
+			fauxAssistantMessage("main response"),
+		]);
+
+		await harness.session.prompt("查询今天的天气");
+
+		expect(harness.eventsOfType("agent_name_update")).toEqual([
+			{ type: "agent_name_update", name: "这是一个用于查询天气的智" },
+		]);
 	});
 });
