@@ -29,7 +29,7 @@
 		"prepublishOnly": "npm run build"
 	},
 	"dependencies": {
-		"@dongzijie1/pi-ai": "0.86.3",
+		"@dongzijie1/pi-ai": "1.1.0",
 		"diff": "8.0.4",
 		"ignore": "7.0.5",
 		"typebox": "1.1.38",
