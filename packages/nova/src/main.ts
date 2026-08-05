@@ -643,6 +643,7 @@ export async function main(args: string[], options?: MainOptions) {
 	const resolvedSkillPaths = resolveCliPaths(cwd, parsed.skills);
 	const resolvedPromptTemplatePaths = resolveCliPaths(cwd, parsed.promptTemplates);
 	const resolvedThemePaths = resolveCliPaths(cwd, parsed.themes);
+	let sharedRpcModelRuntime: ModelRuntime | undefined;
 	const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 		cwd,
 		agentDir,
@@ -666,6 +667,7 @@ export async function main(args: string[], options?: MainOptions) {
 			cwd,
 			agentDir,
 			settingsManager: runtimeSettingsManager,
+			modelRuntime: appMode === "rpc" ? sharedRpcModelRuntime : undefined,
 			extensionFlagValues: parsed.unknownFlags,
 			resourceLoaderReloadOptions: shouldResolveProjectTrust
 				? {
@@ -706,6 +708,9 @@ export async function main(args: string[], options?: MainOptions) {
 				extensionFactories,
 			},
 		});
+		if (appMode === "rpc" && !sharedRpcModelRuntime) {
+			sharedRpcModelRuntime = services.modelRuntime;
+		}
 		const { settingsManager, modelRuntime, resourceLoader } = services;
 		const diagnostics: AgentSessionRuntimeDiagnostic[] = [
 			...projectTrustDiagnostics,

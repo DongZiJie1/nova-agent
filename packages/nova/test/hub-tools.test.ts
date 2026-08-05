@@ -4,6 +4,7 @@ import {
 	createHubAskAgentToolDefinition,
 	createHubListAgentsToolDefinition,
 	createHubSpawnAgentToolDefinition,
+	runWithHubAgentContext,
 } from "../src/core/tools/hub.ts";
 
 const ctx = {} as ExtensionContext;
@@ -98,6 +99,20 @@ describe("hub_list_agents", () => {
 });
 
 describe("hub_spawn_agent", () => {
+	it("uses the AgentSession-scoped identity in a shared process", async () => {
+		const fetchMock = stubFetch({ agent_id: "agent-child", info: {} });
+
+		await runWithHubAgentContext({ agentId: "agent-scoped", depth: 1 }, () =>
+			createHubSpawnAgentToolDefinition().execute("t1", { cwd: "/tmp" }, undefined, undefined, ctx),
+		);
+
+		const [, init] = fetchCallArgs(fetchMock, 0);
+		expect(JSON.parse(init.body as string)).toMatchObject({
+			depth: 2,
+			parent_agent_id: "agent-scoped",
+		});
+	});
+
 	it("spawns and returns the new agent id", async () => {
 		const fetchMock = stubFetch({ agent_id: "agent-new99", info: {} });
 

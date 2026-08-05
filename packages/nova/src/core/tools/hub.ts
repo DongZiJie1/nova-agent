@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "../extensions/types.ts";
 
@@ -30,14 +31,27 @@ interface HubEnv {
 	depth: number;
 }
 
+interface HubAgentContext {
+	agentId: string;
+	depth: number;
+}
+
+const hubAgentContext = new AsyncLocalStorage<HubAgentContext>();
+
+/** Scope process-shared hub credentials to the AgentSession handling this run. */
+export function runWithHubAgentContext<T>(context: HubAgentContext, callback: () => T): T {
+	return hubAgentContext.run(context, callback);
+}
+
 function readHubEnv(): HubEnv | null {
 	const url = process.env.NOVA_HUB_URL;
 	if (!url) return null;
+	const scoped = hubAgentContext.getStore();
 	return {
 		url: url.replace(/\/$/, ""),
 		token: process.env.NOVA_HUB_TOKEN ?? "",
-		agentId: process.env.NOVA_AGENT_ID ?? "",
-		depth: Number.parseInt(process.env.NOVA_ASK_DEPTH ?? "0", 10) || 0,
+		agentId: scoped?.agentId ?? process.env.NOVA_AGENT_ID ?? "",
+		depth: scoped?.depth ?? (Number.parseInt(process.env.NOVA_ASK_DEPTH ?? "0", 10) || 0),
 	};
 }
 

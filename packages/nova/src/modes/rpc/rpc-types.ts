@@ -17,7 +17,7 @@ import type { SourceInfo } from "../../core/source-info.ts";
 // RPC Commands (stdin)
 // ============================================================================
 
-export type RpcCommand =
+type RpcSessionCommand =
 	// Prompting
 	| { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
@@ -71,6 +71,21 @@ export type RpcCommand =
 
 	// Commands (available for invocation via prompt)
 	| { id?: string; type: "get_commands" };
+
+export type RpcCommand =
+	| (RpcSessionCommand & { agentId?: string })
+	| {
+			id?: string;
+			type: "agent_create";
+			agentId: string;
+			cwd: string;
+			sessionId?: string;
+			sessionPath?: string;
+			parentSession?: string;
+			depth?: number;
+	  }
+	| { id?: string; type: "agent_stop"; agentId: string }
+	| { id?: string; type: "agent_list" };
 
 // ============================================================================
 // RPC Slash Command (for get_commands response)

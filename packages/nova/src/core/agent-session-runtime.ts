@@ -130,6 +130,32 @@ export class AgentSessionRuntime {
 		this.beforeSessionInvalidate = beforeSessionInvalidate;
 	}
 
+	/**
+	 * Create another independent runtime in the same process.
+	 *
+	 * The sibling reuses the host factory, so process-scoped services supplied by
+	 * the application (for example ModelRuntime) can be shared while session,
+	 * extension, tool, and cwd-bound state remain isolated.
+	 */
+	async createSibling(options: {
+		cwd: string;
+		sessionId?: string;
+		sessionPath?: string;
+		parentSession?: string;
+	}): Promise<AgentSessionRuntime> {
+		const sessionManager = options.sessionPath
+			? SessionManager.open(options.sessionPath, undefined, options.cwd)
+			: SessionManager.create(options.cwd, undefined, {
+					id: options.sessionId,
+					parentSession: options.parentSession,
+				});
+		return createAgentSessionRuntime(this.createRuntime, {
+			cwd: sessionManager.getCwd(),
+			agentDir: this.services.agentDir,
+			sessionManager,
+		});
+	}
+
 	private async emitBeforeSwitch(
 		reason: "new" | "resume",
 		targetSessionFile?: string,
