@@ -241,6 +241,8 @@ export interface PromptOptions {
 	expandPromptTemplates?: boolean;
 	/** Image attachments */
 	images?: ImageContent[];
+	/** Hidden context messages delivered alongside the visible user prompt. */
+	contextMessages?: Array<Pick<CustomMessage, "customType" | "content" | "display" | "details">>;
 	/** When streaming, how to queue the message: "steer" (interrupt) or "followUp" (wait). Required if streaming. */
 	streamingBehavior?: "steer" | "followUp";
 	/** Source of input for extension input event handlers. Defaults to "interactive". */
@@ -1184,8 +1186,14 @@ export class AgentSession {
 					);
 				}
 				if (options.streamingBehavior === "followUp") {
+					for (const contextMessage of options.contextMessages ?? []) {
+						await this.sendCustomMessage(contextMessage, { deliverAs: "followUp" });
+					}
 					await this._queueFollowUp(expandedText, currentImages);
 				} else {
+					for (const contextMessage of options.contextMessages ?? []) {
+						await this.sendCustomMessage(contextMessage, { deliverAs: "steer" });
+					}
 					await this._queueSteer(expandedText, currentImages);
 				}
 				preflightResult?.(true);
@@ -1223,7 +1231,14 @@ export class AgentSession {
 			}
 
 			// Build messages array (custom message if any, then user message)
-			messages = [];
+			messages = (options?.contextMessages ?? []).map((message) => ({
+				role: "custom" as const,
+				customType: message.customType,
+				content: message.content ?? [],
+				display: message.display,
+				details: message.details,
+				timestamp: Date.now(),
+			}));
 
 			// Add user message
 			const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];

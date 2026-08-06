@@ -28,6 +28,7 @@ import {
 import { runWithHubAgentContext } from "../../core/tools/hub.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
+import { formatFileReferenceContext, resolveFileReferences } from "./file-references.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
 import type {
 	RpcCommand,
@@ -521,12 +522,25 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "prompt": {
+				const referencedPaths = await resolveFileReferences(targetRuntime.cwd, command.fileReferences ?? []);
+				const contextMessages =
+					referencedPaths.length === 0
+						? undefined
+						: [
+								{
+									customType: "file_references",
+									content: formatFileReferenceContext(referencedPaths),
+									display: false,
+									details: { paths: referencedPaths },
+								},
+							];
 				// Start prompt handling immediately, but emit the authoritative response only after
 				// prompt preflight succeeds. Queued and immediately handled prompts also count as success.
 				let preflightSucceeded = false;
 				void runWithHubAgentContext({ agentId: targetAgentId, depth: runtimeDepths.get(targetAgentId) ?? 0 }, () =>
 					session.prompt(command.message, {
 						images: command.images,
+						contextMessages,
 						streamingBehavior: command.streamingBehavior,
 						source: "rpc",
 						preflightResult: (didSucceed) => {
