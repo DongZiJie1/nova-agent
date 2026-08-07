@@ -25,8 +25,10 @@ import {
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
 } from "../../core/output-guard.ts";
+import { runWithHubAgentContext } from "../../core/tools/hub.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
+import { formatFileReferenceContext, resolveFileReferences } from "./file-references.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
 import type {
 	RpcCommand,
@@ -55,9 +57,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
 	let unsubscribeBackpressure: (() => void) | undefined;
+	const runtimes = new Map<string, AgentSessionRuntime>([["default", runtimeHost]]);
+	const runtimeDepths = new Map<string, number>([
+		["default", Number.parseInt(process.env.NOVA_ASK_DEPTH ?? "0", 10) || 0],
+	]);
+	const runtimeUnsubscribers = new Map<string, () => void>();
 
-	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
-		writeRawStdout(serializeJsonLine(obj));
+	const output = (obj: RpcResponse | RpcExtensionUIRequest | object, agentId?: string) => {
+		writeRawStdout(serializeJsonLine(agentId ? { ...obj, agentId } : obj));
 	};
 
 	const success = <T extends RpcCommand["type"]>(
@@ -88,6 +95,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 	/** Helper for dialog methods with signal/timeout support */
 	function createDialogPromise<T>(
+		agentId: string | undefined,
 		opts: ExtensionUIDialogOptions | undefined,
 		defaultValue: T,
 		request: Record<string, unknown>,
@@ -125,38 +133,53 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				},
 				reject,
 			});
-			output({ type: "extension_ui_request", id, ...request } as RpcExtensionUIRequest);
+			output({ type: "extension_ui_request", id, ...request } as RpcExtensionUIRequest, agentId);
 		});
 	}
 
 	/**
 	 * Create an extension UI context that uses the RPC protocol.
 	 */
-	const createExtensionUIContext = (): ExtensionUIContext => ({
+	const createExtensionUIContext = (agentId?: string): ExtensionUIContext => ({
 		select: (title, options, opts) =>
-			createDialogPromise(opts, undefined, { method: "select", title, options, timeout: opts?.timeout }, (r) =>
-				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
+			createDialogPromise(
+				agentId,
+				opts,
+				undefined,
+				{ method: "select", title, options, timeout: opts?.timeout },
+				(r) => ("cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined),
 			),
 
 		confirm: (title, message, opts) =>
-			createDialogPromise(opts, false, { method: "confirm", title, message, timeout: opts?.timeout }, (r) =>
-				"cancelled" in r && r.cancelled ? false : "confirmed" in r ? r.confirmed : false,
+			createDialogPromise(
+				agentId,
+				opts,
+				false,
+				{ method: "confirm", title, message, timeout: opts?.timeout },
+				(r) => ("cancelled" in r && r.cancelled ? false : "confirmed" in r ? r.confirmed : false),
 			),
 
 		input: (title, placeholder, opts) =>
-			createDialogPromise(opts, undefined, { method: "input", title, placeholder, timeout: opts?.timeout }, (r) =>
-				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
+			createDialogPromise(
+				agentId,
+				opts,
+				undefined,
+				{ method: "input", title, placeholder, timeout: opts?.timeout },
+				(r) => ("cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined),
 			),
 
 		notify(message: string, type?: "info" | "warning" | "error"): void {
 			// Fire and forget - no response needed
-			output({
-				type: "extension_ui_request",
-				id: crypto.randomUUID(),
-				method: "notify",
-				message,
-				notifyType: type,
-			} as RpcExtensionUIRequest);
+			output(
+				{
+					type: "extension_ui_request",
+					id: crypto.randomUUID(),
+					method: "notify",
+					message,
+					notifyType: type,
+				} as RpcExtensionUIRequest,
+				agentId,
+			);
 		},
 
 		onTerminalInput(): () => void {
@@ -166,13 +189,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 		setStatus(key: string, text: string | undefined): void {
 			// Fire and forget - no response needed
-			output({
-				type: "extension_ui_request",
-				id: crypto.randomUUID(),
-				method: "setStatus",
-				statusKey: key,
-				statusText: text,
-			} as RpcExtensionUIRequest);
+			output(
+				{
+					type: "extension_ui_request",
+					id: crypto.randomUUID(),
+					method: "setStatus",
+					statusKey: key,
+					statusText: text,
+				} as RpcExtensionUIRequest,
+				agentId,
+			);
 		},
 
 		setWorkingMessage(_message?: string): void {
@@ -194,14 +220,17 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		setWidget(key: string, content: unknown, options?: ExtensionWidgetOptions): void {
 			// Only support string arrays in RPC mode - factory functions are ignored
 			if (content === undefined || Array.isArray(content)) {
-				output({
-					type: "extension_ui_request",
-					id: crypto.randomUUID(),
-					method: "setWidget",
-					widgetKey: key,
-					widgetLines: content as string[] | undefined,
-					widgetPlacement: options?.placement,
-				} as RpcExtensionUIRequest);
+				output(
+					{
+						type: "extension_ui_request",
+						id: crypto.randomUUID(),
+						method: "setWidget",
+						widgetKey: key,
+						widgetLines: content as string[] | undefined,
+						widgetPlacement: options?.placement,
+					} as RpcExtensionUIRequest,
+					agentId,
+				);
 			}
 			// Component factories are not supported in RPC mode - would need TUI access
 		},
@@ -216,12 +245,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 		setTitle(title: string): void {
 			// Fire and forget - host can implement terminal title control
-			output({
-				type: "extension_ui_request",
-				id: crypto.randomUUID(),
-				method: "setTitle",
-				title,
-			} as RpcExtensionUIRequest);
+			output(
+				{
+					type: "extension_ui_request",
+					id: crypto.randomUUID(),
+					method: "setTitle",
+					title,
+				} as RpcExtensionUIRequest,
+				agentId,
+			);
 		},
 
 		async custom() {
@@ -236,12 +268,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 		setEditorText(text: string): void {
 			// Fire and forget - host can implement editor control
-			output({
-				type: "extension_ui_request",
-				id: crypto.randomUUID(),
-				method: "set_editor_text",
-				text,
-			} as RpcExtensionUIRequest);
+			output(
+				{
+					type: "extension_ui_request",
+					id: crypto.randomUUID(),
+					method: "set_editor_text",
+					text,
+				} as RpcExtensionUIRequest,
+				agentId,
+			);
 		},
 
 		getEditorText(): string {
@@ -265,7 +300,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					},
 					reject,
 				});
-				output({ type: "extension_ui_request", id, method: "editor", title, prefill } as RpcExtensionUIRequest);
+				output(
+					{ type: "extension_ui_request", id, method: "editor", title, prefill } as RpcExtensionUIRequest,
+					agentId,
+				);
 			});
 		},
 
@@ -381,9 +419,102 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	await rebindSession();
 	registerSignalHandlers();
 
+	const bindSiblingRuntime = async (agentId: string, sibling: AgentSessionRuntime): Promise<void> => {
+		let siblingSession = sibling.session;
+		let unsubscribeEvents: (() => void) | undefined;
+		let unsubscribePressure: (() => void) | undefined;
+		const bind = async () => {
+			siblingSession = sibling.session;
+			await siblingSession.bindExtensions({
+				uiContext: createExtensionUIContext(agentId),
+				mode: "rpc",
+				commandContextActions: {
+					waitForIdle: () => siblingSession.waitForIdle(),
+					newSession: async (options) => sibling.newSession(options),
+					fork: async (entryId, options) => {
+						const result = await sibling.fork(entryId, options);
+						return { cancelled: result.cancelled };
+					},
+					navigateTree: async (targetId, options) =>
+						siblingSession.navigateTree(targetId, {
+							summarize: options?.summarize,
+							customInstructions: options?.customInstructions,
+							replaceInstructions: options?.replaceInstructions,
+							label: options?.label,
+						}),
+					switchSession: async (sessionPath, options) => sibling.switchSession(sessionPath, options),
+					reload: async () => siblingSession.reload(),
+				},
+				shutdownHandler: () => {},
+				onError: (error) => output({ type: "extension_error", ...error }, agentId),
+			});
+			unsubscribeEvents?.();
+			unsubscribePressure?.();
+			unsubscribeEvents = siblingSession.subscribe((event) => output(event, agentId));
+			unsubscribePressure = siblingSession.agent.subscribe(async () => waitForRawStdoutBackpressure());
+		};
+		sibling.setRebindSession(bind);
+		await bind();
+		runtimeUnsubscribers.set(agentId, () => {
+			unsubscribeEvents?.();
+			unsubscribePressure?.();
+		});
+	};
+
 	// Handle a single command
 	const handleCommand = async (command: RpcCommand): Promise<RpcResponse | undefined> => {
 		const id = command.id;
+
+		if (command.type === "agent_create") {
+			if (runtimes.has(command.agentId)) {
+				return error(id, "agent_create", `Agent already exists: ${command.agentId}`);
+			}
+			const sibling = await runtimeHost.createSibling({
+				cwd: command.cwd,
+				sessionId: command.sessionId,
+				sessionPath: command.sessionPath,
+				parentSession: command.parentSession,
+			});
+			runtimes.set(command.agentId, sibling);
+			runtimeDepths.set(command.agentId, command.depth ?? 0);
+			await bindSiblingRuntime(command.agentId, sibling);
+			return success(id, "agent_create", {
+				agentId: command.agentId,
+				sessionId: sibling.session.sessionId,
+				sessionFile: sibling.session.sessionFile,
+			});
+		}
+
+		if (command.type === "agent_stop") {
+			if (command.agentId === "default") {
+				return error(id, "agent_stop", "The default agent cannot be removed while the host is running");
+			}
+			const target = runtimes.get(command.agentId);
+			if (!target) return error(id, "agent_stop", `Agent not found: ${command.agentId}`);
+			await target.session.abort();
+			await target.dispose();
+			runtimeUnsubscribers.get(command.agentId)?.();
+			runtimeUnsubscribers.delete(command.agentId);
+			runtimes.delete(command.agentId);
+			runtimeDepths.delete(command.agentId);
+			return success(id, "agent_stop");
+		}
+
+		if (command.type === "agent_list") {
+			return success(id, "agent_list", {
+				agents: Array.from(runtimes, ([agentId, runtime]) => ({
+					agentId,
+					sessionId: runtime.session.sessionId,
+					cwd: runtime.cwd,
+					isStreaming: runtime.session.isStreaming,
+				})),
+			});
+		}
+
+		const targetAgentId = command.agentId ?? "default";
+		const targetRuntime = runtimes.get(targetAgentId);
+		if (!targetRuntime) return error(id, command.type, `Agent not found: ${targetAgentId}`);
+		const session = targetRuntime.session;
 
 		switch (command.type) {
 			// =================================================================
@@ -391,26 +522,55 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "prompt": {
+				const referencedPaths = await resolveFileReferences(targetRuntime.cwd, command.fileReferences ?? []);
+
+				// Short-circuit: if the user attaches or references an image but the
+				// current model can't see images, reply with a fixed message instead of
+				// sending the prompt (which would silently omit the image and confuse
+				// weaker models into running nonsense commands).
+				const hasImageReference = referencedPaths.some((p) => /\.(png|jpe?g|gif|webp|bmp)$/i.test(p));
+				const hasImageContent = (command.images?.length ?? 0) > 0;
+				const currentModel = targetRuntime.session.model;
+				const modelSupportsImages = !currentModel || currentModel.input.includes("image");
+				if ((hasImageReference || hasImageContent) && !modelSupportsImages) {
+					const fixedText =
+						"当前模型不支持图片输入，请切换到支持多模态的模型（如 Anthropic Claude 系列或 mimo-v2.5）后再试。";
+					await targetRuntime.session.injectAssistantMessage(fixedText);
+					return success(id, "prompt", { handled: "non_vision_image" });
+				}
+
+				const contextMessages =
+					referencedPaths.length === 0
+						? undefined
+						: [
+								{
+									customType: "file_references",
+									content: formatFileReferenceContext(referencedPaths),
+									display: false,
+									details: { paths: referencedPaths },
+								},
+							];
 				// Start prompt handling immediately, but emit the authoritative response only after
 				// prompt preflight succeeds. Queued and immediately handled prompts also count as success.
 				let preflightSucceeded = false;
-				void session
-					.prompt(command.message, {
+				void runWithHubAgentContext({ agentId: targetAgentId, depth: runtimeDepths.get(targetAgentId) ?? 0 }, () =>
+					session.prompt(command.message, {
 						images: command.images,
+						contextMessages,
 						streamingBehavior: command.streamingBehavior,
 						source: "rpc",
 						preflightResult: (didSucceed) => {
 							if (didSucceed) {
 								preflightSucceeded = true;
-								output(success(id, "prompt"));
+								output(success(id, "prompt"), command.agentId);
 							}
 						},
-					})
-					.catch((e) => {
-						if (!preflightSucceeded) {
-							output(error(id, "prompt", e.message));
-						}
-					});
+					}),
+				).catch((e) => {
+					if (!preflightSucceeded) {
+						output(error(id, "prompt", e.message), command.agentId);
+					}
+				});
 				return undefined;
 			}
 
@@ -431,8 +591,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "new_session": {
 				const options = command.parentSession ? { parentSession: command.parentSession } : undefined;
-				const result = await runtimeHost.newSession(options);
-				if (!result.cancelled) {
+				const result = await targetRuntime.newSession(options);
+				if (!result.cancelled && targetAgentId === "default") {
 					await rebindSession();
 				}
 				return success(id, "new_session", result);
@@ -583,16 +743,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "switch_session": {
-				const result = await runtimeHost.switchSession(command.sessionPath);
-				if (!result.cancelled) {
+				const result = await targetRuntime.switchSession(command.sessionPath);
+				if (!result.cancelled && targetAgentId === "default") {
 					await rebindSession();
 				}
 				return success(id, "switch_session", result);
 			}
 
 			case "fork": {
-				const result = await runtimeHost.fork(command.entryId);
-				if (!result.cancelled) {
+				const result = await targetRuntime.fork(command.entryId);
+				if (!result.cancelled && targetAgentId === "default") {
 					await rebindSession();
 				}
 				return success(id, "fork", { text: result.selectedText, cancelled: result.cancelled });
@@ -603,8 +763,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (!leafId) {
 					return error(id, "clone", "Cannot clone session: no current entry selected");
 				}
-				const result = await runtimeHost.fork(leafId, { position: "at" });
-				if (!result.cancelled) {
+				const result = await targetRuntime.fork(leafId, { position: "at" });
+				if (!result.cancelled && targetAgentId === "default") {
 					await rebindSession();
 				}
 				return success(id, "clone", { cancelled: result.cancelled });
@@ -715,7 +875,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		}
 		unsubscribe?.();
 		unsubscribeBackpressure?.();
-		await runtimeHost.dispose();
+		for (const unsubscribeRuntime of runtimeUnsubscribers.values()) unsubscribeRuntime();
+		await Promise.all(Array.from(runtimes.values(), (runtime) => runtime.dispose()));
 		detachInput();
 		process.stdin.pause();
 		if (signal !== "SIGTERM") {
@@ -765,7 +926,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		try {
 			const response = await handleCommand(command);
 			if (response) {
-				output(response);
+				output(response, "agentId" in command ? command.agentId : undefined);
 				await waitForRawStdoutBackpressure();
 			}
 			await checkShutdownRequested();
@@ -776,6 +937,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					command.type,
 					commandError instanceof Error ? commandError.message : String(commandError),
 				),
+				"agentId" in command ? command.agentId : undefined,
 			);
 			await waitForRawStdoutBackpressure();
 		}

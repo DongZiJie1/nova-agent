@@ -241,6 +241,8 @@ export interface PromptOptions {
 	expandPromptTemplates?: boolean;
 	/** Image attachments */
 	images?: ImageContent[];
+	/** Hidden context messages delivered alongside the visible user prompt. */
+	contextMessages?: Array<Pick<CustomMessage, "customType" | "content" | "display" | "details">>;
 	/** When streaming, how to queue the message: "steer" (interrupt) or "followUp" (wait). Required if streaming. */
 	streamingBehavior?: "steer" | "followUp";
 	/** Source of input for extension input event handlers. Defaults to "interactive". */
@@ -1184,8 +1186,14 @@ export class AgentSession {
 					);
 				}
 				if (options.streamingBehavior === "followUp") {
+					for (const contextMessage of options.contextMessages ?? []) {
+						await this.sendCustomMessage(contextMessage, { deliverAs: "followUp" });
+					}
 					await this._queueFollowUp(expandedText, currentImages);
 				} else {
+					for (const contextMessage of options.contextMessages ?? []) {
+						await this.sendCustomMessage(contextMessage, { deliverAs: "steer" });
+					}
 					await this._queueSteer(expandedText, currentImages);
 				}
 				preflightResult?.(true);
@@ -1223,7 +1231,14 @@ export class AgentSession {
 			}
 
 			// Build messages array (custom message if any, then user message)
-			messages = [];
+			messages = (options?.contextMessages ?? []).map((message) => ({
+				role: "custom" as const,
+				customType: message.customType,
+				content: message.content ?? [],
+				display: message.display,
+				details: message.details,
+				timestamp: Date.now(),
+			}));
 
 			// Add user message
 			const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
@@ -1529,6 +1544,40 @@ export class AgentSession {
 			this._emit({ type: "message_start", message: appMessage });
 			this._emit({ type: "message_end", message: appMessage });
 		}
+	}
+
+	/**
+	 * Inject a fixed assistant message into the session without running a model turn.
+	 *
+	 * Unlike emitting raw events from a mode, this appends the message to the model
+	 * context and persists it, so subsequent turns in the same session see it.
+	 * Used for short-circuit replies (e.g. "the current model does not support images").
+	 */
+	async injectAssistantMessage(text: string): Promise<void> {
+		const model = this.model;
+		const message: AssistantMessage = {
+			role: "assistant",
+			content: [{ type: "text", text }],
+			api: model?.api ?? "anthropic-messages",
+			provider: model?.provider ?? "anthropic",
+			model: model?.id ?? "unknown",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: Date.now(),
+		};
+		this.agent.state.messages.push(message);
+		this.sessionManager.appendMessage(message);
+		this._lastAssistantMessage = message;
+		this._emit({ type: "message_start", message });
+		this._emit({ type: "message_end", message });
+		await this._emitAgentSettled();
 	}
 
 	/**

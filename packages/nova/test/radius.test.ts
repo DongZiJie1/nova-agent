@@ -54,7 +54,6 @@ describe("Radius provider", () => {
 			}),
 			modelsStore: new InMemoryModelsStore(),
 			modelsPath: null,
-			allowModelNetwork: false,
 		});
 
 		const model = runtime.getModel(RADIUS_PROVIDER_ID, "auto");
@@ -83,7 +82,6 @@ describe("Radius provider", () => {
 			credentials,
 			modelsStore,
 			modelsPath: null,
-			allowModelNetwork: true,
 		});
 
 		expect(runtime.getModel(RADIUS_PROVIDER_ID, "auto")).toBeDefined();
@@ -111,7 +109,6 @@ describe("Radius provider", () => {
 			credentials: AuthStorage.inMemory(),
 			modelsStore: new InMemoryModelsStore(),
 			modelsPath: null,
-			allowModelNetwork: true,
 		});
 
 		expect(runtime.getModels(RADIUS_PROVIDER_ID)).toEqual([]);
@@ -140,7 +137,6 @@ describe("Radius provider", () => {
 			}),
 			modelsStore: new InMemoryModelsStore(),
 			modelsPath,
-			allowModelNetwork: true,
 		});
 
 		expect(runtime.getModel("radius-dev", "auto")).toMatchObject({
@@ -157,7 +153,6 @@ describe("Radius provider", () => {
 			credentials: AuthStorage.inMemory(),
 			modelsStore: new InMemoryModelsStore(),
 			modelsPath,
-			allowModelNetwork: false,
 		});
 
 		expect(runtime.getError()).toContain('"baseUrl" is required when "oauth" is set');

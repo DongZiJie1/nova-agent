@@ -4,7 +4,7 @@
 	"private": true,
 	"description": "Lockfile root used by the Pi installer and updater.",
 	"dependencies": {
-		"@dongzijie1/nova": "0.86.3"
+		"@dongzijie1/nova": "1.1.0"
 	},
 	"overrides": {
 		"protobufjs": "7.6.5",

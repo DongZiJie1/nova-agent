@@ -80,7 +80,8 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 				.sort(),
 		).toEqual(["ask_user_question", "bash", "dynamic_tool", "edit", "find", "grep", "ls", "read", "write"]);
 		expect(session.getActiveToolNames()).toEqual(["dynamic_tool"]);
-		expect(session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
+		// Tool snippets are intentionally NOT in the system prompt.
+		expect(session.systemPrompt).not.toContain("- dynamic_tool: Run dynamic test behavior");
 		expect(session.systemPrompt).not.toContain("- read:");
 		expect(session.systemPrompt).not.toContain("- bash:");
 		session.dispose();
@@ -91,7 +92,8 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 
 		expect(session.getAllTools()).toEqual([]);
 		expect(session.getActiveToolNames()).toEqual([]);
-		expect(session.systemPrompt).toContain("Available tools:\n(none)");
+		// The system prompt no longer lists tools at all.
+		expect(session.systemPrompt).not.toContain("Available tools:");
 		session.dispose();
 	});
 
@@ -112,8 +114,8 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 		});
 
 		expect(session.getActiveToolNames()).toEqual([]);
-		expect(session.systemPrompt).toContain("Available tools:\n(none)");
-		expect(session.systemPrompt).not.toContain("- read:");
+		// The system prompt no longer lists tools at all.
+		expect(session.systemPrompt).not.toContain("Available tools:");
 		session.dispose();
 	});
 });

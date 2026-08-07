@@ -75,10 +75,10 @@ describe("regression #2835: tool allowlists filter extension tools", () => {
 				.sort(),
 		).toEqual(["dynamic_tool", "read"]);
 		expect(session.getActiveToolNames().sort()).toEqual(["dynamic_tool", "read"]);
-		expect(session.systemPrompt).toContain("- read: Read file contents");
-		expect(session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
-		expect(session.systemPrompt).not.toContain("- bash:");
-		expect(session.systemPrompt).not.toContain("- edit:");
+		// Tool snippets are intentionally NOT in the system prompt (they are passed
+		// via the API `tools` parameter instead).
+		expect(session.systemPrompt).not.toContain("- read: Read file contents");
+		expect(session.systemPrompt).not.toContain("- dynamic_tool: Run dynamic test behavior");
 		session.dispose();
 	});
 
@@ -87,8 +87,8 @@ describe("regression #2835: tool allowlists filter extension tools", () => {
 
 		expect(session.getAllTools()).toEqual([]);
 		expect(session.getActiveToolNames()).toEqual([]);
-		expect(session.systemPrompt).toContain("Available tools:\n(none)");
-		expect(session.systemPrompt).not.toContain("dynamic_tool");
+		// The system prompt no longer lists tools at all.
+		expect(session.systemPrompt).not.toContain("Available tools:");
 		session.dispose();
 	});
 });

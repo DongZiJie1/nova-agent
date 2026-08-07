@@ -12,14 +12,22 @@ import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
+import type { RpcFileReference } from "./file-references.ts";
 
 // ============================================================================
 // RPC Commands (stdin)
 // ============================================================================
 
-export type RpcCommand =
+type RpcSessionCommand =
 	// Prompting
-	| { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
+	| {
+			id?: string;
+			type: "prompt";
+			message: string;
+			images?: ImageContent[];
+			fileReferences?: RpcFileReference[];
+			streamingBehavior?: "steer" | "followUp";
+	  }
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "abort" }
@@ -71,6 +79,21 @@ export type RpcCommand =
 
 	// Commands (available for invocation via prompt)
 	| { id?: string; type: "get_commands" };
+
+export type RpcCommand =
+	| (RpcSessionCommand & { agentId?: string })
+	| {
+			id?: string;
+			type: "agent_create";
+			agentId: string;
+			cwd: string;
+			sessionId?: string;
+			sessionPath?: string;
+			parentSession?: string;
+			depth?: number;
+	  }
+	| { id?: string; type: "agent_stop"; agentId: string }
+	| { id?: string; type: "agent_list" };
 
 // ============================================================================
 // RPC Slash Command (for get_commands response)
