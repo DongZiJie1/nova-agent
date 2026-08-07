@@ -28,7 +28,6 @@ describe("extension provider model lifecycle", () => {
 			credentials: AuthStorage.inMemory(),
 			modelsStore: new InMemoryModelsStore(),
 			modelsPath: null,
-			allowModelNetwork: false,
 		});
 		const nativeModel = {
 			...model("native"),
@@ -104,7 +103,6 @@ describe("extension provider model lifecycle", () => {
 				credentials: AuthStorage.inMemory(),
 				modelsStore: new InMemoryModelsStore(),
 				modelsPath,
-				allowModelNetwork: false,
 			});
 			const nativeModel = {
 				...model("native"),
@@ -141,7 +139,6 @@ describe("extension provider model lifecycle", () => {
 			credentials: AuthStorage.inMemory(),
 			modelsStore,
 			modelsPath: null,
-			allowModelNetwork: false,
 		});
 		runtime.registerProvider("extension-dynamic", {
 			baseUrl: "http://localhost:8080/v1",
@@ -173,7 +170,6 @@ describe("extension provider model lifecycle", () => {
 			}),
 			modelsStore: new InMemoryModelsStore(),
 			modelsPath: null,
-			allowModelNetwork: false,
 		});
 		runtime.registerProvider("extension-oauth", {
 			baseUrl: "https://example.test/v1",

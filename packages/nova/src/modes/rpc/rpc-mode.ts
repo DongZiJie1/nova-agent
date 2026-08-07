@@ -523,6 +523,22 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "prompt": {
 				const referencedPaths = await resolveFileReferences(targetRuntime.cwd, command.fileReferences ?? []);
+
+				// Short-circuit: if the user attaches or references an image but the
+				// current model can't see images, reply with a fixed message instead of
+				// sending the prompt (which would silently omit the image and confuse
+				// weaker models into running nonsense commands).
+				const hasImageReference = referencedPaths.some((p) => /\.(png|jpe?g|gif|webp|bmp)$/i.test(p));
+				const hasImageContent = (command.images?.length ?? 0) > 0;
+				const currentModel = targetRuntime.session.model;
+				const modelSupportsImages = !currentModel || currentModel.input.includes("image");
+				if ((hasImageReference || hasImageContent) && !modelSupportsImages) {
+					const fixedText =
+						"当前模型不支持图片输入，请切换到支持多模态的模型（如 Anthropic Claude 系列或 mimo-v2.5）后再试。";
+					await targetRuntime.session.injectAssistantMessage(fixedText);
+					return success(id, "prompt", { handled: "non_vision_image" });
+				}
+
 				const contextMessages =
 					referencedPaths.length === 0
 						? undefined

@@ -44,7 +44,6 @@ import {
 	resolveConfiguredModelHeaders,
 	validateExtensionProvider,
 } from "./provider-composer.ts";
-import { withRemoteCatalog } from "./remote-catalog-provider.ts";
 import { RuntimeCredentials } from "./runtime-credentials.ts";
 
 interface ModelRuntimeSnapshot {
@@ -62,11 +61,6 @@ export interface CreateModelRuntimeOptions {
 	modelsPath?: string | null;
 	modelsStore?: ModelsStore;
 	modelsStorePath?: string;
-	/** Allow create() to refresh model catalogs over the network. Defaults to false. */
-	allowModelNetwork?: boolean;
-	/** Timeout for the create-time network model refresh. */
-	modelRefreshTimeoutMs?: number;
-	catalogBaseUrl?: string;
 }
 
 export interface ModelRuntimeAuthOverrides {
@@ -100,7 +94,6 @@ export class ModelRuntime implements Models {
 	private readonly extensionProviders = new Map<string, ProviderConfigInput>();
 	private readonly compositionErrors = new Map<string, string>();
 	private readonly modelsPath: string | undefined;
-	private readonly modelNetworkEnabled: boolean;
 	private config: ModelConfig;
 	private snapshot: ModelRuntimeSnapshot = {
 		all: [],
@@ -118,12 +111,10 @@ export class ModelRuntime implements Models {
 		modelsPath: string | undefined,
 		modelsStore: ModelsStore,
 		providers: readonly Provider[],
-		modelNetworkEnabled: boolean,
 	) {
 		this.credentials = credentials;
 		this.config = config;
 		this.modelsPath = modelsPath;
-		this.modelNetworkEnabled = modelNetworkEnabled;
 		this.defaultBuiltins = new Map(providers.map((provider) => [provider.id, provider]));
 		for (const [providerId, provider] of this.defaultBuiltins) this.builtins.set(providerId, provider);
 		this.models = createModels({ credentials, modelsStore });
@@ -140,34 +131,11 @@ export class ModelRuntime implements Models {
 			(modelsPath
 				? new FileModelsStore(options.modelsStorePath ?? join(dirname(modelsPath), "models-store.json"))
 				: new InMemoryCodingAgentModelsStore());
-		const builtinModelDataGeneratedAt = builtinProviderCatalog.getBuiltinModelDataGeneratedAt();
-		const providers = builtinProviderCatalog
-			.builtinProviders()
-			.map((provider) =>
-				provider.id === "radius"
-					? provider
-					: withRemoteCatalog(provider, options.catalogBaseUrl, builtinModelDataGeneratedAt),
-			);
-		const runtime = new ModelRuntime(
-			credentials,
-			config,
-			modelsPath,
-			modelsStore,
-			providers,
-			process.env.PI_OFFLINE === undefined,
-		);
+		const providers = builtinProviderCatalog.builtinProviders();
+		const runtime = new ModelRuntime(credentials, config, modelsPath, modelsStore, providers);
 		runtime.configureRadiusProviders();
 		runtime.rebuildProviders();
-		const refreshFromNetwork = runtime.modelNetworkEnabled && options.allowModelNetwork === true;
-		const controller = refreshFromNetwork ? new AbortController() : undefined;
-		const timeout = controller
-			? setTimeout(() => controller.abort(), options.modelRefreshTimeoutMs ?? 15_000)
-			: undefined;
-		try {
-			await runtime.refresh({ allowNetwork: refreshFromNetwork, signal: controller?.signal });
-		} finally {
-			if (timeout) clearTimeout(timeout);
-		}
+		await runtime.refresh({ allowNetwork: false });
 		return runtime;
 	}
 
@@ -416,7 +384,7 @@ export class ModelRuntime implements Models {
 
 	async removeRuntimeApiKey(providerId: string): Promise<void> {
 		this.credentials.removeRuntimeApiKey(providerId);
-		await this.refresh({ allowNetwork: this.modelNetworkEnabled });
+		await this.refresh({ allowNetwork: false });
 	}
 
 	listCredentials(): Promise<readonly CredentialInfo[]> {
@@ -502,7 +470,7 @@ export class ModelRuntime implements Models {
 
 	async login(providerId: string, type: AuthType, interaction: AuthInteraction): Promise<Credential> {
 		const credential = await this.models.login(providerId, type, interaction);
-		await this.refresh({ allowNetwork: this.modelNetworkEnabled });
+		await this.refresh({ allowNetwork: false });
 		return credential;
 	}
 
@@ -510,7 +478,7 @@ export class ModelRuntime implements Models {
 		await this.models.logout(providerId);
 		// Reset credential-dependent compatibility projections before the unconfigured provider is skipped by refresh.
 		this.recomposeProvider(providerId);
-		await this.refresh({ allowNetwork: this.modelNetworkEnabled });
+		await this.refresh({ allowNetwork: false });
 	}
 
 	async refresh(options: ModelsRefreshOptions = {}): Promise<ModelsRefreshResult> {
@@ -519,7 +487,7 @@ export class ModelRuntime implements Models {
 		this.rebuildProviders();
 		const refreshOptions = {
 			...options,
-			allowNetwork: options.allowNetwork ?? this.modelNetworkEnabled,
+			allowNetwork: options.allowNetwork ?? false,
 		};
 		// Published pi-ai builds before ModelsStore returned void and accepted a provider ID.
 		// The fallback keeps source-mode CLI tests working without rebuilding workspace dependencies.

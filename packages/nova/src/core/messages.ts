@@ -146,50 +146,72 @@ export function createCustomMessage(
  * - Custom extensions and tools
  */
 export function convertToLlm(messages: AgentMessage[]): Message[] {
-	return messages
-		.map((m): Message | undefined => {
-			switch (m.role) {
-				case "bashExecution":
-					// Skip messages excluded from context (!! prefix)
-					if (m.excludeFromContext) {
-						return undefined;
-					}
-					return {
-						role: "user",
-						content: [{ type: "text", text: bashExecutionToText(m) }],
-						timestamp: m.timestamp,
-					};
-				case "custom": {
-					const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
-					return {
-						role: "user",
-						content,
-						timestamp: m.timestamp,
-					};
+	const result: Message[] = [];
+	for (let i = 0; i < messages.length; i++) {
+		const m = messages[i];
+		switch (m.role) {
+			case "bashExecution":
+				// Skip messages excluded from context (!! prefix)
+				if (m.excludeFromContext) {
+					break;
 				}
-				case "branchSummary":
-					return {
+				result.push({
+					role: "user",
+					content: [{ type: "text", text: bashExecutionToText(m) }],
+					timestamp: m.timestamp,
+				});
+				break;
+			case "custom": {
+				const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
+				// Merge a text custom message (e.g. file_references) with the immediately
+				// following user message into a single user turn. Otherwise the model sees
+				// consecutive user messages and some models echo the context block back
+				// instead of acting on it.
+				const next = messages[i + 1];
+				if (typeof m.content === "string" && next?.role === "user") {
+					const nextContent =
+						typeof next.content === "string" ? [{ type: "text" as const, text: next.content }] : next.content;
+					result.push({
 						role: "user",
-						content: [{ type: "text" as const, text: BRANCH_SUMMARY_PREFIX + m.summary + BRANCH_SUMMARY_SUFFIX }],
+						content: [...content, { type: "text" as const, text: "\n\n" }, ...nextContent],
 						timestamp: m.timestamp,
-					};
-				case "compactionSummary":
-					return {
-						role: "user",
-						content: [
-							{ type: "text" as const, text: COMPACTION_SUMMARY_PREFIX + m.summary + COMPACTION_SUMMARY_SUFFIX },
-						],
-						timestamp: m.timestamp,
-					};
-				case "user":
-				case "assistant":
-				case "toolResult":
-					return m;
-				default:
-					// biome-ignore lint/correctness/noSwitchDeclarations: fine
-					const _exhaustiveCheck: never = m;
-					return undefined;
+					});
+					i++; // skip the merged user message
+					break;
+				}
+				result.push({
+					role: "user",
+					content,
+					timestamp: m.timestamp,
+				});
+				break;
 			}
-		})
-		.filter((m) => m !== undefined);
+			case "branchSummary":
+				result.push({
+					role: "user",
+					content: [{ type: "text" as const, text: BRANCH_SUMMARY_PREFIX + m.summary + BRANCH_SUMMARY_SUFFIX }],
+					timestamp: m.timestamp,
+				});
+				break;
+			case "compactionSummary":
+				result.push({
+					role: "user",
+					content: [
+						{ type: "text" as const, text: COMPACTION_SUMMARY_PREFIX + m.summary + COMPACTION_SUMMARY_SUFFIX },
+					],
+					timestamp: m.timestamp,
+				});
+				break;
+			case "user":
+			case "assistant":
+			case "toolResult":
+				result.push(m);
+				break;
+			default:
+				// biome-ignore lint/correctness/noSwitchDeclarations: fine
+				const _exhaustiveCheck: never = m;
+				break;
+		}
+	}
+	return result;
 }

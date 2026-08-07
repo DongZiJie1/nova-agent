@@ -73,9 +73,9 @@ describe("AgentSession dynamic tool registration", () => {
 		});
 
 		const bashTool = session.agent.state.tools.find((tool) => tool.name === "bash")!;
-		expect(session.systemPrompt).toContain(
-			"Inspect PI_* environment variables for current model and session details.",
-		);
+		// Tool snippets/guidelines are intentionally NOT in the system prompt
+		// (they are passed via the API `tools` parameter instead).
+		expect(session.systemPrompt).not.toContain("PI_* variables");
 		await bashTool.execute("bash-env", { command: "printf ok" });
 		expect(sessionEnv).toMatchObject({
 			PI_SESSION_ID: session.sessionId,
@@ -159,8 +159,10 @@ describe("AgentSession dynamic tool registration", () => {
 			origin: "top-level",
 		});
 		expect(session.getActiveToolNames()).toContain("dynamic_tool");
-		expect(session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
-		expect(session.systemPrompt).toContain("- Use dynamic_tool when the user asks for dynamic behavior tests.");
+		// Tool snippets/guidelines are intentionally NOT in the system prompt
+		// (they are passed via the API `tools` parameter instead).
+		expect(session.systemPrompt).not.toContain("- dynamic_tool: Run dynamic test behavior");
+		expect(session.systemPrompt).not.toContain("- Use dynamic_tool when the user asks for dynamic behavior tests.");
 
 		session.dispose();
 	});

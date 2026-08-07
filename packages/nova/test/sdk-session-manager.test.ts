@@ -104,9 +104,9 @@ describe("createAgentSession session manager defaults", () => {
 			thinkingLevel: "high",
 		});
 		expect(session.sessionFile).toBeTruthy();
-		expect(session.systemPrompt).toContain(
-			"Inspect PI_* environment variables for current model and session details.",
-		);
+		// Tool snippets/guidelines are intentionally NOT in the system prompt
+		// (they are passed via the API `tools` parameter instead).
+		expect(session.systemPrompt).not.toContain("PI_* variables");
 
 		const bashTool = session.agent.state.tools.find((tool) => tool.name === "bash");
 		expect(bashTool).toBeTruthy();

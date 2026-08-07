@@ -57,9 +57,10 @@ describe("regression #5109: exclude tools", () => {
 				"edit",
 				"write",
 			]);
+			// Tool snippets are intentionally NOT in the system prompt.
 			expect(harness.session.systemPrompt).not.toContain("- read:");
 			expect(harness.session.systemPrompt).not.toContain("ask_question");
-			expect(harness.session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
+			expect(harness.session.systemPrompt).not.toContain("- dynamic_tool: Run dynamic test behavior");
 		} finally {
 			harness.cleanup();
 		}
@@ -77,7 +78,8 @@ describe("regression #5109: exclude tools", () => {
 
 			expect(toolNames(harness.session.getAllTools())).toEqual(["bash"]);
 			expect(harness.session.getActiveToolNames()).toEqual(["bash"]);
-			expect(harness.session.systemPrompt).toContain("- bash:");
+			// Tool snippets are intentionally NOT in the system prompt.
+			expect(harness.session.systemPrompt).not.toContain("- bash:");
 			expect(harness.session.systemPrompt).not.toContain("- read:");
 			expect(harness.session.systemPrompt).not.toContain("ask_question");
 		} finally {

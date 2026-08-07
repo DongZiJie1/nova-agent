@@ -3037,6 +3037,30 @@ export class InteractiveMode {
 				break;
 			}
 
+			case "turn_end": {
+				const msg = event.message;
+				if (msg.role === "assistant" && msg.usage) {
+					const usage = msg.usage;
+					const total = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+					const cacheHit =
+						usage.cacheRead > 0
+							? ` (${((usage.cacheRead / (usage.input + usage.cacheRead + usage.cacheWrite)) * 100).toFixed(0)}% cached)`
+							: "";
+					this.chatContainer.addChild(
+						new Text(
+							theme.fg(
+								"dim",
+								`  Tokens: ${formatTokens(total)} (in: ${formatTokens(usage.input + usage.cacheRead + usage.cacheWrite)}, out: ${formatTokens(usage.output)})${cacheHit}`,
+							),
+							1,
+							0,
+						),
+					);
+					this.ui.requestRender();
+				}
+				break;
+			}
+
 			case "agent_end":
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);

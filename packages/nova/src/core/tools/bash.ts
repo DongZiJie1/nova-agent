@@ -168,6 +168,8 @@ function resolveSpawnContext(
 	delete env.PI_PROVIDER;
 	delete env.PI_MODEL;
 	delete env.PI_REASONING_LEVEL;
+	// Never expose hub/internal tokens to the model's bash commands.
+	delete env.NOVA_HUB_TOKEN;
 	if (exposeSessionEnvironment && ctx) {
 		const model = ctx.model;
 		env.PI_SESSION_ID = ctx.sessionManager.getSessionId();
@@ -327,7 +329,9 @@ export function createBashToolDefinition(
 		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
 		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
 		promptGuidelines: exposeSessionEnvironment
-			? ["Inspect PI_* environment variables for current model and session details."]
+			? [
+					"To learn the current model or session details, read specific PI_* variables (e.g. 'echo $PI_MODEL'). Never run env or printenv — dumping the full environment exposes secrets and is not an answer to the user.",
+				]
 			: undefined,
 		parameters: bashSchema,
 		async execute(
