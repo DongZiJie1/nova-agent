@@ -3307,11 +3307,50 @@ export class AgentSession {
 			}
 		}
 
+		// Use the API-reported usage from the last assistant as the base,
+		// then add output tokens from messages after it. Avoids 4-chars/token
+		// estimation on the input side.
 		const estimate = estimateContextTokens(this.messages);
-		const percent = (estimate.tokens / contextWindow) * 100;
+		const usageInfo = (() => {
+			const msgs = this.messages;
+			for (let i = msgs.length - 1; i >= 0; i--) {
+				const msg = msgs[i];
+				if (msg.role === "assistant") {
+					const assistant = msg as import("@dongzijie1/pi-ai").AssistantMessage;
+					if (
+						assistant.stopReason !== "aborted" &&
+						assistant.stopReason !== "error" &&
+						calculateContextTokens(assistant.usage) > 0
+					) {
+						return { usage: assistant.usage, index: i };
+					}
+				}
+			}
+			return undefined;
+		})();
+
+		let tokens: number;
+		if (usageInfo) {
+			// Base = full API-reported usage (input + output + cache)
+			let trailingOutput = 0;
+			for (let i = usageInfo.index + 1; i < this.messages.length; i++) {
+				const msg = this.messages[i];
+				if (msg.role === "assistant") {
+					for (const block of (msg as import("@dongzijie1/pi-ai").AssistantMessage).content) {
+						if (block.type === "text") trailingOutput += Math.ceil(block.text.length / 4);
+						else if (block.type === "thinking") trailingOutput += Math.ceil(block.thinking.length / 4);
+					}
+				}
+			}
+			tokens = calculateContextTokens(usageInfo.usage) + trailingOutput;
+		} else {
+			tokens = estimate.tokens;
+		}
+
+		const percent = (tokens / contextWindow) * 100;
 
 		return {
-			tokens: estimate.tokens,
+			tokens,
 			contextWindow,
 			percent,
 		};
