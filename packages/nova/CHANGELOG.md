@@ -5,6 +5,20 @@
 ### Added
 
 - Added a machine-readable `--list-sessions` catalog and `--parent-session` creation metadata for desktop clients that discover and restore project sessions.
+- Added multiplexed RPC agent sessions so desktop clients can create, switch, resume, steer, and interrupt independent sessions through one long-running Nova host process.
+- Added secure RPC file references for attaching explicitly selected project files without embedding their contents in user prompts.
+- Added live RPC session statistics and API-reported context usage for accurate desktop context-window indicators.
+- Added runtime slash-command support and structured session events for desktop clients.
+
+### Changed
+
+- Simplified the coding-agent system prompt and aligned image handling, model switching, and dynamic tool availability with long-running RPC sessions.
+- Updated Hub collaboration tools to carry parent-agent relationships and work correctly with multiplexed agent sessions.
+
+### Fixed
+
+- Fixed context usage reporting to use provider-reported token usage instead of local estimates.
+- Fixed internal package locks and generated install metadata for the renamed Nova packages.
 
 ## [0.86.3] - 2026-08-02
 
