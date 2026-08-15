@@ -144,6 +144,7 @@ async function createRuntimeHost(options: { withAuth: boolean; responseDelayMs: 
 	});
 
 	const runtimeHost = {
+		cwd: tempDir,
 		session,
 		newSession: vi.fn(async () => ({ cancelled: true })),
 		switchSession: vi.fn(async () => ({ cancelled: true })),

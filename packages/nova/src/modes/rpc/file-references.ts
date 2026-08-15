@@ -11,6 +11,9 @@ export async function resolveFileReferences(cwd: string, references: RpcFileRefe
 	if (references.length > MAX_FILE_REFERENCES) {
 		throw new Error(`Too many file references (maximum ${MAX_FILE_REFERENCES})`);
 	}
+	if (references.length === 0) {
+		return [];
+	}
 
 	const projectRoot = await realpath(cwd);
 	const resolved = new Set<string>();
