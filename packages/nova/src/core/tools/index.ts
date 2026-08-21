@@ -60,6 +60,11 @@ export {
 	type LsToolOptions,
 } from "./ls.ts";
 export {
+	createNovaDataToolDefinition,
+	type NovaDataToolDetails,
+	type NovaDataToolInput,
+} from "./nova-data.ts";
+export {
 	createReadTool,
 	createReadToolDefinition,
 	type ReadOperations,
@@ -98,6 +103,7 @@ import {
 	createHubSpawnAgentToolDefinition,
 } from "./hub.ts";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
+import { createNovaDataToolDefinition } from "./nova-data.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.ts";
@@ -112,6 +118,7 @@ export type ToolName =
 	| "grep"
 	| "find"
 	| "ls"
+	| "nova_data"
 	| "ask_user_question"
 	| "hub_list_agents"
 	| "hub_spawn_agent"
@@ -124,6 +131,7 @@ export const allToolNames: Set<ToolName> = new Set([
 	"grep",
 	"find",
 	"ls",
+	"nova_data",
 	"ask_user_question",
 	"hub_list_agents",
 	"hub_spawn_agent",
@@ -156,6 +164,8 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createFindToolDefinition(cwd, options?.find);
 		case "ls":
 			return createLsToolDefinition(cwd, options?.ls);
+		case "nova_data":
+			return createNovaDataToolDefinition();
 		case "ask_user_question":
 			return createAskUserQuestionToolDefinition();
 		case "hub_list_agents":
@@ -185,6 +195,8 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createFindTool(cwd, options?.find);
 		case "ls":
 			return createLsTool(cwd, options?.ls);
+		case "nova_data":
+			return wrapToolDefinition(createNovaDataToolDefinition());
 		case "ask_user_question":
 			return wrapToolDefinition(createAskUserQuestionToolDefinition());
 		case "hub_list_agents":
@@ -225,6 +237,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		grep: createGrepToolDefinition(cwd, options?.grep),
 		find: createFindToolDefinition(cwd, options?.find),
 		ls: createLsToolDefinition(cwd, options?.ls),
+		nova_data: createNovaDataToolDefinition(),
 		ask_user_question: createAskUserQuestionToolDefinition(),
 		hub_list_agents: createHubListAgentsToolDefinition(),
 		hub_spawn_agent: createHubSpawnAgentToolDefinition(),
@@ -259,6 +272,7 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		grep: createGrepTool(cwd, options?.grep),
 		find: createFindTool(cwd, options?.find),
 		ls: createLsTool(cwd, options?.ls),
+		nova_data: wrapToolDefinition(createNovaDataToolDefinition()),
 		ask_user_question: wrapToolDefinition(createAskUserQuestionToolDefinition()),
 		hub_list_agents: wrapToolDefinition(createHubListAgentsToolDefinition()),
 		hub_spawn_agent: wrapToolDefinition(createHubSpawnAgentToolDefinition()),
@@ -272,7 +286,7 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
  * injected by the host); a standalone CLI never sees them.
  */
 export function createDefaultActiveToolNames(): ToolName[] {
-	const names: ToolName[] = ["read", "bash", "edit", "write", "ask_user_question"];
+	const names: ToolName[] = ["read", "bash", "edit", "write", "ask_user_question", "nova_data"];
 	if (process.env.NOVA_HUB_URL) {
 		names.push("hub_list_agents", "hub_spawn_agent", "hub_ask_agent");
 	}
