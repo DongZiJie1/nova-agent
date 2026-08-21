@@ -26,6 +26,13 @@ const novaDataSchema = Type.Object({
 	session_id: Type.Optional(
 		Type.String({ description: "Required for read_session and delete_session; use an exact id from list_sessions" }),
 	),
+	session_ids: Type.Optional(
+		Type.Array(Type.String(), {
+			minItems: 1,
+			description:
+				"Delete multiple sessions in one confirmed operation; preferred over repeated delete_session calls",
+		}),
+	),
 	project_path: Type.Optional(Type.String({ description: "Filter a project or disambiguate duplicate session ids" })),
 	limit: Type.Optional(Type.Number({ minimum: 1, maximum: MAX_LIMIT, description: "Maximum sessions to list" })),
 	message_limit: Type.Optional(
@@ -106,11 +113,12 @@ export function createNovaDataToolDefinition(): ToolDefinition<typeof novaDataSc
 		name: "nova_data",
 		label: "nova_data",
 		description:
-			"Manage Nova's own conversation data. List projects and sessions, read another session's user/assistant messages, or delete a session after direct user confirmation. This never deletes project source directories.",
+			"Manage Nova's own conversation data. List projects and sessions, read another session's user/assistant messages, or delete one or multiple sessions after direct user confirmation. This never deletes project source directories.",
 		promptSnippet: "Inspect and manage Nova conversation history across projects.",
 		promptGuidelines: [
 			"Use nova_data instead of filesystem commands when inspecting or deleting Nova sessions.",
 			"Deleting a session requires direct user confirmation inside the tool and never deletes project source files.",
+			"When deleting multiple sessions, make one delete_session call with session_ids instead of one tool call per session.",
 		],
 		parameters: novaDataSchema,
 		executionMode: "sequential",
@@ -157,9 +165,9 @@ export function createNovaDataToolDefinition(): ToolDefinition<typeof novaDataSc
 					});
 				}
 
-				if (!input.session_id) throw new Error(`${input.action} requires session_id`);
-				const session = findSession(sessions, input.session_id, input.project_path);
 				if (input.action === "read_session") {
+					if (!input.session_id) throw new Error("read_session requires session_id");
+					const session = findSession(sessions, input.session_id, input.project_path);
 					const manager = SessionManager.open(session.path);
 					const messages = manager
 						.getEntries()
@@ -188,17 +196,28 @@ export function createNovaDataToolDefinition(): ToolDefinition<typeof novaDataSc
 					});
 				}
 
+				const requestedIds = [...new Set(input.session_ids ?? (input.session_id ? [input.session_id] : []))];
+				if (requestedIds.length === 0) throw new Error("delete_session requires session_id or session_ids");
+				const sessionsToDelete = requestedIds.map((sessionId) =>
+					findSession(sessions, sessionId, input.project_path),
+				);
 				const activeSessionPath = ctx.sessionManager.getSessionFile();
-				if (activeSessionPath && resolve(activeSessionPath) === resolve(session.path)) {
+				if (
+					activeSessionPath &&
+					sessionsToDelete.some((session) => resolve(activeSessionPath) === resolve(session.path))
+				) {
 					throw new Error("Cannot delete the currently active session");
 				}
 				if (!ctx.hasUI) throw new Error("Deleting a session requires interactive user confirmation");
 				const confirmed = await ctx.ui.confirm(
-					"Delete Nova session?",
+					sessionsToDelete.length === 1
+						? "Delete Nova session?"
+						: `Delete ${sessionsToDelete.length} Nova sessions?`,
 					[
-						`Project: ${session.cwd || "(unknown)"}`,
-						`Session: ${session.name ?? session.id}`,
-						`Messages: ${session.messageCount}`,
+						...sessionsToDelete.map(
+							(session) =>
+								`• ${session.name ?? session.id} — ${session.cwd || "(unknown)"} (${session.messageCount} messages)`,
+						),
 						"The session will be moved to the system trash. Project files will not be touched.",
 					].join("\n"),
 				);
@@ -208,8 +227,13 @@ export function createNovaDataToolDefinition(): ToolDefinition<typeof novaDataSc
 						details: { action: input.action, status: "cancelled" },
 					};
 				}
-				moveSessionToTrash(session.path);
-				return successfulResult(input.action, { deleted: sessionSummary(session), method: "trash" });
+				for (const session of sessionsToDelete) moveSessionToTrash(session.path);
+				const deleted = sessionsToDelete.map(sessionSummary);
+				return successfulResult(input.action, {
+					deleted: deleted.length === 1 ? deleted[0] : deleted,
+					deletedCount: deleted.length,
+					method: "trash",
+				});
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				return {

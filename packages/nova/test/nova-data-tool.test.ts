@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -58,12 +58,12 @@ function createSessionFile(
 	return path;
 }
 
-function createContext(sessionManager: SessionManager, hasUI = false): ExtensionContext {
+function createContext(sessionManager: SessionManager, hasUI = false, confirm = false): ExtensionContext {
 	return {
 		hasUI,
 		sessionManager,
 		ui: {
-			confirm: async () => false,
+			confirm: async () => confirm,
 		},
 	} as unknown as ExtensionContext;
 }
@@ -140,5 +140,27 @@ describe("nova_data tool", () => {
 		);
 		expect(resultText(deletion)).toContain("requires interactive user confirmation");
 		expect(deletion.details?.status).toBe("error");
+	});
+
+	it("deletes multiple inactive sessions with one confirmation", async () => {
+		const sessionDir = mkdtempSync(join(tmpdir(), "nova-data-"));
+		tempDirs.push(sessionDir);
+		const currentPath = createSessionFile(sessionDir, "current", "/project/a", "question", "answer");
+		const firstPath = createSessionFile(sessionDir, "first", "/project/a", "first", "answer");
+		const secondPath = createSessionFile(sessionDir, "second", "/project/a", "second", "answer");
+		const context = createContext(SessionManager.open(currentPath, sessionDir), true, true);
+
+		const deletion = await createNovaDataToolDefinition().execute(
+			"delete-many",
+			{ action: "delete_session", session_ids: ["first", "second"] },
+			undefined,
+			undefined,
+			context,
+		);
+		const data = JSON.parse(resultText(deletion));
+		expect(data.deletedCount).toBe(2);
+		expect(data.deleted).toHaveLength(2);
+		expect(existsSync(firstPath)).toBe(false);
+		expect(existsSync(secondPath)).toBe(false);
 	});
 });
