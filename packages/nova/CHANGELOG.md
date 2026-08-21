@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added the `nova_data` tool for listing projects and sessions, reading bounded conversation history, and moving confirmed inactive sessions to the system trash.
+
 ## [1.2.0] - 2026-08-16
 
 ### Added
