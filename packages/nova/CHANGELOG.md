@@ -5,6 +5,7 @@
 ### Added
 
 - Added the `nova_data` tool for listing projects and sessions, reading bounded conversation history, and moving confirmed inactive sessions to the system trash.
+- Added persistent execution traces and the `get_execution_traces` RPC command for inspecting turn, model, thinking, and tool timing after session reloads.
 
 ## [1.2.0] - 2026-08-16
 

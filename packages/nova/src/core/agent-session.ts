@@ -13,6 +13,7 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import type {
@@ -63,6 +64,16 @@ import {
 	shouldCompact,
 } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
+import {
+	type ActiveExecutionTrace,
+	EXECUTION_TRACE_CUSTOM_TYPE,
+	type ExecutionTrace,
+	type ExecutionTraceCategory,
+	type ExecutionTraceEntryData,
+	type ExecutionTraceFilters,
+	mergeExecutionTraces,
+	usageToExecutionTraceUsage,
+} from "./execution-traces.ts";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.ts";
 import {
@@ -362,6 +373,10 @@ export class AgentSession {
 	// Extension system
 	private _extensionRunner!: ExtensionRunner;
 	private _turnIndex = 0;
+	private _activeTurnTrace: ActiveExecutionTrace | undefined;
+	private _activeModelTrace: ActiveExecutionTrace | undefined;
+	private _activeThinkingTraces = new Map<number, ActiveExecutionTrace>();
+	private _activeToolTraces = new Map<string, ActiveExecutionTrace>();
 
 	private _resourceLoader: ResourceLoader;
 	private _customTools: ToolDefinition[];
@@ -611,11 +626,89 @@ export class AgentSession {
 		}
 	}
 
+	private _startExecutionTrace(
+		category: ExecutionTraceCategory,
+		data: Omit<ExecutionTraceEntryData, "traceId" | "category" | "phase"> = {},
+	): ActiveExecutionTrace {
+		const trace: ActiveExecutionTrace = {
+			traceId: randomUUID(),
+			startedAtMonotonic: performance.now(),
+			data: { ...data, category },
+		};
+		this.sessionManager.appendCustomEntry(EXECUTION_TRACE_CUSTOM_TYPE, {
+			traceId: trace.traceId,
+			category,
+			phase: "start",
+			...data,
+		} satisfies ExecutionTraceEntryData);
+		return trace;
+	}
+
+	private _endExecutionTrace(
+		trace: ActiveExecutionTrace,
+		data: Omit<ExecutionTraceEntryData, "traceId" | "category" | "phase" | "durationMs">,
+	): void {
+		this.sessionManager.appendCustomEntry(EXECUTION_TRACE_CUSTOM_TYPE, {
+			...trace.data,
+			traceId: trace.traceId,
+			phase: "end",
+			...data,
+			durationMs: Math.max(0, Math.round(performance.now() - trace.startedAtMonotonic)),
+		} satisfies ExecutionTraceEntryData);
+	}
+
+	getExecutionTraces(filters: ExecutionTraceFilters = {}): ExecutionTrace[] {
+		const activeTraceIds = new Set<string>();
+		if (this._activeTurnTrace) activeTraceIds.add(this._activeTurnTrace.traceId);
+		if (this._activeModelTrace) activeTraceIds.add(this._activeModelTrace.traceId);
+		for (const trace of this._activeThinkingTraces.values()) activeTraceIds.add(trace.traceId);
+		for (const trace of this._activeToolTraces.values()) activeTraceIds.add(trace.traceId);
+		return mergeExecutionTraces(this.sessionManager.getBranch(), activeTraceIds, filters);
+	}
+
 	// Track last assistant message for auto-compaction check
 	private _lastAssistantMessage: AssistantMessage | undefined = undefined;
 
 	/** Internal handler for agent events - shared by subscribe and reconnect */
 	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
+		if (event.type === "turn_start") {
+			this._activeTurnTrace = this._startExecutionTrace("turn", { turnId: randomUUID() });
+			const model = this.agent.state.model;
+			this._activeModelTrace = this._startExecutionTrace("model", {
+				turnId: this._activeTurnTrace?.data.turnId,
+				provider: model?.provider,
+				model: model?.id,
+			});
+		} else if (event.type === "tool_execution_start") {
+			this._activeToolTraces.set(
+				event.toolCallId,
+				this._startExecutionTrace("tool", {
+					turnId: this._activeTurnTrace?.data.turnId,
+					toolCallId: event.toolCallId,
+					toolName: event.toolName,
+				}),
+			);
+		} else if (event.type === "message_update") {
+			const streamEvent = event.assistantMessageEvent;
+			if (streamEvent.type === "thinking_start") {
+				const contentIndex = streamEvent.contentIndex;
+				this._activeThinkingTraces.set(
+					contentIndex,
+					this._startExecutionTrace("thinking", {
+						turnId: this._activeTurnTrace?.data.turnId,
+						parentTraceId: this._activeModelTrace?.traceId,
+					}),
+				);
+			} else if (streamEvent.type === "thinking_end") {
+				const contentIndex = streamEvent.contentIndex;
+				const trace = this._activeThinkingTraces.get(contentIndex);
+				if (trace) {
+					this._endExecutionTrace(trace, { status: "success" });
+					this._activeThinkingTraces.delete(contentIndex);
+				}
+			}
+		}
+
 		// When a user message starts, check if it's from either queue and remove it BEFORE emitting
 		// This ensures the UI sees the updated queue state
 		if (event.type === "message_start" && event.message.role === "user") {
@@ -646,6 +739,7 @@ export class AgentSession {
 
 		// Handle session persistence
 		if (event.type === "message_end") {
+			let messageEntryId: string | undefined;
 			// Check if this is a custom message from extensions
 			if (event.message.role === "custom") {
 				// Persist as CustomMessageEntry
@@ -661,7 +755,7 @@ export class AgentSession {
 				event.message.role === "toolResult"
 			) {
 				// Regular LLM message - persist as SessionMessageEntry
-				this.sessionManager.appendMessage(event.message);
+				messageEntryId = this.sessionManager.appendMessage(event.message);
 			}
 			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
 
@@ -684,6 +778,42 @@ export class AgentSession {
 					});
 					this._retryAttempt = 0;
 				}
+
+				const trace = this._activeModelTrace;
+				const stopReason = assistantMsg.stopReason;
+				for (const thinkingTrace of this._activeThinkingTraces.values()) {
+					this._endExecutionTrace(thinkingTrace, {
+						status: stopReason === "error" ? "error" : "cancelled",
+						stopReason,
+					});
+				}
+				this._activeThinkingTraces.clear();
+				if (trace) {
+					this._endExecutionTrace(trace, {
+						messageEntryId,
+						status: stopReason === "error" ? "error" : stopReason === "aborted" ? "cancelled" : "success",
+						stopReason,
+						errorMessage: assistantMsg.errorMessage?.slice(0, 2048),
+						usage: usageToExecutionTraceUsage(assistantMsg.usage),
+					});
+					this._activeModelTrace = undefined;
+				}
+			}
+		} else if (event.type === "tool_execution_end") {
+			const trace = this._activeToolTraces.get(event.toolCallId);
+			if (trace) {
+				this._endExecutionTrace(trace, { status: event.isError ? "error" : "success" });
+				this._activeToolTraces.delete(event.toolCallId);
+			}
+		} else if (event.type === "turn_end") {
+			const trace = this._activeTurnTrace;
+			if (trace) {
+				const stopReason = event.message.role === "assistant" ? event.message.stopReason : undefined;
+				this._endExecutionTrace(trace, {
+					status: stopReason === "error" ? "error" : stopReason === "aborted" ? "cancelled" : "success",
+					stopReason,
+				});
+				this._activeTurnTrace = undefined;
 			}
 		}
 	};

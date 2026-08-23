@@ -375,9 +375,13 @@ export class RpcClient {
 	 * Fork from a specific message.
 	 * @returns Object with `text` (the message text) and `cancelled` (if extension cancelled)
 	 */
-	async fork(entryId: string): Promise<{ text: string; cancelled: boolean }> {
-		const response = await this.send({ type: "fork", entryId });
+	async fork(entryId: string, position: "before" | "at" = "before"): Promise<{ text: string; cancelled: boolean }> {
+		const response = await this.send({ type: "fork", entryId, position });
 		return this.getData(response);
+	}
+
+	async setFeedback(entryId: string, rating: "up" | "down" | null): Promise<void> {
+		await this.send({ type: "set_feedback", entryId, rating });
 	}
 
 	/**

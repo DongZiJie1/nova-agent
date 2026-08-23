@@ -737,6 +737,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "get_session_stats", stats);
 			}
 
+			case "get_execution_traces": {
+				const traces = session.getExecutionTraces({
+					turnId: command.turnId,
+					category: command.category,
+					after: command.after,
+					limit: command.limit,
+				});
+				return success(id, "get_execution_traces", { traces });
+			}
+
 			case "export_html": {
 				const path = await session.exportToHtml(command.outputPath);
 				return success(id, "export_html", { path });
@@ -751,11 +761,23 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "fork": {
-				const result = await targetRuntime.fork(command.entryId);
+				const result = await targetRuntime.fork(command.entryId, { position: command.position ?? "before" });
 				if (!result.cancelled && targetAgentId === "default") {
 					await rebindSession();
 				}
 				return success(id, "fork", { text: result.selectedText, cancelled: result.cancelled });
+			}
+
+			case "set_feedback": {
+				const target = session.sessionManager.getEntry(command.entryId);
+				if (!target || target.type !== "message" || target.message.role !== "assistant") {
+					return error(id, "set_feedback", "Feedback target must be an assistant message entry");
+				}
+				session.sessionManager.appendCustomEntry("nova_studio.feedback", {
+					targetEntryId: command.entryId,
+					rating: command.rating,
+				});
+				return success(id, "set_feedback", { entryId: command.entryId, rating: command.rating });
 			}
 
 			case "clone": {
@@ -812,7 +834,19 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "get_messages": {
-				return success(id, "get_messages", { messages: session.messages });
+				const branch = session.sessionManager.getBranch();
+				const messages = branch
+					.filter((entry) => entry.type === "message")
+					.map((entry) => ({ ...entry.message, entryId: entry.id }));
+				const feedback: Record<string, "up" | "down"> = {};
+				for (const entry of branch) {
+					if (entry.type !== "custom" || entry.customType !== "nova_studio.feedback") continue;
+					const data = entry.data as { targetEntryId?: unknown; rating?: unknown } | undefined;
+					if (typeof data?.targetEntryId !== "string") continue;
+					if (data.rating === "up" || data.rating === "down") feedback[data.targetEntryId] = data.rating;
+					else delete feedback[data.targetEntryId];
+				}
+				return success(id, "get_messages", { messages, feedback });
 			}
 
 			// =================================================================
