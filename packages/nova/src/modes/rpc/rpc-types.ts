@@ -10,6 +10,7 @@ import type { ImageContent, Model } from "@dongzijie1/pi-ai";
 import type { SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
+import type { ExecutionTrace, ExecutionTraceCategory } from "../../core/execution-traces.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import type { RpcFileReference } from "./file-references.ts";
@@ -64,6 +65,14 @@ type RpcSessionCommand =
 
 	// Session
 	| { id?: string; type: "get_session_stats" }
+	| {
+			id?: string;
+			type: "get_execution_traces";
+			turnId?: string;
+			category?: ExecutionTraceCategory;
+			after?: string;
+			limit?: number;
+	  }
 	| { id?: string; type: "export_html"; outputPath?: string }
 	| { id?: string; type: "switch_session"; sessionPath: string }
 	| { id?: string; type: "fork"; entryId: string; position?: "before" | "at" }
@@ -205,6 +214,13 @@ export type RpcResponse =
 
 	// Session
 	| { id?: string; type: "response"; command: "get_session_stats"; success: true; data: SessionStats }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_execution_traces";
+			success: true;
+			data: { traces: ExecutionTrace[] };
+	  }
 	| { id?: string; type: "response"; command: "export_html"; success: true; data: { path: string } }
 	| { id?: string; type: "response"; command: "switch_session"; success: true; data: { cancelled: boolean } }
 	| { id?: string; type: "response"; command: "fork"; success: true; data: { text: string; cancelled: boolean } }
