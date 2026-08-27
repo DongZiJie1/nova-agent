@@ -32,6 +32,7 @@ import { formatFileReferenceContext, resolveFileReferences } from "./file-refere
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
 import type {
 	RpcCommand,
+	RpcContextSnapshot,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
 	RpcResponse,
@@ -42,6 +43,7 @@ import type {
 // Re-export types for consumers
 export type {
 	RpcCommand,
+	RpcContextSnapshot,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
 	RpcResponse,
@@ -618,6 +620,31 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					pendingMessageCount: session.pendingMessageCount,
 				};
 				return success(id, "get_state", state);
+			}
+
+			case "get_context_snapshot": {
+				const activeToolNames = new Set(session.getActiveToolNames());
+				const snapshot: RpcContextSnapshot = {
+					systemPrompt: session.systemPrompt,
+					tools: session
+						.getAllTools()
+						.filter((tool) => activeToolNames.has(tool.name))
+						.map((tool) => ({
+							name: tool.name,
+							description: tool.description,
+							parameters: tool.parameters,
+							sourceInfo: tool.sourceInfo,
+						})),
+					skills: session.resourceLoader.getSkills().skills.map((skill) => ({
+						name: skill.name,
+						description: skill.description,
+						filePath: skill.filePath,
+						disableModelInvocation: skill.disableModelInvocation,
+						sourceInfo: skill.sourceInfo,
+					})),
+					contextFiles: session.resourceLoader.getAgentsFiles().agentsFiles,
+				};
+				return success(id, "get_context_snapshot", snapshot);
 			}
 
 			// =================================================================

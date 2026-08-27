@@ -36,6 +36,7 @@ type RpcSessionCommand =
 
 	// State
 	| { id?: string; type: "get_state" }
+	| { id?: string; type: "get_context_snapshot" }
 
 	// Model
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
@@ -140,6 +141,27 @@ export interface RpcSessionState {
 	pendingMessageCount: number;
 }
 
+export interface RpcContextSnapshot {
+	systemPrompt: string;
+	tools: Array<{
+		name: string;
+		description: string;
+		parameters: unknown;
+		sourceInfo: SourceInfo;
+	}>;
+	skills: Array<{
+		name: string;
+		description: string;
+		filePath: string;
+		disableModelInvocation: boolean;
+		sourceInfo: SourceInfo;
+	}>;
+	contextFiles: Array<{
+		path: string;
+		content: string;
+	}>;
+}
+
 // ============================================================================
 // RPC Responses (stdout)
 // ============================================================================
@@ -155,6 +177,7 @@ export type RpcResponse =
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
+	| { id?: string; type: "response"; command: "get_context_snapshot"; success: true; data: RpcContextSnapshot }
 
 	// Model
 	| {
