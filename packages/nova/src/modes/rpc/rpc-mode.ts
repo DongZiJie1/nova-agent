@@ -625,7 +625,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "get_context_snapshot": {
 				const activeToolNames = new Set(session.getActiveToolNames());
 				const snapshot: RpcContextSnapshot = {
-					systemPrompt: session.systemPrompt,
+					systemPrompt: session.contextSnapshotSystemPrompt,
 					tools: session
 						.getAllTools()
 						.filter((tool) => activeToolNames.has(tool.name))
