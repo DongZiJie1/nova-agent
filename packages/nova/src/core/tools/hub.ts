@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "../extensions/types.ts";
 
@@ -34,6 +35,9 @@ interface HubEnv {
 interface HubAgentContext {
 	agentId: string;
 	depth: number;
+	requestId?: string;
+	requestDepth?: number;
+	visitedAgentIds?: string[];
 }
 
 const hubAgentContext = new AsyncLocalStorage<HubAgentContext>();
@@ -193,13 +197,14 @@ export function createHubSpawnAgentToolDefinition(): ToolDefinition<typeof hubSp
 		async execute(_toolCallId, { cwd, model }) {
 			const hub = readHubEnv();
 			if (!hub) return noHubResult();
+			const activeRequestDepth = hubAgentContext.getStore()?.requestDepth ?? hub.depth;
 
-			if (hub.depth >= MAX_ASK_DEPTH) {
+			if (activeRequestDepth >= MAX_ASK_DEPTH) {
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: `Delegation depth limit reached (depth ${hub.depth}/${MAX_ASK_DEPTH}). Do this work yourself instead of spawning another agent.`,
+							text: `Delegation depth limit reached (depth ${activeRequestDepth}/${MAX_ASK_DEPTH}). Do this work yourself instead of spawning another agent.`,
 						},
 					],
 					details: { error: "depth_limit" },
@@ -262,6 +267,10 @@ export interface HubAskAgentDetails {
 	reply?: string;
 	truncated?: boolean;
 	error?: string;
+	errorCode?: string;
+	requestId?: string;
+	requestDepth?: number;
+	visitedAgentIds?: string[];
 }
 
 export function createHubAskAgentToolDefinition(): ToolDefinition<typeof hubAskAgentSchema, HubAskAgentDetails> {
@@ -280,6 +289,10 @@ export function createHubAskAgentToolDefinition(): ToolDefinition<typeof hubAskA
 		async execute(_toolCallId, { agent_id, question, timeout_secs }) {
 			const hub = readHubEnv();
 			if (!hub) return noHubResult();
+			const scoped = hubAgentContext.getStore();
+			const visitedAgentIds = Array.from(new Set([...(scoped?.visitedAgentIds ?? []), hub.agentId]));
+			const requestDepth = (scoped?.requestDepth ?? hub.depth) + 1;
+			const requestId = scoped?.requestId ?? randomUUID();
 
 			if (agent_id === hub.agentId) {
 				return {
@@ -289,19 +302,45 @@ export function createHubAskAgentToolDefinition(): ToolDefinition<typeof hubAskA
 							text: "That agent_id is yourself. Do the work directly instead of delegating.",
 						},
 					],
-					details: { error: "self_ask" },
+					details: { error: "self_ask", errorCode: "self_ask", requestId, requestDepth, visitedAgentIds },
 				};
 			}
 
-			if (hub.depth >= MAX_ASK_DEPTH) {
+			if (visitedAgentIds.includes(agent_id)) {
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: `Delegation depth limit reached (depth ${hub.depth}/${MAX_ASK_DEPTH}). Do this work yourself instead of asking another agent.`,
+							text: `Agent request cycle blocked: ${[...visitedAgentIds, agent_id].join(" → ")}.`,
 						},
 					],
-					details: { agentId: agent_id, error: "depth_limit" },
+					details: {
+						agentId: agent_id,
+						error: "cycle_detected",
+						errorCode: "cycle_detected",
+						requestId,
+						requestDepth,
+						visitedAgentIds,
+					},
+				};
+			}
+
+			if (requestDepth > MAX_ASK_DEPTH) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Delegation depth limit reached (depth ${requestDepth - 1}/${MAX_ASK_DEPTH}). Do this work yourself instead of asking another agent.`,
+						},
+					],
+					details: {
+						agentId: agent_id,
+						error: "depth_limit",
+						errorCode: "depth_limit",
+						requestId,
+						requestDepth,
+						visitedAgentIds,
+					},
 				};
 			}
 
@@ -309,19 +348,37 @@ export function createHubAskAgentToolDefinition(): ToolDefinition<typeof hubAskA
 				const res = await hubRequest("POST", `/agents/${encodeURIComponent(agent_id)}/ask`, {
 					question,
 					timeout_secs: timeout_secs ?? 300,
+					source_agent_id: hub.agentId,
+					request_id: requestId,
+					request_depth: requestDepth,
+					visited_agent_ids: visitedAgentIds,
 				});
-				const data = res.data as { reply?: string; error?: string };
+				const data = res.data as { reply?: string; error?: string; code?: string; request_id?: string };
 				if (!res.ok || typeof data.reply !== "string") {
 					const msg = data.error ?? `hub returned status ${res.status}`;
 					return {
 						content: [{ type: "text" as const, text: `Agent ${agent_id} could not answer: ${msg}` }],
-						details: { agentId: agent_id, error: msg },
+						details: {
+							agentId: agent_id,
+							error: msg,
+							errorCode: data.code,
+							requestId: data.request_id ?? requestId,
+							requestDepth,
+							visitedAgentIds,
+						},
 					};
 				}
 				const { text, truncated } = truncateReply(data.reply);
 				return {
 					content: [{ type: "text" as const, text: `Reply from ${agent_id}:\n${text}` }],
-					details: { agentId: agent_id, reply: text, truncated },
+					details: {
+						agentId: agent_id,
+						reply: text,
+						truncated,
+						requestId,
+						requestDepth,
+						visitedAgentIds: [...visitedAgentIds, agent_id],
+					},
 				};
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);

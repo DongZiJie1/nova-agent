@@ -12,6 +12,7 @@
  */
 
 import * as crypto from "node:crypto";
+import type { PromptOptions } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import type {
 	ExtensionUIContext,
@@ -541,33 +542,48 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					return success(id, "prompt", { handled: "non_vision_image" });
 				}
 
-				const contextMessages =
-					referencedPaths.length === 0
-						? undefined
-						: [
-								{
-									customType: "file_references",
-									content: formatFileReferenceContext(referencedPaths),
-									display: false,
-									details: { paths: referencedPaths },
-								},
-							];
+				const contextMessages: NonNullable<PromptOptions["contextMessages"]> = [];
+				if (referencedPaths.length > 0) {
+					contextMessages.push({
+						customType: "file_references",
+						content: formatFileReferenceContext(referencedPaths),
+						display: false,
+						details: { paths: referencedPaths },
+					});
+				}
+				if (command.collaborationContext) {
+					const collaboration = command.collaborationContext;
+					contextMessages.push({
+						customType: "agent_collaboration_context",
+						content: `Agent collaboration request metadata:\n- request_id: ${collaboration.requestId}\n- request_depth: ${collaboration.requestDepth}\n- visited_agent_ids: ${collaboration.visitedAgentIds.join(", ")}`,
+						display: false,
+						details: collaboration,
+					});
+				}
 				// Start prompt handling immediately, but emit the authoritative response only after
 				// prompt preflight succeeds. Queued and immediately handled prompts also count as success.
 				let preflightSucceeded = false;
-				void runWithHubAgentContext({ agentId: targetAgentId, depth: runtimeDepths.get(targetAgentId) ?? 0 }, () =>
-					session.prompt(command.message, {
-						images: command.images,
-						contextMessages,
-						streamingBehavior: command.streamingBehavior,
-						source: "rpc",
-						preflightResult: (didSucceed) => {
-							if (didSucceed) {
-								preflightSucceeded = true;
-								output(success(id, "prompt"), command.agentId);
-							}
-						},
-					}),
+				void runWithHubAgentContext(
+					{
+						agentId: targetAgentId,
+						depth: runtimeDepths.get(targetAgentId) ?? 0,
+						requestId: command.collaborationContext?.requestId,
+						requestDepth: command.collaborationContext?.requestDepth,
+						visitedAgentIds: command.collaborationContext?.visitedAgentIds,
+					},
+					() =>
+						session.prompt(command.message, {
+							images: command.images,
+							contextMessages: contextMessages.length > 0 ? contextMessages : undefined,
+							streamingBehavior: command.streamingBehavior,
+							source: "rpc",
+							preflightResult: (didSucceed) => {
+								if (didSucceed) {
+									preflightSucceeded = true;
+									output(success(id, "prompt"), command.agentId);
+								}
+							},
+						}),
 				).catch((e) => {
 					if (!preflightSucceeded) {
 						output(error(id, "prompt", e.message), command.agentId);

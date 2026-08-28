@@ -186,7 +186,43 @@ describe("hub_ask_agent", () => {
 
 		const [url, init] = fetchCallArgs(fetchMock, 0);
 		expect(url).toBe("http://127.0.0.1:9528/agents/agent-other2/ask");
-		expect(JSON.parse(init.body as string)).toEqual({ question: "what is the answer?", timeout_secs: 300 });
+		expect(JSON.parse(init.body as string)).toMatchObject({
+			question: "what is the answer?",
+			timeout_secs: 300,
+			source_agent_id: "agent-self1",
+			request_depth: 1,
+			visited_agent_ids: ["agent-self1"],
+			request_id: expect.any(String),
+		});
+	});
+
+	it("preserves the request id while advancing a forwarded request chain", async () => {
+		const fetchMock = stubFetch({ reply: "forwarded answer" });
+
+		await runWithHubAgentContext(
+			{
+				agentId: "agent-self1",
+				depth: 0,
+				requestId: "request-root",
+				requestDepth: 0,
+				visitedAgentIds: ["agent-root0"],
+			},
+			() =>
+				createHubAskAgentToolDefinition().execute(
+					"t1",
+					{ agent_id: "agent-other2", question: "forward this" },
+					undefined,
+					undefined,
+					ctx,
+				),
+		);
+
+		const [, init] = fetchCallArgs(fetchMock, 0);
+		expect(JSON.parse(init.body as string)).toMatchObject({
+			request_id: "request-root",
+			request_depth: 1,
+			visited_agent_ids: ["agent-root0", "agent-self1"],
+		});
 	});
 
 	it("truncates long replies", async () => {
@@ -219,6 +255,32 @@ describe("hub_ask_agent", () => {
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
+	it("blocks a request that revisits an agent in the active chain", async () => {
+		const fetchMock = stubFetch({ reply: "should not happen" });
+
+		const result = await runWithHubAgentContext(
+			{
+				agentId: "agent-other2",
+				depth: 1,
+				requestId: "request-a-b",
+				requestDepth: 1,
+				visitedAgentIds: ["agent-self1", "agent-other2"],
+			},
+			() =>
+				createHubAskAgentToolDefinition().execute(
+					"t1",
+					{ agent_id: "agent-self1", question: "loop back" },
+					undefined,
+					undefined,
+					ctx,
+				),
+		);
+
+		expect(result.details?.errorCode).toBe("cycle_detected");
+		expect(resultText(result)).toContain("cycle blocked");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
 	it("refuses to ask at the depth limit", async () => {
 		process.env.NOVA_ASK_DEPTH = "2";
 		const fetchMock = stubFetch({});
@@ -232,6 +294,30 @@ describe("hub_ask_agent", () => {
 		);
 
 		expect(resultText(result)).toContain("depth limit");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("uses request depth rather than process depth for forwarded asks", async () => {
+		const fetchMock = stubFetch({});
+
+		const result = await runWithHubAgentContext(
+			{
+				agentId: "agent-other2",
+				depth: 0,
+				requestDepth: 2,
+				visitedAgentIds: ["agent-self1", "agent-other2"],
+			},
+			() =>
+				createHubAskAgentToolDefinition().execute(
+					"t1",
+					{ agent_id: "agent-third3", question: "go deeper" },
+					undefined,
+					undefined,
+					ctx,
+				),
+		);
+
+		expect(result.details?.errorCode).toBe("depth_limit");
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 

@@ -15,6 +15,12 @@ import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.t
 import type { SourceInfo } from "../../core/source-info.ts";
 import type { RpcFileReference } from "./file-references.ts";
 
+export interface RpcCollaborationContext {
+	requestId: string;
+	requestDepth: number;
+	visitedAgentIds: string[];
+}
+
 // ============================================================================
 // RPC Commands (stdin)
 // ============================================================================
@@ -27,6 +33,7 @@ type RpcSessionCommand =
 			message: string;
 			images?: ImageContent[];
 			fileReferences?: RpcFileReference[];
+			collaborationContext?: RpcCollaborationContext;
 			streamingBehavior?: "steer" | "followUp";
 	  }
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
