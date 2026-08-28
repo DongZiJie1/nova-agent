@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionContext } from "../src/core/extensions/types.ts";
 import {
 	createHubAskAgentToolDefinition,
+	createHubDelegateTaskToolDefinition,
 	createHubListAgentsToolDefinition,
 	createHubSpawnAgentToolDefinition,
+	createHubWaitTasksToolDefinition,
 	runWithHubAgentContext,
 } from "../src/core/tools/hub.ts";
 
@@ -23,6 +25,65 @@ beforeEach(() => {
 		savedEnv[key] = process.env[key];
 		process.env[key] = HUB_ENV[key as keyof typeof HUB_ENV];
 	}
+});
+
+describe("asynchronous Agent tasks", () => {
+	it("delegates to a newly created agent and returns immediately", async () => {
+		const fetchMock = stubFetch({
+			task_id: "task-123",
+			agent_id: "agent-new2",
+			created_agent: true,
+			status: "running",
+		});
+
+		const result = await createHubDelegateTaskToolDefinition().execute(
+			"t1",
+			{ task: "inspect the parser", cwd: "/tmp/project" },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		expect(result.details).toMatchObject({ taskId: "task-123", agentId: "agent-new2", createdAgent: true });
+		const [url, init] = fetchCallArgs(fetchMock, 0);
+		expect(url).toBe("http://127.0.0.1:9528/tasks/delegate");
+		expect(JSON.parse(init.body as string)).toMatchObject({
+			task: "inspect the parser",
+			cwd: "/tmp/project",
+			source_agent_id: "agent-self1",
+			request_depth: 1,
+			visited_agent_ids: ["agent-self1"],
+			depth: 1,
+		});
+	});
+
+	it("waits for any delegated task and returns structured results", async () => {
+		const fetchMock = stubFetch({
+			tasks: [
+				{ task_id: "task-1", agent_id: "agent-a", status: "completed", result: "done" },
+				{ task_id: "task-2", agent_id: "agent-b", status: "running" },
+			],
+			timed_out: false,
+		});
+
+		const result = await createHubWaitTasksToolDefinition().execute(
+			"t2",
+			{ task_ids: ["task-1", "task-2"], wait_for: "any" },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		expect(resultText(result)).toContain("task-1 (agent-a) [completed]: done");
+		expect(result.details?.tasks).toHaveLength(2);
+		const [url, init] = fetchCallArgs(fetchMock, 0);
+		expect(url).toBe("http://127.0.0.1:9528/tasks/wait");
+		expect(JSON.parse(init.body as string)).toEqual({
+			task_ids: ["task-1", "task-2"],
+			wait_for: "any",
+			timeout_secs: 30,
+		});
+	});
 });
 
 afterEach(() => {

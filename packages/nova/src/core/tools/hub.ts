@@ -390,3 +390,189 @@ export function createHubAskAgentToolDefinition(): ToolDefinition<typeof hubAskA
 		},
 	};
 }
+
+// ─── hub_delegate_task / hub_wait_tasks ───
+
+const hubDelegateTaskSchema = Type.Object({
+	task: Type.String({ description: "A self-contained task with all context the target agent needs." }),
+	agent_id: Type.Optional(
+		Type.String({
+			description: "Existing agent id to reuse. Omit this field to create a new child agent automatically.",
+		}),
+	),
+	cwd: Type.Optional(
+		Type.String({ description: "Working directory for a newly created agent. Defaults to the current directory." }),
+	),
+	model: Type.Optional(Type.String({ description: "Optional model id for a newly created agent." })),
+	timeout_secs: Type.Optional(Type.Number({ description: "Maximum task runtime in seconds (default 300)." })),
+});
+
+export type HubDelegateTaskInput = Static<typeof hubDelegateTaskSchema>;
+
+export interface HubDelegateTaskDetails {
+	taskId?: string;
+	agentId?: string;
+	createdAgent?: boolean;
+	status?: string;
+	error?: string;
+	errorCode?: string;
+	requestId?: string;
+}
+
+export function createHubDelegateTaskToolDefinition(): ToolDefinition<
+	typeof hubDelegateTaskSchema,
+	HubDelegateTaskDetails
+> {
+	return {
+		name: "hub_delegate_task",
+		label: "hub_delegate_task",
+		description:
+			"Delegate a self-contained task without waiting for completion. Provide agent_id to reuse an existing agent, or omit it to create a child agent automatically. Returns task_id and agent_id immediately; collect results with hub_wait_tasks.",
+		promptSnippet: "Delegate work to an existing or automatically created agent without blocking.",
+		promptGuidelines: [
+			"Use hub_delegate_task to start independent work. Include all necessary context because the target agent cannot see this conversation.",
+			"Delegate multiple independent tasks before calling hub_wait_tasks so the agents can work in parallel.",
+		],
+		parameters: hubDelegateTaskSchema,
+		async execute(_toolCallId, { task, agent_id, cwd, model, timeout_secs }) {
+			const hub = readHubEnv();
+			if (!hub) return noHubResult();
+			const scoped = hubAgentContext.getStore();
+			const visitedAgentIds = Array.from(new Set([...(scoped?.visitedAgentIds ?? []), hub.agentId]));
+			const requestDepth = (scoped?.requestDepth ?? hub.depth) + 1;
+			const requestId = scoped?.requestId ?? randomUUID();
+
+			if (agent_id === hub.agentId || (agent_id && visitedAgentIds.includes(agent_id))) {
+				return {
+					content: [{ type: "text" as const, text: "Agent request cycle blocked." }],
+					details: { agentId: agent_id, error: "cycle_detected", errorCode: "cycle_detected", requestId },
+				};
+			}
+			if (requestDepth > MAX_ASK_DEPTH) {
+				return {
+					content: [{ type: "text" as const, text: "Agent delegation depth limit reached." }],
+					details: { agentId: agent_id, error: "depth_limit", errorCode: "depth_limit", requestId },
+				};
+			}
+
+			try {
+				const res = await hubRequest("POST", "/tasks/delegate", {
+					task,
+					agent_id,
+					cwd: cwd ?? process.cwd(),
+					model,
+					timeout_secs: timeout_secs ?? 300,
+					source_agent_id: hub.agentId,
+					request_id: requestId,
+					request_depth: requestDepth,
+					visited_agent_ids: visitedAgentIds,
+					depth: hub.depth + 1,
+				});
+				const data = res.data as {
+					task_id?: string;
+					agent_id?: string;
+					created_agent?: boolean;
+					status?: string;
+					error?: string;
+					code?: string;
+				};
+				if (!res.ok || !data.task_id || !data.agent_id) {
+					const message = data.error ?? `hub returned status ${res.status}`;
+					return {
+						content: [{ type: "text" as const, text: `Could not delegate task: ${message}` }],
+						details: { error: message, errorCode: data.code, requestId },
+					};
+				}
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Task ${data.task_id} is ${data.status ?? "running"} on agent ${data.agent_id}.`,
+						},
+					],
+					details: {
+						taskId: data.task_id,
+						agentId: data.agent_id,
+						createdAgent: data.created_agent,
+						status: data.status,
+						requestId,
+					},
+				};
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return {
+					content: [{ type: "text" as const, text: `Failed to reach the hub: ${message}` }],
+					details: { error: message, errorCode: "hub_unreachable", requestId },
+				};
+			}
+		},
+	};
+}
+
+const hubWaitTasksSchema = Type.Object({
+	task_ids: Type.Array(Type.String(), { minItems: 1, description: "Task ids returned by hub_delegate_task." }),
+	wait_for: Type.Optional(
+		Type.Union([Type.Literal("any"), Type.Literal("all")], {
+			description: "Return when any task finishes or when all tasks finish (default all).",
+		}),
+	),
+	timeout_secs: Type.Optional(Type.Number({ description: "How long to wait, from 0 to 300 seconds (default 30)." })),
+});
+
+export type HubWaitTasksInput = Static<typeof hubWaitTasksSchema>;
+
+export interface HubWaitTasksDetails {
+	tasks?: Array<{ task_id: string; agent_id: string; status: string; result?: string; error?: string }>;
+	timedOut?: boolean;
+	error?: string;
+	errorCode?: string;
+}
+
+export function createHubWaitTasksToolDefinition(): ToolDefinition<typeof hubWaitTasksSchema, HubWaitTasksDetails> {
+	return {
+		name: "hub_wait_tasks",
+		label: "hub_wait_tasks",
+		description:
+			"Check or wait for delegated Agent tasks. Use wait_for='any' to resume when the first task finishes, or 'all' to collect every result. Set timeout_secs to 0 for an immediate status check.",
+		promptSnippet: "Wait for or check results from delegated Agent tasks.",
+		parameters: hubWaitTasksSchema,
+		async execute(_toolCallId, { task_ids, wait_for, timeout_secs }) {
+			const hub = readHubEnv();
+			if (!hub) return noHubResult();
+			try {
+				const res = await hubRequest("POST", "/tasks/wait", {
+					task_ids,
+					wait_for: wait_for ?? "all",
+					timeout_secs: timeout_secs ?? 30,
+				});
+				const data = res.data as {
+					tasks?: Array<{ task_id: string; agent_id: string; status: string; result?: string; error?: string }>;
+					timed_out?: boolean;
+					error?: string;
+					code?: string;
+				};
+				if (!res.ok || !Array.isArray(data.tasks)) {
+					const message = data.error ?? `hub returned status ${res.status}`;
+					return {
+						content: [{ type: "text" as const, text: `Could not wait for tasks: ${message}` }],
+						details: { error: message, errorCode: data.code },
+					};
+				}
+				const lines = data.tasks.map((task) => {
+					const outcome = task.result ?? task.error ?? "still running";
+					return `${task.task_id} (${task.agent_id}) [${task.status}]: ${outcome}`;
+				});
+				return {
+					content: [{ type: "text" as const, text: lines.join("\n") }],
+					details: { tasks: data.tasks, timedOut: data.timed_out },
+				};
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return {
+					content: [{ type: "text" as const, text: `Failed to reach the hub: ${message}` }],
+					details: { error: message, errorCode: "hub_unreachable" },
+				};
+			}
+		},
+	};
+}
