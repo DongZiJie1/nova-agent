@@ -1040,6 +1040,15 @@ export class AgentSession {
 		return this.agent.state.systemPrompt;
 	}
 
+	/** Base system instructions without separately reported skills or project context files. */
+	get contextSnapshotSystemPrompt(): string {
+		return buildSystemPrompt({
+			...this._baseSystemPromptOptions,
+			skills: [],
+			contextFiles: [],
+		});
+	}
+
 	/** Current retry attempt (0 if not retrying) */
 	get retryAttempt(): number {
 		return this._retryAttempt;

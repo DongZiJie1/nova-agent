@@ -15,6 +15,13 @@ import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.t
 import type { SourceInfo } from "../../core/source-info.ts";
 import type { RpcFileReference } from "./file-references.ts";
 
+export interface RpcCollaborationContext {
+	requestId: string;
+	requestDepth: number;
+	visitedAgentIds: string[];
+	sourceAgentId: string;
+}
+
 // ============================================================================
 // RPC Commands (stdin)
 // ============================================================================
@@ -27,6 +34,7 @@ type RpcSessionCommand =
 			message: string;
 			images?: ImageContent[];
 			fileReferences?: RpcFileReference[];
+			collaborationContext?: RpcCollaborationContext;
 			streamingBehavior?: "steer" | "followUp";
 	  }
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
@@ -36,6 +44,7 @@ type RpcSessionCommand =
 
 	// State
 	| { id?: string; type: "get_state" }
+	| { id?: string; type: "get_context_snapshot" }
 
 	// Model
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
@@ -140,6 +149,27 @@ export interface RpcSessionState {
 	pendingMessageCount: number;
 }
 
+export interface RpcContextSnapshot {
+	systemPrompt: string;
+	tools: Array<{
+		name: string;
+		description: string;
+		parameters: unknown;
+		sourceInfo: SourceInfo;
+	}>;
+	skills: Array<{
+		name: string;
+		description: string;
+		filePath: string;
+		disableModelInvocation: boolean;
+		sourceInfo: SourceInfo;
+	}>;
+	contextFiles: Array<{
+		path: string;
+		content: string;
+	}>;
+}
+
 // ============================================================================
 // RPC Responses (stdout)
 // ============================================================================
@@ -155,6 +185,7 @@ export type RpcResponse =
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
+	| { id?: string; type: "response"; command: "get_context_snapshot"; success: true; data: RpcContextSnapshot }
 
 	// Model
 	| {
