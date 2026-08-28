@@ -141,20 +141,26 @@ describe("hub tools without hub env", () => {
 });
 
 describe("hub_list_agents", () => {
-	it("lists agents and marks the caller", async () => {
+	it("lists only descendants returned for the current agent", async () => {
 		const fetchMock = stubFetch([
-			{ id: "agent-self1", status: "idle", cwd: "/a", model: "m1" },
-			{ id: "agent-other2", status: "streaming", cwd: "/b", model: null },
+			{
+				id: "agent-child2",
+				parent_agent_id: "agent-self1",
+				name: "Reviewer",
+				status: "streaming",
+				cwd: "/b",
+				model: null,
+			},
 		]);
 
 		const result = await createHubListAgentsToolDefinition().execute("t1", {}, undefined, undefined, ctx);
 
-		expect(resultText(result)).toContain("agent-self1 (you)");
-		expect(resultText(result)).toContain("agent-other2");
-		expect(result.details?.agents).toHaveLength(2);
+		expect(resultText(result)).toContain("agent-child2");
+		expect(resultText(result)).toContain("parent=agent-self1");
+		expect(result.details?.agents).toHaveLength(1);
 
 		const [url, init] = fetchCallArgs(fetchMock, 0);
-		expect(url).toBe("http://127.0.0.1:9528/agents");
+		expect(url).toBe("http://127.0.0.1:9528/agents/agent-self1/children");
 		expect((init.headers as Record<string, string>)["x-nova-token"]).toBe("test-token");
 	});
 });

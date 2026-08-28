@@ -19,6 +19,7 @@ export interface RpcCollaborationContext {
 	requestId: string;
 	requestDepth: number;
 	visitedAgentIds: string[];
+	sourceAgentId: string;
 }
 
 // ============================================================================

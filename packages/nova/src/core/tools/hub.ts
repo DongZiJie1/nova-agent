@@ -112,7 +112,14 @@ const hubListAgentsSchema = Type.Object({});
 export type HubListAgentsToolInput = Static<typeof hubListAgentsSchema>;
 
 export interface HubListAgentsDetails {
-	agents?: Array<{ id: string; status: string; cwd: string; model: string | null }>;
+	agents?: Array<{
+		id: string;
+		parentAgentId: string | null;
+		name: string | null;
+		status: string;
+		cwd: string;
+		model: string | null;
+	}>;
 	error?: string;
 }
 
@@ -121,15 +128,15 @@ export function createHubListAgentsToolDefinition(): ToolDefinition<typeof hubLi
 		name: "hub_list_agents",
 		label: "hub_list_agents",
 		description:
-			"List all agents currently running under Nova Studio, with their id, status, working directory, and model. Use to discover collaborators before delegating work.",
-		promptSnippet: "List the other agents running under Nova Studio.",
+			"List only the child agents created under this Agent's conversation, including deeper descendants. Returns their id, parent, name, status, working directory, and model. It never returns unrelated conversations or this Agent itself.",
+		promptSnippet: "List the child agents belonging to this Agent's conversation.",
 		parameters: hubListAgentsSchema,
 		async execute() {
 			const hub = readHubEnv();
 			if (!hub) return noHubResult();
 
 			try {
-				const res = await hubRequest("GET", "/agents");
+				const res = await hubRequest("GET", `/agents/${encodeURIComponent(hub.agentId)}/children`);
 				if (!res.ok || !Array.isArray(res.data)) {
 					const msg = (res.data as { error?: string })?.error ?? `hub returned status ${res.status}`;
 					return {
@@ -143,20 +150,29 @@ export function createHubListAgentsToolDefinition(): ToolDefinition<typeof hubLi
 					status: string;
 					cwd: string;
 					model: string | null;
+					name?: string | null;
+					parent_agent_id?: string | null;
 					message_count?: number;
 				}>;
 				const lines = others.map(
 					(a) =>
-						`- ${a.id}${a.id === hub.agentId ? " (you)" : ""}: status=${a.status}, model=${a.model ?? "default"}, cwd=${a.cwd}`,
+						`- ${a.id}: parent=${a.parent_agent_id ?? "unknown"}, name=${a.name ?? "Agent"}, status=${a.status}, model=${a.model ?? "default"}, cwd=${a.cwd}`,
 				);
 				const text =
 					lines.length === 0
-						? "No other agents are running."
-						: `${others.length} agent(s) running:\n${lines.join("\n")}`;
+						? "This Agent has no child agents."
+						: `${others.length} child agent(s):\n${lines.join("\n")}`;
 				return {
 					content: [{ type: "text" as const, text }],
 					details: {
-						agents: others.map((a) => ({ id: a.id, status: a.status, cwd: a.cwd, model: a.model })),
+						agents: others.map((a) => ({
+							id: a.id,
+							parentAgentId: a.parent_agent_id ?? null,
+							name: a.name ?? null,
+							status: a.status,
+							cwd: a.cwd,
+							model: a.model,
+						})),
 					},
 				};
 			} catch (err) {
@@ -432,6 +448,7 @@ export function createHubDelegateTaskToolDefinition(): ToolDefinition<
 		promptGuidelines: [
 			"Use hub_delegate_task to start independent work. Include all necessary context because the target agent cannot see this conversation.",
 			"Delegate multiple independent tasks before calling hub_wait_tasks so the agents can work in parallel.",
+			"Track every returned task_id and call hub_wait_tasks to collect all delegated results before giving the user a final answer. Do not abandon a running delegated task.",
 		],
 		parameters: hubDelegateTaskSchema,
 		async execute(_toolCallId, { task, agent_id, cwd, model, timeout_secs }) {
