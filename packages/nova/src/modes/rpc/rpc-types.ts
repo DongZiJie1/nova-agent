@@ -35,10 +35,20 @@ type RpcSessionCommand =
 			images?: ImageContent[];
 			fileReferences?: RpcFileReference[];
 			collaborationContext?: RpcCollaborationContext;
+			backgroundAgentIds?: string[];
 			streamingBehavior?: "steer" | "followUp";
 	  }
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
+	| { id?: string; type: "summarize_task_result"; task: string; finalText: string }
+	| {
+			id?: string;
+			type: "append_custom_message";
+			customType: string;
+			content: string;
+			display?: boolean;
+			details?: unknown;
+	  }
 	| { id?: string; type: "abort" }
 	| { id?: string; type: "new_session"; parentSession?: string }
 

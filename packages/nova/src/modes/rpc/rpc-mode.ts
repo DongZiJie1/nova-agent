@@ -560,6 +560,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 						details: collaboration,
 					});
 				}
+				if ((command.backgroundAgentIds?.length ?? 0) > 0) {
+					contextMessages.push({
+						customType: "background_agent_work",
+						content: `Background Agent marker for this user turn:\n- running_agent_ids: ${command.backgroundAgentIds?.join(", ")}\n- Focus only on the user's latest message for this turn.\n- Do not wait for, poll, query, or speculate about these Agents.\n- Their completed results will be delivered automatically; handle them only after they arrive.`,
+						display: false,
+						details: { agentIds: command.backgroundAgentIds },
+					});
+				}
 				// Start prompt handling immediately, but emit the authoritative response only after
 				// prompt preflight succeeds. Queued and immediately handled prompts also count as success.
 				let preflightSucceeded = false;
@@ -600,6 +608,45 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "follow_up": {
 				await session.followUp(command.message, command.images);
 				return success(id, "follow_up");
+			}
+
+			case "summarize_task_result": {
+				const text = await session.summarizeTaskResult(command.task, command.finalText);
+				return success(id, "summarize_task_result", { text });
+			}
+
+			case "append_custom_message": {
+				const taskId =
+					command.details && typeof command.details === "object"
+						? (command.details as { taskId?: unknown }).taskId
+						: undefined;
+				const alreadyPresent = Boolean(
+					typeof taskId === "string" &&
+						session.messages.some((message) => {
+							if (message.role !== "custom" || message.customType !== command.customType) return false;
+							const details = message.details;
+							return (
+								details && typeof details === "object" && (details as { taskId?: unknown }).taskId === taskId
+							);
+						}),
+				);
+				if (!alreadyPresent) {
+					const delivery = session.sendCustomMessage(
+						{
+							customType: command.customType,
+							content: command.content,
+							display: command.display ?? true,
+							details: command.details,
+						},
+						session.isStreaming ? { deliverAs: "nextTurn" } : { triggerTurn: true },
+					);
+					void delivery.catch((cause) => {
+						process.stderr.write(
+							`Failed to deliver Agent task result: ${cause instanceof Error ? cause.message : String(cause)}\n`,
+						);
+					});
+				}
+				return success(id, "append_custom_message", { appended: !alreadyPresent });
 			}
 
 			case "abort": {
