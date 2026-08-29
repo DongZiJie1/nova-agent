@@ -47,6 +47,7 @@ type RpcSessionCommand =
 			customType: string;
 			content: string;
 			display?: boolean;
+			triggerTurn?: boolean;
 			details?: unknown;
 	  }
 	| { id?: string; type: "abort" }

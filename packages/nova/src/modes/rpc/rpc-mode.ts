@@ -26,7 +26,7 @@ import {
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
 } from "../../core/output-guard.ts";
-import { runWithHubAgentContext } from "../../core/tools/hub.ts";
+import { runWithHubAgentContext, sealHubTaskBatch } from "../../core/tools/hub.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { formatFileReferenceContext, resolveFileReferences } from "./file-references.ts";
@@ -65,6 +65,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		["default", Number.parseInt(process.env.NOVA_ASK_DEPTH ?? "0", 10) || 0],
 	]);
 	const runtimeUnsubscribers = new Map<string, () => void>();
+	const activeBatchIds = new Map<string, string>();
 
 	const output = (obj: RpcResponse | RpcExtensionUIRequest | object, agentId?: string) => {
 		writeRawStdout(serializeJsonLine(agentId ? { ...obj, agentId } : obj));
@@ -395,6 +396,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		unsubscribe = session.subscribe((event) => {
 			output(event);
 			if (event.type === "agent_settled") {
+				const batchId = activeBatchIds.get("default");
+				if (batchId) {
+					activeBatchIds.delete("default");
+					void sealHubTaskBatch(batchId, "default").catch((cause) => {
+						process.stderr.write(
+							`Failed to seal Agent task batch: ${cause instanceof Error ? cause.message : String(cause)}\n`,
+						);
+					});
+				}
 				void checkShutdownRequested();
 			}
 		});
@@ -453,7 +463,20 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			});
 			unsubscribeEvents?.();
 			unsubscribePressure?.();
-			unsubscribeEvents = siblingSession.subscribe((event) => output(event, agentId));
+			unsubscribeEvents = siblingSession.subscribe((event) => {
+				output(event, agentId);
+				if (event.type === "agent_settled") {
+					const batchId = activeBatchIds.get(agentId);
+					if (batchId) {
+						activeBatchIds.delete(agentId);
+						void sealHubTaskBatch(batchId, agentId).catch((cause) => {
+							process.stderr.write(
+								`Failed to seal Agent task batch: ${cause instanceof Error ? cause.message : String(cause)}\n`,
+							);
+						});
+					}
+				}
+			});
 			unsubscribePressure = siblingSession.agent.subscribe(async () => waitForRawStdoutBackpressure());
 		};
 		sibling.setRebindSession(bind);
@@ -525,6 +548,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "prompt": {
+				const batchId = crypto.randomUUID();
+				activeBatchIds.set(targetAgentId, batchId);
 				const referencedPaths = await resolveFileReferences(targetRuntime.cwd, command.fileReferences ?? []);
 
 				// Short-circuit: if the user attaches or references an image but the
@@ -575,6 +600,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					{
 						agentId: targetAgentId,
 						depth: runtimeDepths.get(targetAgentId) ?? 0,
+						batchId,
 						requestId: command.collaborationContext?.requestId,
 						requestDepth: command.collaborationContext?.requestDepth,
 						visitedAgentIds: command.collaborationContext?.visitedAgentIds,
@@ -616,30 +642,51 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "append_custom_message": {
-				const taskId =
+				const messageKey =
 					command.details && typeof command.details === "object"
-						? (command.details as { taskId?: unknown }).taskId
+						? ((command.details as { taskId?: unknown; batchId?: unknown }).taskId ??
+							(command.details as { batchId?: unknown }).batchId)
 						: undefined;
 				const alreadyPresent = Boolean(
-					typeof taskId === "string" &&
+					typeof messageKey === "string" &&
 						session.messages.some((message) => {
 							if (message.role !== "custom" || message.customType !== command.customType) return false;
 							const details = message.details;
-							return (
-								details && typeof details === "object" && (details as { taskId?: unknown }).taskId === taskId
-							);
+							if (!details || typeof details !== "object") return false;
+							const existing =
+								(details as { taskId?: unknown; batchId?: unknown }).taskId ??
+								(details as { batchId?: unknown }).batchId;
+							return existing === messageKey;
 						}),
 				);
 				if (!alreadyPresent) {
-					const delivery = session.sendCustomMessage(
-						{
-							customType: command.customType,
-							content: command.content,
-							display: command.display ?? true,
-							details: command.details,
-						},
-						session.isStreaming ? { deliverAs: "nextTurn" } : { triggerTurn: true },
-					);
+					const send = () =>
+						session.sendCustomMessage(
+							{
+								customType: command.customType,
+								content: command.content,
+								display: command.display ?? true,
+								details: command.details,
+							},
+							session.isStreaming
+								? { deliverAs: command.triggerTurn === false ? "nextTurn" : "followUp" }
+								: { triggerTurn: command.triggerTurn ?? true },
+						);
+					let delivery: Promise<void>;
+					if (command.triggerTurn !== false) {
+						const batchId = crypto.randomUUID();
+						activeBatchIds.set(targetAgentId, batchId);
+						delivery = runWithHubAgentContext(
+							{
+								agentId: targetAgentId,
+								depth: runtimeDepths.get(targetAgentId) ?? 0,
+								batchId,
+							},
+							send,
+						);
+					} else {
+						delivery = send();
+					}
 					void delivery.catch((cause) => {
 						process.stderr.write(
 							`Failed to deliver Agent task result: ${cause instanceof Error ? cause.message : String(cause)}\n`,

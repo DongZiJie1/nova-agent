@@ -35,6 +35,7 @@ interface HubEnv {
 interface HubAgentContext {
 	agentId: string;
 	depth: number;
+	batchId?: string;
 	requestId?: string;
 	requestDepth?: number;
 	visitedAgentIds?: string[];
@@ -95,6 +96,18 @@ export async function hubRequest(
 		data = { error: text };
 	}
 	return { ok: res.ok, status: res.status, data };
+}
+
+/** Mark the current delegation batch closed once the owning Agent turn settles. */
+export async function sealHubTaskBatch(batchId: string, sourceAgentId: string): Promise<void> {
+	const hub = readHubEnv();
+	if (!hub) return;
+	const response = await hubRequest("POST", `/tasks/batches/${encodeURIComponent(batchId)}/seal`, {
+		source_agent_id: sourceAgentId,
+	});
+	if (!response.ok) {
+		throw new Error(`Could not seal Agent task batch ${batchId}: hub returned status ${response.status}`);
+	}
 }
 
 function truncateReply(text: string): { text: string; truncated: boolean } {
@@ -427,6 +440,7 @@ export type HubDelegateTaskInput = Static<typeof hubDelegateTaskSchema>;
 
 export interface HubDelegateTaskDetails {
 	taskId?: string;
+	batchId?: string;
 	agentId?: string;
 	createdAgent?: boolean;
 	status?: string;
@@ -458,6 +472,7 @@ export function createHubDelegateTaskToolDefinition(): ToolDefinition<
 			const visitedAgentIds = Array.from(new Set([...(scoped?.visitedAgentIds ?? []), hub.agentId]));
 			const requestDepth = (scoped?.requestDepth ?? hub.depth) + 1;
 			const requestId = scoped?.requestId ?? randomUUID();
+			const batchId = scoped?.batchId ?? randomUUID();
 
 			if (agent_id === hub.agentId || (agent_id && visitedAgentIds.includes(agent_id))) {
 				return {
@@ -481,6 +496,7 @@ export function createHubDelegateTaskToolDefinition(): ToolDefinition<
 					timeout_secs: timeout_secs ?? 300,
 					source_agent_id: hub.agentId,
 					request_id: requestId,
+					batch_id: batchId,
 					request_depth: requestDepth,
 					visited_agent_ids: visitedAgentIds,
 					depth: hub.depth + 1,
@@ -509,6 +525,7 @@ export function createHubDelegateTaskToolDefinition(): ToolDefinition<
 					],
 					details: {
 						taskId: data.task_id,
+						batchId,
 						agentId: data.agent_id,
 						createdAgent: data.created_agent,
 						status: data.status,
