@@ -29,6 +29,7 @@ import {
 import { runWithHubAgentContext, sealHubTaskBatch } from "../../core/tools/hub.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
+import { AgentLifecycle } from "./agent-lifecycle.ts";
 import { formatFileReferenceContext, resolveFileReferences } from "./file-references.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
 import type {
@@ -65,7 +66,18 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		["default", Number.parseInt(process.env.NOVA_ASK_DEPTH ?? "0", 10) || 0],
 	]);
 	const runtimeUnsubscribers = new Map<string, () => void>();
+	const runtimeParents = new Map<string, string | undefined>([["default", undefined]]);
+	const runtimeRoots = new Map<string, string>([["default", "default"]]);
 	const activeBatchIds = new Map<string, string>();
+	const lifecycles = new Map<string, AgentLifecycle>();
+	const lastPrompts = new Map<string, { message: string; images?: import("@dongzijie1/pi-ai").ImageContent[] }>();
+	const taskTokenBaselines = new Map<
+		string,
+		ReturnType<AgentSessionRuntime["session"]["getSessionStats"]>["tokens"]
+	>();
+	const defaultLifecycle = new AgentLifecycle("default");
+	defaultLifecycle.ready();
+	lifecycles.set("default", defaultLifecycle);
 
 	const output = (obj: RpcResponse | RpcExtensionUIRequest | object, agentId?: string) => {
 		writeRawStdout(serializeJsonLine(agentId ? { ...obj, agentId } : obj));
@@ -395,7 +407,26 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		unsubscribeBackpressure?.();
 		unsubscribe = session.subscribe((event) => {
 			output(event);
+			if (event.type === "agent_start") lifecycles.get("default")?.start();
 			if (event.type === "agent_settled") {
+				const lifecycle = lifecycles.get("default");
+				if (lifecycle && !lifecycle.isTerminal()) {
+					if (session.state.errorMessage) lifecycle.fail(session.state.errorMessage);
+					else {
+						const current = session.getSessionStats().tokens;
+						const baseline = taskTokenBaselines.get("default");
+						lifecycle.complete(
+							baseline
+								? {
+										input: current.input - baseline.input,
+										output: current.output - baseline.output,
+										cacheRead: current.cacheRead - baseline.cacheRead,
+										cacheWrite: current.cacheWrite - baseline.cacheWrite,
+									}
+								: current,
+						);
+					}
+				}
 				const batchId = activeBatchIds.get("default");
 				if (batchId) {
 					activeBatchIds.delete("default");
@@ -465,7 +496,26 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			unsubscribePressure?.();
 			unsubscribeEvents = siblingSession.subscribe((event) => {
 				output(event, agentId);
+				if (event.type === "agent_start") lifecycles.get(agentId)?.start();
 				if (event.type === "agent_settled") {
+					const lifecycle = lifecycles.get(agentId);
+					if (lifecycle && !lifecycle.isTerminal()) {
+						if (siblingSession.state.errorMessage) lifecycle.fail(siblingSession.state.errorMessage);
+						else {
+							const current = siblingSession.getSessionStats().tokens;
+							const baseline = taskTokenBaselines.get(agentId);
+							lifecycle.complete(
+								baseline
+									? {
+											input: current.input - baseline.input,
+											output: current.output - baseline.output,
+											cacheRead: current.cacheRead - baseline.cacheRead,
+											cacheWrite: current.cacheWrite - baseline.cacheWrite,
+										}
+									: current,
+							);
+						}
+					}
 					const batchId = activeBatchIds.get(agentId);
 					if (batchId) {
 						activeBatchIds.delete(agentId);
@@ -495,15 +545,32 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			if (runtimes.has(command.agentId)) {
 				return error(id, "agent_create", `Agent already exists: ${command.agentId}`);
 			}
-			const sibling = await runtimeHost.createSibling({
-				cwd: command.cwd,
-				sessionId: command.sessionId,
-				sessionPath: command.sessionPath,
-				parentSession: command.parentSession,
-			});
+			const lifecycle = new AgentLifecycle(command.agentId);
+			lifecycles.set(command.agentId, lifecycle);
+			let sibling: AgentSessionRuntime;
+			try {
+				sibling = await runtimeHost.createSibling({
+					cwd: command.cwd,
+					sessionId: command.sessionId,
+					sessionPath: command.sessionPath,
+					parentSession: command.parentSession,
+				});
+			} catch (cause) {
+				lifecycle.fail(cause instanceof Error ? cause.message : String(cause));
+				throw cause;
+			}
 			runtimes.set(command.agentId, sibling);
+			runtimeParents.set(command.agentId, command.parentAgentId);
+			runtimeRoots.set(
+				command.agentId,
+				command.rootAgentId ??
+					(command.parentAgentId
+						? (runtimeRoots.get(command.parentAgentId) ?? command.parentAgentId)
+						: command.agentId),
+			);
 			runtimeDepths.set(command.agentId, command.depth ?? 0);
 			await bindSiblingRuntime(command.agentId, sibling);
+			lifecycle.ready();
 			return success(id, "agent_create", {
 				agentId: command.agentId,
 				sessionId: sibling.session.sessionId,
@@ -511,29 +578,70 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			});
 		}
 
-		if (command.type === "agent_stop") {
+		if (command.type === "agent_stop" || command.type === "agent_cancel" || command.type === "agent_force_stop") {
 			if (command.agentId === "default") {
-				return error(id, "agent_stop", "The default agent cannot be removed while the host is running");
+				return error(id, command.type, "The default agent cannot be removed while the host is running");
 			}
 			const target = runtimes.get(command.agentId);
-			if (!target) return error(id, "agent_stop", `Agent not found: ${command.agentId}`);
+			if (!target) return error(id, command.type, `Agent not found: ${command.agentId}`);
+			const reason = command.reason ?? (command.type === "agent_stop" ? "stopped by host" : "cancelled by user");
+			if (command.type === "agent_force_stop" && command.timedOut) lifecycles.get(command.agentId)?.timeout(reason);
+			else lifecycles.get(command.agentId)?.stop(reason);
 			await target.session.abort();
+			if (command.type === "agent_cancel") return success(id, command.type);
 			await target.dispose();
 			runtimeUnsubscribers.get(command.agentId)?.();
 			runtimeUnsubscribers.delete(command.agentId);
 			runtimes.delete(command.agentId);
 			runtimeDepths.delete(command.agentId);
-			return success(id, "agent_stop");
+			runtimeParents.delete(command.agentId);
+			runtimeRoots.delete(command.agentId);
+			return success(id, command.type);
+		}
+
+		if (command.type === "agent_archive") {
+			const lifecycle = lifecycles.get(command.agentId);
+			if (!lifecycle) return error(id, command.type, `Agent not found: ${command.agentId}`);
+			lifecycle.archive();
+			return success(id, command.type, { lifecycle: lifecycle.value });
+		}
+
+		if (command.type === "agent_retry") {
+			const lifecycle = lifecycles.get(command.agentId);
+			const target = runtimes.get(command.agentId);
+			if (!lifecycle || !target) return error(id, command.type, `Agent not found: ${command.agentId}`);
+			if (!lifecycle.isTerminal())
+				return error(id, command.type, `Agent is not in a terminal state: ${command.agentId}`);
+			const previous = lastPrompts.get(command.agentId);
+			const message = command.message ?? previous?.message;
+			if (!message) return error(id, command.type, `No previous task to retry: ${command.agentId}`);
+			lifecycle.retry();
+			taskTokenBaselines.set(command.agentId, target.session.getSessionStats().tokens);
+			void target.session.prompt(message, { images: previous?.images, source: "rpc" }).catch((cause) => {
+				lifecycle.fail(cause instanceof Error ? cause.message : String(cause));
+			});
+			return success(id, command.type, { lifecycle: lifecycle.value });
 		}
 
 		if (command.type === "agent_list") {
 			return success(id, "agent_list", {
-				agents: Array.from(runtimes, ([agentId, runtime]) => ({
-					agentId,
-					sessionId: runtime.session.sessionId,
-					cwd: runtime.cwd,
-					isStreaming: runtime.session.isStreaming,
-				})),
+				agents: Array.from(lifecycles)
+					.filter(([, lifecycle]) => command.includeArchived || !lifecycle.value.archived)
+					.filter(([, lifecycle]) => !command.status || lifecycle.value.taskStatus === command.status)
+					.filter(([agentId]) => !command.projectCwd || runtimes.get(agentId)?.cwd === command.projectCwd)
+					.filter(([agentId]) => !command.rootAgentId || runtimeRoots.get(agentId) === command.rootAgentId)
+					.map(([agentId, lifecycle]) => {
+						const runtime = runtimes.get(agentId);
+						return {
+							agentId,
+							sessionId: runtime?.session.sessionId,
+							cwd: runtime?.cwd,
+							isStreaming: runtime?.session.isStreaming ?? false,
+							parentAgentId: runtimeParents.get(agentId),
+							rootAgentId: runtimeRoots.get(agentId) ?? agentId,
+							lifecycle: lifecycle.value,
+						};
+					}),
 			});
 		}
 
@@ -548,6 +656,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "prompt": {
+				const lifecycle = lifecycles.get(targetAgentId)!;
+				lifecycle.queue();
+				taskTokenBaselines.set(targetAgentId, session.getSessionStats().tokens);
+				lastPrompts.set(targetAgentId, { message: command.message, images: command.images });
 				const batchId = crypto.randomUUID();
 				activeBatchIds.set(targetAgentId, batchId);
 				const referencedPaths = await resolveFileReferences(targetRuntime.cwd, command.fileReferences ?? []);
@@ -613,12 +725,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 							source: "rpc",
 							preflightResult: (didSucceed) => {
 								if (didSucceed) {
+									lifecycle.start();
 									preflightSucceeded = true;
 									output(success(id, "prompt"), command.agentId);
 								}
 							},
 						}),
 				).catch((e) => {
+					lifecycle.fail(e instanceof Error ? e.message : String(e));
 					if (!preflightSucceeded) {
 						output(error(id, "prompt", e.message), command.agentId);
 					}
