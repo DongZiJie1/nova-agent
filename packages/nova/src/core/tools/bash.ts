@@ -341,6 +341,17 @@ export function createBashToolDefinition(
 			onUpdate?,
 			ctx?,
 		) {
+			if (process.env.NOVA_HUB_URL && /^\s*(?:command\s+)?sleep\s+\d+(?:\.\d+)?[smhd]?\s*$/i.test(command)) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: "Standalone sleep is disabled in Nova Studio. Do not poll or delay for a delegated Agent; its result will be delivered automatically.",
+						},
+					],
+					details: undefined,
+				};
+			}
 			const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
 			const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook, exposeSessionEnvironment, ctx);
 			const output = new OutputAccumulator({ tempFilePrefix: "pi-bash" });

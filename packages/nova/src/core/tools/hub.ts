@@ -35,6 +35,7 @@ interface HubEnv {
 interface HubAgentContext {
 	agentId: string;
 	depth: number;
+	batchId?: string;
 	requestId?: string;
 	requestDepth?: number;
 	visitedAgentIds?: string[];
@@ -97,6 +98,18 @@ export async function hubRequest(
 	return { ok: res.ok, status: res.status, data };
 }
 
+/** Mark the current delegation batch closed once the owning Agent turn settles. */
+export async function sealHubTaskBatch(batchId: string, sourceAgentId: string): Promise<void> {
+	const hub = readHubEnv();
+	if (!hub) return;
+	const response = await hubRequest("POST", `/tasks/batches/${encodeURIComponent(batchId)}/seal`, {
+		source_agent_id: sourceAgentId,
+	});
+	if (!response.ok) {
+		throw new Error(`Could not seal Agent task batch ${batchId}: hub returned status ${response.status}`);
+	}
+}
+
 function truncateReply(text: string): { text: string; truncated: boolean } {
 	if (text.length <= MAX_REPLY_CHARS) return { text, truncated: false };
 	return {
@@ -128,7 +141,7 @@ export function createHubListAgentsToolDefinition(): ToolDefinition<typeof hubLi
 		name: "hub_list_agents",
 		label: "hub_list_agents",
 		description:
-			"List only the child agents created under this Agent's conversation, including deeper descendants. Returns their id, parent, name, status, working directory, and model. It never returns unrelated conversations or this Agent itself.",
+			"List only the child agents created under this Agent's conversation, including deeper descendants. Returns their id, parent, name, status, working directory, and model. Use for discovery, not for polling task completion; completed task results arrive automatically.",
 		promptSnippet: "List the child agents belonging to this Agent's conversation.",
 		parameters: hubListAgentsSchema,
 		async execute() {
@@ -427,6 +440,7 @@ export type HubDelegateTaskInput = Static<typeof hubDelegateTaskSchema>;
 
 export interface HubDelegateTaskDetails {
 	taskId?: string;
+	batchId?: string;
 	agentId?: string;
 	createdAgent?: boolean;
 	status?: string;
@@ -443,12 +457,12 @@ export function createHubDelegateTaskToolDefinition(): ToolDefinition<
 		name: "hub_delegate_task",
 		label: "hub_delegate_task",
 		description:
-			"Delegate a self-contained task without waiting for completion. Provide agent_id to reuse an existing agent, or omit it to create a child agent automatically. Returns task_id and agent_id immediately; collect results with hub_wait_tasks.",
+			"Delegate a self-contained task and return immediately. Provide agent_id to reuse an existing agent, or omit it to create a child agent automatically. The completed structured result is automatically added to the delegating Agent's conversation.",
 		promptSnippet: "Delegate work to an existing or automatically created agent without blocking.",
 		promptGuidelines: [
 			"Use hub_delegate_task to start independent work. Include all necessary context because the target agent cannot see this conversation.",
-			"Delegate multiple independent tasks before calling hub_wait_tasks so the agents can work in parallel.",
-			"Track every returned task_id and call hub_wait_tasks to collect all delegated results before giving the user a final answer. Do not abandon a running delegated task.",
+			"After delegating, continue the current conversation or other useful work. Completed results are automatically added to this conversation.",
+			"Never wait for delegated work by running bash sleep, timers, retry loops, or repeated hub_list_agents calls. End the current turn or help the user with something else; the result will arrive as a SUB_AGENT message.",
 		],
 		parameters: hubDelegateTaskSchema,
 		async execute(_toolCallId, { task, agent_id, cwd, model, timeout_secs }) {
@@ -458,6 +472,7 @@ export function createHubDelegateTaskToolDefinition(): ToolDefinition<
 			const visitedAgentIds = Array.from(new Set([...(scoped?.visitedAgentIds ?? []), hub.agentId]));
 			const requestDepth = (scoped?.requestDepth ?? hub.depth) + 1;
 			const requestId = scoped?.requestId ?? randomUUID();
+			const batchId = scoped?.batchId ?? randomUUID();
 
 			if (agent_id === hub.agentId || (agent_id && visitedAgentIds.includes(agent_id))) {
 				return {
@@ -481,6 +496,7 @@ export function createHubDelegateTaskToolDefinition(): ToolDefinition<
 					timeout_secs: timeout_secs ?? 300,
 					source_agent_id: hub.agentId,
 					request_id: requestId,
+					batch_id: batchId,
 					request_depth: requestDepth,
 					visited_agent_ids: visitedAgentIds,
 					depth: hub.depth + 1,
@@ -509,6 +525,7 @@ export function createHubDelegateTaskToolDefinition(): ToolDefinition<
 					],
 					details: {
 						taskId: data.task_id,
+						batchId,
 						agentId: data.agent_id,
 						createdAgent: data.created_agent,
 						status: data.status,
@@ -539,7 +556,17 @@ const hubWaitTasksSchema = Type.Object({
 export type HubWaitTasksInput = Static<typeof hubWaitTasksSchema>;
 
 export interface HubWaitTasksDetails {
-	tasks?: Array<{ task_id: string; agent_id: string; status: string; result?: string; error?: string }>;
+	tasks?: Array<{
+		taskId: string;
+		agentId: string;
+		status: string;
+		summary?: string;
+		changedFiles: string[];
+		verification: string[];
+		remainingRisks: string[];
+		finalText?: string;
+		error?: string;
+	}>;
 	timedOut?: boolean;
 	error?: string;
 	errorCode?: string;
@@ -550,8 +577,8 @@ export function createHubWaitTasksToolDefinition(): ToolDefinition<typeof hubWai
 		name: "hub_wait_tasks",
 		label: "hub_wait_tasks",
 		description:
-			"Check or wait for delegated Agent tasks. Use wait_for='any' to resume when the first task finishes, or 'all' to collect every result. Set timeout_secs to 0 for an immediate status check.",
-		promptSnippet: "Wait for or check results from delegated Agent tasks.",
+			"Explicitly check or wait for delegated Agent tasks when their result is required before continuing. Completed results are also delivered automatically, so this tool is usually unnecessary after delegation. Use timeout_secs=0 for a non-blocking status check.",
+		promptSnippet: "Explicitly wait for or check a delegated task only when its result is needed now.",
 		parameters: hubWaitTasksSchema,
 		async execute(_toolCallId, { task_ids, wait_for, timeout_secs }) {
 			const hub = readHubEnv();
@@ -563,7 +590,7 @@ export function createHubWaitTasksToolDefinition(): ToolDefinition<typeof hubWai
 					timeout_secs: timeout_secs ?? 30,
 				});
 				const data = res.data as {
-					tasks?: Array<{ task_id: string; agent_id: string; status: string; result?: string; error?: string }>;
+					tasks?: HubWaitTasksDetails["tasks"];
 					timed_out?: boolean;
 					error?: string;
 					code?: string;
@@ -575,10 +602,7 @@ export function createHubWaitTasksToolDefinition(): ToolDefinition<typeof hubWai
 						details: { error: message, errorCode: data.code },
 					};
 				}
-				const lines = data.tasks.map((task) => {
-					const outcome = task.result ?? task.error ?? "still running";
-					return `${task.task_id} (${task.agent_id}) [${task.status}]: ${outcome}`;
-				});
+				const lines = data.tasks.map((task) => JSON.stringify(task));
 				return {
 					content: [{ type: "text" as const, text: lines.join("\n") }],
 					details: { tasks: data.tasks, timedOut: data.timed_out },

@@ -6,10 +6,23 @@
 
 ### Added
 
+- Added reliable asynchronous Agent orchestration with non-blocking delegation, task batches, structured child-Agent results, and single-resume batch completion.
+- Added Agent lifecycle tracking for queued, starting, running, waiting, completed, error, stopped, and orphaned states, including timing, token usage, retry, cancellation, timeout, and archive metadata.
+- Added request-depth and visited-Agent safeguards, cycle detection, duplicate-request throttling, and bounded Agent collaboration concurrency and budgets.
+- Added task-level cancellation, force-stop, retry, parent/child/tree queries, and batch/status result queries for Studio control surfaces.
 - Added the `nova_data` tool for listing projects and sessions, reading bounded conversation history, and moving confirmed inactive sessions to the system trash.
 - Added persistent Studio feedback for assistant messages, including upvote, downvote, and clearing feedback by session entry ID.
 - Added native session forking at a selected message entry with explicit `before` and `at` positioning.
 - Added persistent execution traces and the `get_execution_traces` RPC command for inspecting turn, model, thinking, and tool timing after session reloads.
+
+### Changed
+
+- Changed delegated tasks to return immediately and report each result independently while resuming the parent Agent only once after the batch is sealed and terminal.
+- Removed model-facing task waiting and polling patterns; background tasks can complete while users continue interacting with the parent Agent.
+
+### Fixed
+
+- Prevented Agent request cycles, retry/cancellation races, duplicate batch resumes, and failed verification traces being reported as successful task completion.
 
 ## [1.2.0] - 2026-08-16
 

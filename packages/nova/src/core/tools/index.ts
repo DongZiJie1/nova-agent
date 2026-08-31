@@ -103,11 +103,7 @@ import { type BashToolOptions, createBashTool, createBashToolDefinition } from "
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.ts";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.ts";
 import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.ts";
-import {
-	createHubDelegateTaskToolDefinition,
-	createHubListAgentsToolDefinition,
-	createHubWaitTasksToolDefinition,
-} from "./hub.ts";
+import { createHubDelegateTaskToolDefinition, createHubListAgentsToolDefinition } from "./hub.ts";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
 import { createNovaDataToolDefinition } from "./nova-data.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
@@ -127,8 +123,7 @@ export type ToolName =
 	| "nova_data"
 	| "ask_user_question"
 	| "hub_list_agents"
-	| "hub_delegate_task"
-	| "hub_wait_tasks";
+	| "hub_delegate_task";
 export const allToolNames: Set<ToolName> = new Set([
 	"read",
 	"bash",
@@ -141,7 +136,6 @@ export const allToolNames: Set<ToolName> = new Set([
 	"ask_user_question",
 	"hub_list_agents",
 	"hub_delegate_task",
-	"hub_wait_tasks",
 ]);
 
 export interface ToolsOptions {
@@ -178,8 +172,6 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createHubListAgentsToolDefinition();
 		case "hub_delegate_task":
 			return createHubDelegateTaskToolDefinition();
-		case "hub_wait_tasks":
-			return createHubWaitTasksToolDefinition();
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -209,8 +201,6 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return wrapToolDefinition(createHubListAgentsToolDefinition());
 		case "hub_delegate_task":
 			return wrapToolDefinition(createHubDelegateTaskToolDefinition());
-		case "hub_wait_tasks":
-			return wrapToolDefinition(createHubWaitTasksToolDefinition());
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -247,7 +237,6 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		ask_user_question: createAskUserQuestionToolDefinition(),
 		hub_list_agents: createHubListAgentsToolDefinition(),
 		hub_delegate_task: createHubDelegateTaskToolDefinition(),
-		hub_wait_tasks: createHubWaitTasksToolDefinition(),
 	};
 }
 
@@ -282,7 +271,6 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		ask_user_question: wrapToolDefinition(createAskUserQuestionToolDefinition()),
 		hub_list_agents: wrapToolDefinition(createHubListAgentsToolDefinition()),
 		hub_delegate_task: wrapToolDefinition(createHubDelegateTaskToolDefinition()),
-		hub_wait_tasks: wrapToolDefinition(createHubWaitTasksToolDefinition()),
 	};
 }
 
@@ -294,7 +282,7 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 export function createDefaultActiveToolNames(): ToolName[] {
 	const names: ToolName[] = ["read", "bash", "edit", "write", "ask_user_question", "nova_data"];
 	if (process.env.NOVA_HUB_URL) {
-		names.push("hub_list_agents", "hub_delegate_task", "hub_wait_tasks");
+		names.push("hub_list_agents", "hub_delegate_task");
 	}
 	return names;
 }

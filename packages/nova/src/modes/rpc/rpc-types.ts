@@ -13,7 +13,10 @@ import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { ExecutionTrace, ExecutionTraceCategory } from "../../core/execution-traces.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
+import type { AgentLifecycleSnapshot } from "./agent-lifecycle.ts";
 import type { RpcFileReference } from "./file-references.ts";
+
+export type { AgentLifecycleSnapshot, AgentSessionStatus, AgentTaskStatus } from "./agent-lifecycle.ts";
 
 export interface RpcCollaborationContext {
 	requestId: string;
@@ -35,10 +38,21 @@ type RpcSessionCommand =
 			images?: ImageContent[];
 			fileReferences?: RpcFileReference[];
 			collaborationContext?: RpcCollaborationContext;
+			backgroundAgentIds?: string[];
 			streamingBehavior?: "steer" | "followUp";
 	  }
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
+	| { id?: string; type: "summarize_task_result"; task: string; finalText: string }
+	| {
+			id?: string;
+			type: "append_custom_message";
+			customType: string;
+			content: string;
+			display?: boolean;
+			triggerTurn?: boolean;
+			details?: unknown;
+	  }
 	| { id?: string; type: "abort" }
 	| { id?: string; type: "new_session"; parentSession?: string }
 
@@ -109,10 +123,23 @@ export type RpcCommand =
 			sessionId?: string;
 			sessionPath?: string;
 			parentSession?: string;
+			parentAgentId?: string;
+			rootAgentId?: string;
 			depth?: number;
 	  }
-	| { id?: string; type: "agent_stop"; agentId: string }
-	| { id?: string; type: "agent_list" };
+	| { id?: string; type: "agent_stop"; agentId: string; reason?: string }
+	| { id?: string; type: "agent_cancel"; agentId: string; reason?: string }
+	| { id?: string; type: "agent_force_stop"; agentId: string; reason?: string; timedOut?: boolean }
+	| { id?: string; type: "agent_retry"; agentId: string; message?: string }
+	| { id?: string; type: "agent_archive"; agentId: string }
+	| {
+			id?: string;
+			type: "agent_list";
+			status?: AgentLifecycleSnapshot["taskStatus"];
+			projectCwd?: string;
+			rootAgentId?: string;
+			includeArchived?: boolean;
+	  };
 
 // ============================================================================
 // RPC Slash Command (for get_commands response)
