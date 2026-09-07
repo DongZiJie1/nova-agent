@@ -60,8 +60,24 @@ describe("asynchronous Agent tasks", () => {
 	it("waits for any delegated task and returns structured results", async () => {
 		const fetchMock = stubFetch({
 			tasks: [
-				{ task_id: "task-1", agent_id: "agent-a", status: "completed", result: "done" },
-				{ task_id: "task-2", agent_id: "agent-b", status: "running" },
+				{
+					taskId: "task-1",
+					agentId: "agent-a",
+					status: "completed",
+					summary: "done",
+					changedFiles: [],
+					verification: [],
+					remainingRisks: [],
+					finalText: "done",
+				},
+				{
+					taskId: "task-2",
+					agentId: "agent-b",
+					status: "running",
+					changedFiles: [],
+					verification: [],
+					remainingRisks: [],
+				},
 			],
 			timed_out: false,
 		});
@@ -74,7 +90,7 @@ describe("asynchronous Agent tasks", () => {
 			ctx,
 		);
 
-		expect(resultText(result)).toContain("task-1 (agent-a) [completed]: done");
+		expect(resultText(result)).toContain('"taskId":"task-1"');
 		expect(result.details?.tasks).toHaveLength(2);
 		const [url, init] = fetchCallArgs(fetchMock, 0);
 		expect(url).toBe("http://127.0.0.1:9528/tasks/wait");

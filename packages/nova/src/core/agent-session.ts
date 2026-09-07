@@ -29,6 +29,7 @@ import { contentText } from "@dongzijie1/pi-ai";
 import type {
 	AssistantMessage,
 	AuthResult,
+	Context,
 	ImageContent,
 	Model,
 	ProviderHeaders,
@@ -1047,6 +1048,31 @@ export class AgentSession {
 			skills: [],
 			contextFiles: [],
 		});
+	}
+
+	/** Run a one-off task-result summarization call without mutating session history. */
+	async summarizeTaskResult(task: string, finalText: string): Promise<string> {
+		if (!this.model) throw new Error("No model available for task result summarization");
+		const auth = await this._getRequiredRequestAuth(this.model);
+		const prompt = `Summarize the completed Agent task below. Return JSON only with exactly these fields: summary (a concise string), changedFiles (string array), verification (string array), remainingRisks (string array). Use only evidence present in the delegated task and result; do not invent files or checks.\n\nDelegated task:\n${task}\n\nTask result:\n${finalText}`;
+		const context: Context = {
+			systemPrompt: this.systemPrompt,
+			messages: [
+				{
+					role: "user",
+					content: [{ type: "text", text: prompt }],
+					timestamp: Date.now(),
+				},
+			],
+			tools: [],
+		};
+		const response = await this.agent.streamFunction(this.model, context, {
+			apiKey: auth.apiKey,
+			headers: auth.headers,
+			env: auth.env,
+			reasoning: this.thinkingLevel === "off" ? undefined : this.thinkingLevel,
+		});
+		return contentText((await response.result()).content);
 	}
 
 	/** Current retry attempt (0 if not retrying) */
