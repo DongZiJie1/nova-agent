@@ -1,0 +1,46 @@
+name: Attach Release Assets
+
+# 一次性恢复工具：把某次 CI run 产出的 release-assets artifact
+# 直接挂到已有的（草稿）Release 上并发布，用于上传通道故障后的补救，
+# 避免从本地向上游上传大文件。
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'CI run ID that produced the release-assets artifact'
+        required: true
+        type: string
+      tag:
+        description: 'Release tag (e.g., v1.4.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: attach-release-assets-${{ github.event.inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release assets artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets-${{ inputs.tag }}
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: assets
+
+      - name: Attach assets to release and publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ls -lh assets
+          gh release upload "${{ inputs.tag }}" assets/* --clobber --repo "$GITHUB_REPOSITORY"
+          gh release edit "${{ inputs.tag }}" --draft=false --latest --repo "$GITHUB_REPOSITORY"
+          gh release view "${{ inputs.tag }}" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'
