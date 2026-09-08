@@ -99,9 +99,11 @@ if [[ "$SKIP_DEPS" == "false" ]]; then
     CLIPBOARD_VERSION=$(node -p "require('./packages/nova/package.json').optionalDependencies['@mariozechner/clipboard']")
     # npm ci only installs optional deps for the current platform
     # We need the base clipboard package and all platform bindings for bun cross-compilation
-    # Use --force to bypass platform checks (os/cpu restrictions in package.json)
-    # Install all in one command to avoid npm removing packages from previous installs
-    npm install --include=optional --no-save --package-lock=false --force --ignore-scripts \
+    # Install them in an isolated directory so npm does not try to rewrite the
+    # monorepo workspace graph while resolving foreign-platform packages.
+    NATIVE_DEPS_DIR=$(mktemp -d)
+    trap 'rm -rf "$NATIVE_DEPS_DIR"' EXIT
+    npm install --prefix "$NATIVE_DEPS_DIR" --include=optional --no-save --package-lock=false --force --ignore-scripts \
         @mariozechner/clipboard@"$CLIPBOARD_VERSION" \
         @mariozechner/clipboard-darwin-arm64@"$CLIPBOARD_VERSION" \
         @mariozechner/clipboard-darwin-x64@"$CLIPBOARD_VERSION" \
@@ -109,6 +111,8 @@ if [[ "$SKIP_DEPS" == "false" ]]; then
         @mariozechner/clipboard-linux-arm64-gnu@"$CLIPBOARD_VERSION" \
         @mariozechner/clipboard-win32-x64-msvc@"$CLIPBOARD_VERSION" \
         @mariozechner/clipboard-win32-arm64-msvc@"$CLIPBOARD_VERSION"
+    mkdir -p node_modules/@mariozechner
+    cp -R "$NATIVE_DEPS_DIR/node_modules/@mariozechner/." node_modules/@mariozechner/
 else
     echo "==> Skipping cross-platform native bindings (--skip-deps)"
 fi
