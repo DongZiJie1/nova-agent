@@ -312,6 +312,7 @@ export {
 	truncateLine,
 	truncateTail,
 	type WriteOperations,
+	type WriteToolDetails,
 	type WriteToolInput,
 	type WriteToolOptions,
 	withFileMutationQueue,

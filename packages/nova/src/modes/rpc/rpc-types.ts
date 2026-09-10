@@ -85,6 +85,7 @@ type RpcSessionCommand =
 	// Bash
 	| { id?: string; type: "bash"; command: string; excludeFromContext?: boolean }
 	| { id?: string; type: "abort_bash" }
+	| { id?: string; type: "revert_file_change"; path: string; patches: string[]; created?: boolean }
 
 	// Session
 	| { id?: string; type: "get_session_stats" }
@@ -126,6 +127,10 @@ export type RpcCommand =
 			parentAgentId?: string;
 			rootAgentId?: string;
 			depth?: number;
+			/** Keep the session entirely in memory and copy the named Agent's live LLM context. */
+			transientContextFromAgentId?: string;
+			/** Strip every active tool (builtin and extension) from the created session. */
+			noTools?: boolean;
 	  }
 	| { id?: string; type: "agent_stop"; agentId: string; reason?: string }
 	| { id?: string; type: "agent_cancel"; agentId: string; reason?: string }
@@ -209,6 +214,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "follow_up"; success: true }
 	| { id?: string; type: "response"; command: "abort"; success: true }
 	| { id?: string; type: "response"; command: "new_session"; success: true; data: { cancelled: boolean } }
+	| { id?: string; type: "response"; command: "revert_file_change"; success: true }
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }

@@ -246,7 +246,19 @@ describe("Coding Agent Tools", () => {
 
 			expect(getTextOutput(result)).toContain("Successfully wrote");
 			expect(getTextOutput(result)).toContain(testFile);
-			expect(result.details).toBeUndefined();
+			expect(result.details?.created).toBe(true);
+			expect(result.details?.patch).toContain("+Test content");
+		});
+
+		it("should record a reversible patch when overwriting a file", async () => {
+			const testFile = join(testDir, "overwrite-test.txt");
+			writeFileSync(testFile, "before\n");
+
+			const result = await writeTool.execute("test-call-overwrite", { path: testFile, content: "after\n" });
+
+			expect(result.details?.created).toBe(false);
+			expect(result.details?.patch).toContain("-before");
+			expect(result.details?.patch).toContain("+after");
 		});
 
 		it("should create parent directories", async () => {

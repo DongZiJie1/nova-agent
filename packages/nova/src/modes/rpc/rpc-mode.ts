@@ -549,12 +549,28 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			lifecycles.set(command.agentId, lifecycle);
 			let sibling: AgentSessionRuntime;
 			try {
+				const contextSource = command.transientContextFromAgentId
+					? runtimes.get(command.transientContextFromAgentId)
+					: undefined;
+				if (command.transientContextFromAgentId && !contextSource) {
+					return error(
+						id,
+						"agent_create",
+						`Context source Agent not found: ${command.transientContextFromAgentId}`,
+					);
+				}
 				sibling = await runtimeHost.createSibling({
 					cwd: command.cwd,
 					sessionId: command.sessionId,
 					sessionPath: command.sessionPath,
 					parentSession: command.parentSession,
+					inMemory: Boolean(contextSource),
 				});
+				if (contextSource) {
+					// A side question must see exactly the live model context. Do not flatten
+					// it into text or persist a disposable clone to the session catalog.
+					sibling.session.cloneLiveContextFrom(contextSource.session);
+				}
 			} catch (cause) {
 				lifecycle.fail(cause instanceof Error ? cause.message : String(cause));
 				throw cause;
@@ -570,6 +586,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			);
 			runtimeDepths.set(command.agentId, command.depth ?? 0);
 			await bindSiblingRuntime(command.agentId, sibling);
+			if (command.noTools) {
+				// Side-question sessions must answer from context only; strip
+				// every active tool after extension binding so nothing can run.
+				sibling.session.setActiveToolsByName([]);
+			}
 			lifecycle.ready();
 			return success(id, "agent_create", {
 				agentId: command.agentId,
@@ -596,6 +617,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			runtimeDepths.delete(command.agentId);
 			runtimeParents.delete(command.agentId);
 			runtimeRoots.delete(command.agentId);
+			if (command.agentId.startsWith("temporary-")) lifecycles.delete(command.agentId);
 			return success(id, command.type);
 		}
 
@@ -827,6 +849,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 			// State
 			// =================================================================
+
+			case "revert_file_change": {
+				await session.revertFileChange({
+					path: command.path,
+					patches: command.patches,
+					created: command.created,
+				});
+				return success(id, "revert_file_change");
+			}
 
 			case "get_state": {
 				const state: RpcSessionState = {

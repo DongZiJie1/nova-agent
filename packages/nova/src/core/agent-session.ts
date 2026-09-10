@@ -104,6 +104,7 @@ import {
 	wrapRegisteredTools,
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
+import { type RevertFileChangeOptions, revertFileChange } from "./file-change-reverter.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
@@ -1041,6 +1042,11 @@ export class AgentSession {
 		return this.agent.state.systemPrompt;
 	}
 
+	/** Safely reverse one file's recorded patches against its current content. */
+	async revertFileChange(options: RevertFileChangeOptions): Promise<void> {
+		await revertFileChange(this._cwd, options);
+	}
+
 	/** Base system instructions without separately reported skills or project context files. */
 	get contextSnapshotSystemPrompt(): string {
 		return buildSystemPrompt({
@@ -1048,6 +1054,15 @@ export class AgentSession {
 			skills: [],
 			contextFiles: [],
 		});
+	}
+
+	/** Copy another session's live model context without creating session entries. */
+	cloneLiveContextFrom(source: AgentSession): void {
+		this._baseSystemPrompt = source._baseSystemPrompt;
+		this._baseSystemPromptOptions = structuredClone(source._baseSystemPromptOptions);
+		this._systemPromptOverride = source._systemPromptOverride;
+		this.agent.state.systemPrompt = source.agent.state.systemPrompt;
+		this.agent.state.messages = structuredClone(source.agent.state.messages);
 	}
 
 	/** Run a one-off task-result summarization call without mutating session history. */
