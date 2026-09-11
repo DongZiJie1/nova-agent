@@ -131,6 +131,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			const onAbort = () => {
 				cleanup();
+				output({ type: "extension_ui_cancel", id }, agentId);
 				resolve(defaultValue);
 			};
 			opts?.signal?.addEventListener("abort", onAbort, { once: true });
@@ -138,6 +139,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			if (opts?.timeout) {
 				timeoutId = setTimeout(() => {
 					cleanup();
+					output({ type: "extension_ui_cancel", id }, agentId);
 					resolve(defaultValue);
 				}, opts.timeout);
 			}

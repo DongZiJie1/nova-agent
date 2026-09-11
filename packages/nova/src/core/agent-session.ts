@@ -116,6 +116,7 @@ import type { SettingsManager } from "./settings-manager.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
+import { ToolPermissionManager, type ToolPermissionMode } from "./tool-permission-manager.ts";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
 import { createAllToolDefinitions, createDefaultActiveToolNames } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
@@ -192,7 +193,9 @@ export type AgentSessionEvent =
 	  }
 	| { type: "summarization_retry_finished" }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
-	| { type: "bash_execution_update"; id?: string; delta: string };
+	| { type: "bash_execution_update"; id?: string; delta: string }
+	| { type: "tool_permission_requested"; toolCallId: string; toolName: string; args: unknown }
+	| { type: "tool_permission_resolved"; toolCallId: string; toolName: string; allowed: boolean; reason?: string };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -226,6 +229,8 @@ export interface AgentSessionConfig {
 	allowedToolNames?: string[];
 	/** Optional denylist of tool names. When provided, these tool names are not exposed. */
 	excludedToolNames?: string[];
+	/** Runtime policy applied before every validated tool call. */
+	toolPermissionMode?: ToolPermissionMode;
 	/**
 	 * Override base tools (useful for custom runtimes).
 	 *
@@ -388,6 +393,7 @@ export class AgentSession {
 	private _initialActiveToolNames?: string[];
 	private _allowedToolNames?: Set<string>;
 	private _excludedToolNames?: Set<string>;
+	private _toolPermissionManager: ToolPermissionManager;
 	private _baseToolsOverride?: Record<string, AgentTool>;
 	private _sessionStartEvent: SessionStartEvent;
 	private _extensionUIContext?: ExtensionUIContext;
@@ -425,6 +431,7 @@ export class AgentSession {
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
 		this._excludedToolNames = config.excludedToolNames ? new Set(config.excludedToolNames) : undefined;
+		this._toolPermissionManager = new ToolPermissionManager({ mode: config.toolPermissionMode });
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
 
@@ -506,7 +513,27 @@ export class AgentSession {
 	 * happens here instead of in wrappers.
 	 */
 	private _installAgentToolHooks(): void {
-		this.agent.beforeToolCall = async ({ toolCall, args }) => {
+		this.agent.beforeToolCall = async ({ toolCall, args }, signal) => {
+			this._emit({ type: "tool_permission_requested", toolCallId: toolCall.id, toolName: toolCall.name, args });
+			const permission = await this._toolPermissionManager.check(
+				{ toolCallId: toolCall.id, toolName: toolCall.name, args, cwd: this._cwd },
+				this._extensionUIContext,
+				signal,
+			);
+			const trace = this._activeToolTraces.get(toolCall.id);
+			if (trace) {
+				trace.data.permissionDecision = permission.allowed ? "allowed" : "denied";
+				trace.data.permissionReason = permission.reason;
+			}
+			this._emit({
+				type: "tool_permission_resolved",
+				toolCallId: toolCall.id,
+				toolName: toolCall.name,
+				allowed: permission.allowed,
+				reason: permission.reason,
+			});
+			if (!permission.allowed) return { block: true, reason: permission.reason };
+
 			const runner = this._extensionRunner;
 			if (!runner.hasHandlers("tool_call")) {
 				return undefined;
