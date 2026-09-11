@@ -19,6 +19,23 @@ export interface ToolPermissionManagerOptions {
 	timeoutMs?: number;
 }
 
+const READ_ONLY_TOOLS = new Set([
+	"read",
+	"grep",
+	"find",
+	"ls",
+	"ask_user_question",
+	"hub_list_agents",
+	"hub_wait_tasks",
+]);
+
+function isReadOnlyRequest(request: ToolPermissionRequest): boolean {
+	if (READ_ONLY_TOOLS.has(request.toolName)) return true;
+	if (request.toolName !== "nova_data" || !request.args || typeof request.args !== "object") return false;
+	const action = (request.args as { action?: unknown }).action;
+	return action === "list_projects" || action === "list_sessions" || action === "read_session";
+}
+
 function formatPermissionMessage(request: ToolPermissionRequest): string {
 	let serializedArgs: string;
 	try {
@@ -46,6 +63,7 @@ export class ToolPermissionManager {
 		signal?: AbortSignal,
 	): Promise<ToolPermissionResult> {
 		if (this.mode === "allow") return { allowed: true };
+		if (isReadOnlyRequest(request)) return { allowed: true, reason: "Read-only tool auto-approved" };
 		if (signal?.aborted) return { allowed: false, reason: "Tool permission request was aborted" };
 		if (!uiContext) return { allowed: false, reason: "Tool permission requires an interactive user interface" };
 
