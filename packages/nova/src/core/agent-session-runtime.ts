@@ -142,13 +142,16 @@ export class AgentSessionRuntime {
 		sessionId?: string;
 		sessionPath?: string;
 		parentSession?: string;
+		inMemory?: boolean;
 	}): Promise<AgentSessionRuntime> {
-		const sessionManager = options.sessionPath
-			? SessionManager.open(options.sessionPath, undefined, options.cwd)
-			: SessionManager.create(options.cwd, undefined, {
-					id: options.sessionId,
-					parentSession: options.parentSession,
-				});
+		const sessionManager = options.inMemory
+			? SessionManager.inMemory(options.cwd, { id: options.sessionId, parentSession: options.parentSession })
+			: options.sessionPath
+				? SessionManager.open(options.sessionPath, undefined, options.cwd)
+				: SessionManager.create(options.cwd, undefined, {
+						id: options.sessionId,
+						parentSession: options.parentSession,
+					});
 		return createAgentSessionRuntime(this.createRuntime, {
 			cwd: sessionManager.getCwd(),
 			agentDir: this.services.agentDir,

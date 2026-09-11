@@ -1,11 +1,12 @@
 import type { AgentTool } from "@dongzijie1/pi-agent-core";
 import { Container, Text } from "@dongzijie1/pi-tui";
-import { mkdir as fsMkdir, writeFile as fsWriteFile } from "fs/promises";
+import { mkdir as fsMkdir, readFile as fsReadFile, writeFile as fsWriteFile } from "fs/promises";
 import { dirname } from "path";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/interactive/theme/theme.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
+import { generateUnifiedPatch } from "./edit-diff.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
 import { resolveToCwd } from "./path-utils.ts";
 import { normalizeDisplayText, renderToolPath, replaceTabs, str } from "./render-utils.ts";
@@ -27,12 +28,20 @@ export interface WriteOperations {
 	writeFile: (absolutePath: string, content: string) => Promise<void>;
 	/** Create directory recursively */
 	mkdir: (dir: string) => Promise<void>;
+	/** Read existing UTF-8 content so the write can produce a reversible patch. */
+	readFile?: (absolutePath: string) => Promise<string>;
 }
 
 const defaultWriteOperations: WriteOperations = {
 	writeFile: (path, content) => fsWriteFile(path, content, "utf-8"),
 	mkdir: (dir) => fsMkdir(dir, { recursive: true }).then(() => {}),
+	readFile: (path) => fsReadFile(path, "utf-8"),
 };
+
+export interface WriteToolDetails {
+	patch?: string;
+	created: boolean;
+}
 
 export interface WriteToolOptions {
 	/** Custom operations for file writing. Default: local filesystem */
@@ -181,7 +190,7 @@ function formatWriteResult(
 export function createWriteToolDefinition(
 	cwd: string,
 	options?: WriteToolOptions,
-): ToolDefinition<typeof writeSchema, undefined> {
+): ToolDefinition<typeof writeSchema, WriteToolDetails> {
 	const ops = options?.operations ?? defaultWriteOperations;
 	return {
 		name: "write",
@@ -209,6 +218,14 @@ export function createWriteToolDefinition(
 					if (signal?.aborted) throw new Error("Operation aborted");
 				};
 
+				let previousContent: string | undefined;
+				if (ops.readFile) {
+					try {
+						previousContent = await ops.readFile(absolutePath);
+					} catch (error) {
+						if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+					}
+				}
 				throwIfAborted();
 				// Create parent directories if needed.
 				await ops.mkdir(dir);
@@ -220,7 +237,10 @@ export function createWriteToolDefinition(
 
 				return {
 					content: [{ type: "text", text: `Successfully wrote ${content.length} bytes to ${path}` }],
-					details: undefined,
+					details: {
+						patch: ops.readFile ? generateUnifiedPatch(path, previousContent ?? "", content) : undefined,
+						created: previousContent === undefined,
+					},
 				};
 			});
 		},
