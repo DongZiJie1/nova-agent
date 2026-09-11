@@ -383,6 +383,9 @@ export type RpcExtensionUIRequest =
 	| { type: "extension_ui_request"; id: string; method: "setTitle"; title: string }
 	| { type: "extension_ui_request"; id: string; method: "set_editor_text"; text: string };
 
+/** Emitted when a pending request is aborted or expires. */
+export type RpcExtensionUICancel = { type: "extension_ui_cancel"; id: string };
+
 // ============================================================================
 // Extension UI Commands (stdin)
 // ============================================================================

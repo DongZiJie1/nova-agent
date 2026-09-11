@@ -265,6 +265,13 @@ export {
 	type SkillFrontmatter,
 } from "./core/skills.ts";
 export { createSyntheticSourceInfo } from "./core/source-info.ts";
+export {
+	ToolPermissionManager,
+	type ToolPermissionManagerOptions,
+	type ToolPermissionMode,
+	type ToolPermissionRequest,
+	type ToolPermissionResult,
+} from "./core/tool-permission-manager.ts";
 export { type EditDiffResult, generateDiffString, generateUnifiedPatch } from "./core/tools/edit-diff.ts";
 // Tools
 export {
