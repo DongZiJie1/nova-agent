@@ -36,7 +36,7 @@ export class ToolPermissionManager {
 	readonly timeoutMs: number;
 
 	constructor(options: ToolPermissionManagerOptions = {}) {
-		this.mode = options.mode ?? "allow";
+		this.mode = options.mode ?? "ask";
 		this.timeoutMs = options.timeoutMs ?? 120_000;
 	}
 

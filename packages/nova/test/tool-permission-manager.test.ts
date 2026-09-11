@@ -14,6 +14,15 @@ function uiWithConfirm(confirm: ExtensionUIContext["confirm"]): ExtensionUIConte
 }
 
 describe("ToolPermissionManager", () => {
+	it("asks by default", async () => {
+		const confirm = vi.fn<ExtensionUIContext["confirm"]>().mockResolvedValue(true);
+
+		await expect(new ToolPermissionManager().check(request, uiWithConfirm(confirm))).resolves.toEqual({
+			allowed: true,
+		});
+		expect(confirm).toHaveBeenCalledOnce();
+	});
+
 	it("allows execution without prompting in allow mode", async () => {
 		const confirm = vi.fn<ExtensionUIContext["confirm"]>();
 		const result = await new ToolPermissionManager({ mode: "allow" }).check(request, uiWithConfirm(confirm));

@@ -73,7 +73,7 @@ export interface CreateAgentSessionOptions {
 	excludeTools?: string[];
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
-	/** Tool execution permission policy. Defaults to "allow" for SDK compatibility. */
+	/** Tool execution permission policy. Defaults to "ask"; automatic execution must explicitly opt into "allow". */
 	toolPermissionMode?: ToolPermissionMode;
 
 	/** Resource loader. When omitted, DefaultResourceLoader is used. */
