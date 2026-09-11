@@ -18,6 +18,8 @@ export interface ExecutionTraceEntryData {
 	provider?: string;
 	model?: string;
 	toolName?: string;
+	permissionDecision?: "allowed" | "denied";
+	permissionReason?: string;
 	status?: Exclude<ExecutionTraceStatus, "running" | "interrupted">;
 	durationMs?: number;
 	stopReason?: string;
@@ -43,6 +45,8 @@ export interface ExecutionTrace {
 	provider?: string;
 	model?: string;
 	toolName?: string;
+	permissionDecision?: "allowed" | "denied";
+	permissionReason?: string;
 	status: ExecutionTraceStatus;
 	startedAt?: number;
 	endedAt?: number;
@@ -113,6 +117,8 @@ export function mergeExecutionTraces(
 			provider: data.provider ?? trace.provider,
 			model: data.model ?? trace.model,
 			toolName: data.toolName ?? trace.toolName,
+			permissionDecision: data.permissionDecision ?? trace.permissionDecision,
+			permissionReason: data.permissionReason ?? trace.permissionReason,
 		});
 		if (data.phase === "start") {
 			if (Number.isFinite(timestamp)) trace.startedAt = timestamp;

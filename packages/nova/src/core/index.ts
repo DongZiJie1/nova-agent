@@ -78,3 +78,10 @@ export {
 	type WorkingIndicatorOptions,
 } from "./extensions/index.ts";
 export { createSyntheticSourceInfo } from "./source-info.ts";
+export {
+	ToolPermissionManager,
+	type ToolPermissionManagerOptions,
+	type ToolPermissionMode,
+	type ToolPermissionRequest,
+	type ToolPermissionResult,
+} from "./tool-permission-manager.ts";

@@ -16,6 +16,7 @@ import { DefaultResourceLoader } from "./resource-loader.ts";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
 import { SettingsManager } from "./settings-manager.ts";
 import { time } from "./timings.ts";
+import type { ToolPermissionMode } from "./tool-permission-manager.ts";
 import {
 	createBashTool,
 	createCodingTools,
@@ -72,6 +73,8 @@ export interface CreateAgentSessionOptions {
 	excludeTools?: string[];
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
+	/** Tool execution permission policy. Defaults to "ask"; automatic execution must explicitly opt into "allow". */
+	toolPermissionMode?: ToolPermissionMode;
 
 	/** Resource loader. When omitted, DefaultResourceLoader is used. */
 	resourceLoader?: ResourceLoader;
@@ -388,6 +391,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		excludedToolNames,
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
+		toolPermissionMode: options.toolPermissionMode,
 	});
 	const extensionsResult = resourceLoader.getExtensions();
 
