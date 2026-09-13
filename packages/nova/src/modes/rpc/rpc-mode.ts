@@ -914,8 +914,18 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "set_model": {
-				const models = await session.modelRuntime.getAvailable();
-				const model = models.find((m) => m.provider === command.provider && m.id === command.modelId);
+				const findModel = async () => {
+					const models = await session.modelRuntime.getAvailable();
+					return models.find((m) => m.provider === command.provider && m.id === command.modelId);
+				};
+				let model = await findModel();
+				if (!model) {
+					// models.json may have gained the model while this agent was
+					// running (the desktop app writes it directly), so re-read it
+					// once before reporting the model as unknown.
+					await session.modelRuntime.refresh({ allowNetwork: false });
+					model = await findModel();
+				}
 				if (!model) {
 					return error(id, "set_model", `Model not found: ${command.provider}/${command.modelId}`);
 				}

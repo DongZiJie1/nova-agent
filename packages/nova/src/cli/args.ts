@@ -51,6 +51,7 @@ export interface Args {
 	noThemes?: boolean;
 	noContextFiles?: boolean;
 	listModels?: string | true;
+	listModelsJson?: boolean;
 	listSessions?: boolean;
 	offline?: boolean;
 	verbose?: boolean;
@@ -199,6 +200,9 @@ export function parseArgs(args: string[]): Args {
 			} else {
 				result.listModels = true;
 			}
+		} else if (arg === "--json") {
+			// Only meaningful together with --list-models; ignored elsewhere.
+			result.listModelsJson = true;
 		} else if (arg === "--list-sessions") {
 			result.listSessions = true;
 		} else if (arg === "--verbose") {
@@ -298,6 +302,7 @@ ${chalk.bold("Options:")}
   --no-context-files, -nc        Disable AGENTS.md and CLAUDE.md discovery and loading
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
+  --json                         With --list-models, print the provider/model directory as JSON
   --list-sessions               List all persisted sessions as JSON and exit
   --verbose                      Force verbose startup (overrides quietStartup setting)
   --approve, -a                  Trust project-local files for this run

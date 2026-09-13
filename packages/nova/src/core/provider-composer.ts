@@ -126,14 +126,15 @@ function modelFromJson(
 	definition: ModelsJsonModel,
 	providerConfig: ModelsJsonProvider,
 	defaults: Model<Api> | undefined,
+	replaced: Model<Api> | undefined,
 ): Model<Api> {
-	const api = definition.api ?? providerConfig.api ?? defaults?.api;
+	const api = definition.api ?? providerConfig.api ?? replaced?.api ?? defaults?.api;
 	if (!api) {
 		throw new Error(
 			`Provider ${providerId}, model ${definition.id}: no "api" specified. Set at provider or model level.`,
 		);
 	}
-	const baseUrl = definition.baseUrl ?? providerConfig.baseUrl ?? defaults?.baseUrl;
+	const baseUrl = definition.baseUrl ?? providerConfig.baseUrl ?? replaced?.baseUrl ?? defaults?.baseUrl;
 	if (!baseUrl) throw new Error(`Provider ${providerId}: "baseUrl" is required when defining custom models.`);
 	if (definition.contextWindow !== undefined && definition.contextWindow <= 0) {
 		throw new Error(`Provider ${providerId}, model ${definition.id}: invalid contextWindow`);
@@ -141,20 +142,23 @@ function modelFromJson(
 	if (definition.maxTokens !== undefined && definition.maxTokens <= 0) {
 		throw new Error(`Provider ${providerId}, model ${definition.id}: invalid maxTokens`);
 	}
+	// Replacing a model keeps the fields the definition omits, so a models.json
+	// entry that only changes one value does not silently reset the rest to the
+	// generic defaults below.
 	return {
 		id: definition.id,
-		name: definition.name ?? definition.id,
+		name: definition.name ?? replaced?.name ?? definition.id,
 		api: api as Api,
 		provider: providerId,
 		baseUrl,
-		reasoning: definition.reasoning ?? false,
-		thinkingLevelMap: definition.thinkingLevelMap,
-		input: (definition.input ?? ["text"]) as ("text" | "image")[],
-		cost: definition.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: definition.contextWindow ?? 128000,
-		maxTokens: definition.maxTokens ?? 16384,
+		reasoning: definition.reasoning ?? replaced?.reasoning ?? false,
+		thinkingLevelMap: definition.thinkingLevelMap ?? replaced?.thinkingLevelMap,
+		input: (definition.input ?? replaced?.input ?? ["text"]) as ("text" | "image")[],
+		cost: definition.cost ?? replaced?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: definition.contextWindow ?? replaced?.contextWindow ?? 128000,
+		maxTokens: definition.maxTokens ?? replaced?.maxTokens ?? 16384,
 		headers: undefined,
-		compat: mergeCompat(providerConfig.compat, definition.compat),
+		compat: mergeCompat(mergeCompat(replaced?.compat, providerConfig.compat), definition.compat),
 	};
 }
 
@@ -190,8 +194,13 @@ function applyModelsJson(
 	}));
 	for (const definition of config.models ?? []) {
 		const existingIndex = models.findIndex((model) => model.id === definition.id);
-		const defaults = existingIndex >= 0 ? models[existingIndex] : models[0];
-		const model = modelFromJson(providerId, definition, config, defaults);
+		const model = modelFromJson(
+			providerId,
+			definition,
+			config,
+			models[0],
+			existingIndex >= 0 ? models[existingIndex] : undefined,
+		);
 		if (existingIndex >= 0) models[existingIndex] = model;
 		else models.push(model);
 	}

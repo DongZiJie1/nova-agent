@@ -799,7 +799,7 @@ export async function main(args: string[], options?: MainOptions) {
 
 	if (parsed.listModels !== undefined) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
-		await listModels(modelRuntime, searchPattern);
+		await listModels(modelRuntime, searchPattern, { json: parsed.listModelsJson });
 		process.exit(0);
 	}
 
