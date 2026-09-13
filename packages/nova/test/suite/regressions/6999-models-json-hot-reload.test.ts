@@ -56,6 +56,9 @@ describe("issue #6999 models.json hot reload", () => {
 			[],
 			() => {},
 			() => {},
+			// The list only renders a window of rows, so search for the model the
+			// reloaded catalog added instead of relying on it landing on screen.
+			"new-model",
 		);
 
 		await vi.waitFor(() => {

@@ -187,7 +187,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		initialActiveToolNames: options.initialActiveToolNames,
 		allowedToolNames: options.allowedToolNames,
 		excludedToolNames: options.excludedToolNames,
-		toolPermissionMode: options.toolPermissionMode,
+		toolPermissionMode: options.toolPermissionMode ?? "allow",
 		toolPermissionTimeoutMs: options.toolPermissionTimeoutMs,
 		extensionRunnerRef,
 	});

@@ -158,8 +158,10 @@ describe("AgentSession bash and persistence characterization", () => {
 		});
 		await harness.session.prompt("start");
 
+		// Execution traces are persisted as `custom` entries interleaved with the
+		// messages; this test only characterizes the message ordering.
 		const entries = harness.sessionManager.getEntries();
-		expect(entries.map((entry) => entry.type)).toEqual([
+		expect(entries.filter((entry) => entry.type !== "custom").map((entry) => entry.type)).toEqual([
 			"custom_message",
 			"message",
 			"message",
@@ -214,12 +216,17 @@ describe("AgentSession bash and persistence characterization", () => {
 		await harness.session.abort();
 		await promptPromise;
 
-		const lastEntry = harness.sessionManager.getEntries()[harness.sessionManager.getEntries().length - 1];
-		expect(lastEntry?.type).toBe("message");
-		if (lastEntry?.type === "message") {
-			expect(lastEntry.message.role).toBe("assistant");
-			if (lastEntry.message.role === "assistant") {
-				expect(lastEntry.message.stopReason).toBe("aborted");
+		// Trace entries may be appended after the aborted message, so look for the
+		// last message entry rather than the last entry overall.
+		const lastMessage = harness.sessionManager
+			.getEntries()
+			.filter((entry) => entry.type === "message")
+			.at(-1);
+		expect(lastMessage?.type).toBe("message");
+		if (lastMessage?.type === "message") {
+			expect(lastMessage.message.role).toBe("assistant");
+			if (lastMessage.message.role === "assistant") {
+				expect(lastMessage.message.stopReason).toBe("aborted");
 			}
 		}
 	});

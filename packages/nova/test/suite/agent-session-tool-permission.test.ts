@@ -40,7 +40,7 @@ describe("AgentSession tool permission bridge", () => {
 
 	it("suspends a non-read-only tool call until the RPC bridge approves it", async () => {
 		const toolRuns: string[] = [];
-		const harness = await createHarness({ tools: [createEchoTool(toolRuns)] });
+		const harness = await createHarness({ tools: [createEchoTool(toolRuns)], toolPermissionMode: "ask" });
 		harnesses.push(harness);
 		harness.session.setRpcPermissionBridgeEnabled(true);
 
@@ -70,7 +70,7 @@ describe("AgentSession tool permission bridge", () => {
 
 	it("blocks the tool call when the RPC bridge denies it", async () => {
 		const toolRuns: string[] = [];
-		const harness = await createHarness({ tools: [createEchoTool(toolRuns)] });
+		const harness = await createHarness({ tools: [createEchoTool(toolRuns)], toolPermissionMode: "ask" });
 		harnesses.push(harness);
 		harness.session.setRpcPermissionBridgeEnabled(true);
 
@@ -97,7 +97,7 @@ describe("AgentSession tool permission bridge", () => {
 
 	it("fails closed immediately when the bridge is disabled", async () => {
 		const toolRuns: string[] = [];
-		const harness = await createHarness({ tools: [createEchoTool(toolRuns)] });
+		const harness = await createHarness({ tools: [createEchoTool(toolRuns)], toolPermissionMode: "ask" });
 		harnesses.push(harness);
 
 		harness.setResponses([
@@ -114,7 +114,7 @@ describe("AgentSession tool permission bridge", () => {
 
 	it("returns false when responding to an unknown toolCallId", async () => {
 		const toolRuns: string[] = [];
-		const harness = await createHarness({ tools: [createEchoTool(toolRuns)] });
+		const harness = await createHarness({ tools: [createEchoTool(toolRuns)], toolPermissionMode: "ask" });
 		harnesses.push(harness);
 		harness.session.setRpcPermissionBridgeEnabled(true);
 
@@ -123,7 +123,7 @@ describe("AgentSession tool permission bridge", () => {
 
 	it("switches permission mode at runtime and emits the change event", async () => {
 		const toolRuns: string[] = [];
-		const harness = await createHarness({ tools: [createEchoTool(toolRuns)] });
+		const harness = await createHarness({ tools: [createEchoTool(toolRuns)], toolPermissionMode: "ask" });
 		harnesses.push(harness);
 		harness.session.setRpcPermissionBridgeEnabled(true);
 
@@ -167,7 +167,7 @@ describe("AgentSession tool permission bridge", () => {
 				return { content: [{ type: "text", text: "file" }], details: {} };
 			},
 		};
-		const harness = await createHarness({ tools: [readTool] });
+		const harness = await createHarness({ tools: [readTool], toolPermissionMode: "ask" });
 		harnesses.push(harness);
 		harness.session.setRpcPermissionBridgeEnabled(true);
 
@@ -183,7 +183,11 @@ describe("AgentSession tool permission bridge", () => {
 
 	it("fails closed when the permission request times out unanswered", async () => {
 		const toolRuns: string[] = [];
-		const harness = await createHarness({ tools: [createEchoTool(toolRuns)], toolPermissionTimeoutMs: 30 });
+		const harness = await createHarness({
+			tools: [createEchoTool(toolRuns)],
+			toolPermissionMode: "ask",
+			toolPermissionTimeoutMs: 30,
+		});
 		harnesses.push(harness);
 		harness.session.setRpcPermissionBridgeEnabled(true);
 
@@ -206,7 +210,7 @@ describe("AgentSession tool permission bridge", () => {
 
 	it("denies a pending request when the run is aborted", async () => {
 		const toolRuns: string[] = [];
-		const harness = await createHarness({ tools: [createEchoTool(toolRuns)] });
+		const harness = await createHarness({ tools: [createEchoTool(toolRuns)], toolPermissionMode: "ask" });
 		harnesses.push(harness);
 		harness.session.setRpcPermissionBridgeEnabled(true);
 
@@ -230,7 +234,7 @@ describe("AgentSession tool permission bridge", () => {
 
 	it("records the permission request and decision in the execution trace", async () => {
 		const toolRuns: string[] = [];
-		const harness = await createHarness({ tools: [createEchoTool(toolRuns)] });
+		const harness = await createHarness({ tools: [createEchoTool(toolRuns)], toolPermissionMode: "ask" });
 		harnesses.push(harness);
 		harness.session.setRpcPermissionBridgeEnabled(true);
 
@@ -269,7 +273,7 @@ describe("AgentSession tool permission bridge", () => {
 				return { content: [{ type: "text", text: "file" }], details: {} };
 			},
 		};
-		const harness = await createHarness({ tools: [readTool] });
+		const harness = await createHarness({ tools: [readTool], toolPermissionMode: "ask" });
 		harnesses.push(harness);
 		harness.session.setRpcPermissionBridgeEnabled(true);
 
@@ -320,7 +324,7 @@ describe("AgentSession tool permission bridge", () => {
 
 	it("denies pending requests on dispose", async () => {
 		const toolRuns: string[] = [];
-		const harness = await createHarness({ tools: [createEchoTool(toolRuns)] });
+		const harness = await createHarness({ tools: [createEchoTool(toolRuns)], toolPermissionMode: "ask" });
 		harnesses.push(harness);
 		harness.session.setRpcPermissionBridgeEnabled(true);
 
