@@ -19,6 +19,7 @@ describe("ToolPermissionManager", () => {
 
 		await expect(new ToolPermissionManager().check(request, uiWithConfirm(confirm))).resolves.toEqual({
 			allowed: true,
+			prompted: true,
 		});
 		expect(confirm).toHaveBeenCalledOnce();
 	});
@@ -74,7 +75,7 @@ describe("ToolPermissionManager", () => {
 			uiWithConfirm(confirm),
 		);
 
-		expect(result).toEqual({ allowed: true });
+		expect(result).toEqual({ allowed: true, prompted: true });
 		expect(confirm).toHaveBeenCalledWith(
 			"允许执行工具？",
 			expect.stringContaining("工具：write"),
@@ -87,6 +88,7 @@ describe("ToolPermissionManager", () => {
 		const confirm = vi.fn<ExtensionUIContext["confirm"]>().mockResolvedValue(false);
 		await expect(new ToolPermissionManager({ mode: "ask" }).check(request, uiWithConfirm(confirm))).resolves.toEqual({
 			allowed: false,
+			prompted: true,
 			reason: "User denied tool execution",
 		});
 	});
@@ -102,6 +104,7 @@ describe("ToolPermissionManager", () => {
 		const confirm = vi.fn<ExtensionUIContext["confirm"]>().mockRejectedValue(new Error("transport closed"));
 		await expect(new ToolPermissionManager({ mode: "ask" }).check(request, uiWithConfirm(confirm))).resolves.toEqual({
 			allowed: false,
+			prompted: true,
 			reason: "Tool permission check failed: transport closed",
 		});
 	});
@@ -130,8 +133,8 @@ describe("ToolPermissionManager", () => {
 
 		resolvers[0]?.(true);
 		resolvers[1]?.(false);
-		await expect(first).resolves.toEqual({ allowed: true });
-		await expect(second).resolves.toEqual({ allowed: false, reason: "User denied tool execution" });
+		await expect(first).resolves.toEqual({ allowed: true, prompted: true });
+		await expect(second).resolves.toEqual({ allowed: false, prompted: true, reason: "User denied tool execution" });
 	});
 
 	it.each(["edit", "write"])("auto-approves the %s tool in edits mode", async (toolName) => {
@@ -149,7 +152,7 @@ describe("ToolPermissionManager", () => {
 			uiWithConfirm(confirm),
 		);
 
-		expect(result).toEqual({ allowed: true });
+		expect(result).toEqual({ allowed: true, prompted: true });
 		expect(confirm).toHaveBeenCalledOnce();
 	});
 

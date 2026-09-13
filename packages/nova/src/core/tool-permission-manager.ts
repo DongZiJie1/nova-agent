@@ -12,6 +12,8 @@ export interface ToolPermissionRequest {
 export interface ToolPermissionResult {
 	allowed: boolean;
 	reason?: string;
+	/** True when the user was actually prompted (auto-approved calls are never prompted). */
+	prompted?: boolean;
 }
 
 export interface ToolPermissionManagerOptions {
@@ -92,14 +94,16 @@ export class ToolPermissionManager {
 				timeout: this.timeoutMs,
 			});
 			return allowed
-				? { allowed: true }
+				? { allowed: true, prompted: true }
 				: {
 						allowed: false,
+						prompted: true,
 						reason: signal?.aborted ? "Tool permission request was aborted" : "User denied tool execution",
 					};
 		} catch (error) {
 			return {
 				allowed: false,
+				prompted: true,
 				reason: `Tool permission check failed: ${error instanceof Error ? error.message : String(error)}`,
 			};
 		}

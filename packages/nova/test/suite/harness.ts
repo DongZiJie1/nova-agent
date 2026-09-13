@@ -63,6 +63,8 @@ export interface HarnessOptions {
 	initialActiveToolNames?: string[];
 	allowedToolNames?: string[];
 	excludedToolNames?: string[];
+	toolPermissionMode?: "ask" | "edits" | "allow";
+	toolPermissionTimeoutMs?: number;
 	resourceLoader?: ResourceLoader;
 	extensionFactories?: Array<InlineExtension | CreateTestExtensionsResultInput>;
 	withConfiguredAuth?: boolean;
@@ -185,6 +187,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		initialActiveToolNames: options.initialActiveToolNames,
 		allowedToolNames: options.allowedToolNames,
 		excludedToolNames: options.excludedToolNames,
+		toolPermissionMode: options.toolPermissionMode,
+		toolPermissionTimeoutMs: options.toolPermissionTimeoutMs,
 		extensionRunnerRef,
 	});
 

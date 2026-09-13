@@ -181,6 +181,110 @@ describe("AgentSession tool permission bridge", () => {
 		expect(harness.eventsOfType("tool_permission_requested")).toHaveLength(0);
 	});
 
+	it("fails closed when the permission request times out unanswered", async () => {
+		const toolRuns: string[] = [];
+		const harness = await createHarness({ tools: [createEchoTool(toolRuns)], toolPermissionTimeoutMs: 30 });
+		harnesses.push(harness);
+		harness.session.setRpcPermissionBridgeEnabled(true);
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("echo", { text: "hello" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+
+		const requested = vi.fn();
+		harness.session.subscribe((event) => {
+			if (event.type === "tool_permission_requested") requested(event.timeoutMs);
+		});
+
+		await harness.session.prompt("start");
+
+		expect(requested).toHaveBeenCalledWith(30);
+		expect(toolRuns).toEqual([]);
+		expect(harness.eventsOfType("tool_permission_resolved")[0]!.allowed).toBe(false);
+	});
+
+	it("denies a pending request when the run is aborted", async () => {
+		const toolRuns: string[] = [];
+		const harness = await createHarness({ tools: [createEchoTool(toolRuns)] });
+		harnesses.push(harness);
+		harness.session.setRpcPermissionBridgeEnabled(true);
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("echo", { text: "hello" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+
+		const promptPromise = harness.session.prompt("start");
+
+		await vi.waitFor(() => {
+			expect(harness.eventsOfType("tool_permission_requested")).toHaveLength(1);
+		});
+
+		await harness.session.abort();
+		await expect(promptPromise).resolves.toBeUndefined();
+
+		expect(toolRuns).toEqual([]);
+		expect(harness.eventsOfType("tool_permission_resolved")[0]!.allowed).toBe(false);
+	});
+
+	it("records the permission request and decision in the execution trace", async () => {
+		const toolRuns: string[] = [];
+		const harness = await createHarness({ tools: [createEchoTool(toolRuns)] });
+		harnesses.push(harness);
+		harness.session.setRpcPermissionBridgeEnabled(true);
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("echo", { text: "hello" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+
+		const promptPromise = harness.session.prompt("start");
+
+		await vi.waitFor(() => {
+			expect(harness.eventsOfType("tool_permission_requested")).toHaveLength(1);
+		});
+
+		const requested = harness.eventsOfType("tool_permission_requested")[0]!;
+		harness.session.respondToToolPermission(requested.toolCallId, false);
+		await promptPromise;
+
+		const trace = harness.session
+			.getExecutionTraces({ category: "tool" })
+			.find((candidate) => candidate.toolCallId === requested.toolCallId);
+		expect(trace?.permissionPrompted).toBe(true);
+		expect(trace?.permissionMode).toBe("ask");
+		expect(trace?.permissionDecision).toBe("denied");
+	});
+
+	it("marks auto-approved read-only tools as not prompted in the trace", async () => {
+		const toolRuns: string[] = [];
+		const readTool: AgentTool = {
+			name: "read",
+			label: "Read",
+			description: "Read a file",
+			parameters: Type.Object({ path: Type.String() }),
+			execute: async (_toolCallId, params) => {
+				toolRuns.push(String((params as { path?: string }).path ?? ""));
+				return { content: [{ type: "text", text: "file" }], details: {} };
+			},
+		};
+		const harness = await createHarness({ tools: [readTool] });
+		harnesses.push(harness);
+		harness.session.setRpcPermissionBridgeEnabled(true);
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("read", { path: "/tmp/a.txt" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+
+		await harness.session.prompt("start");
+
+		const trace = harness.session.getExecutionTraces({ category: "tool" })[0]!;
+		expect(trace.permissionPrompted).toBe(false);
+		expect(trace.permissionDecision).toBe("allowed");
+	});
+
 	it("denies pending requests on dispose", async () => {
 		const toolRuns: string[] = [];
 		const harness = await createHarness({ tools: [createEchoTool(toolRuns)] });

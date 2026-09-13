@@ -194,7 +194,14 @@ export type AgentSessionEvent =
 	| { type: "summarization_retry_finished" }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
 	| { type: "bash_execution_update"; id?: string; delta: string }
-	| { type: "tool_permission_requested"; toolCallId: string; toolName: string; args: unknown }
+	| {
+			type: "tool_permission_requested";
+			toolCallId: string;
+			toolName: string;
+			args: unknown;
+			/** How long the client has to answer before the request fails closed. */
+			timeoutMs?: number;
+	  }
 	| { type: "tool_permission_resolved"; toolCallId: string; toolName: string; allowed: boolean; reason?: string }
 	| { type: "tool_permission_mode_changed"; mode: ToolPermissionMode; previousMode: ToolPermissionMode };
 
@@ -232,6 +239,8 @@ export interface AgentSessionConfig {
 	excludedToolNames?: string[];
 	/** Runtime policy applied before every validated tool call. */
 	toolPermissionMode?: ToolPermissionMode;
+	/** How long a permission prompt may stay unanswered before it fails closed. Default: 120s. */
+	toolPermissionTimeoutMs?: number;
 	/**
 	 * Override base tools (useful for custom runtimes).
 	 *
@@ -434,7 +443,10 @@ export class AgentSession {
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
 		this._excludedToolNames = config.excludedToolNames ? new Set(config.excludedToolNames) : undefined;
-		this._toolPermissionManager = new ToolPermissionManager({ mode: config.toolPermissionMode });
+		this._toolPermissionManager = new ToolPermissionManager({
+			mode: config.toolPermissionMode,
+			timeoutMs: config.toolPermissionTimeoutMs,
+		});
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
 
@@ -530,6 +542,8 @@ export class AgentSession {
 			);
 			const trace = this._activeToolTraces.get(toolCall.id);
 			if (trace) {
+				trace.data.permissionMode = this._toolPermissionManager.mode;
+				trace.data.permissionPrompted = permission.prompted ?? false;
 				trace.data.permissionDecision = permission.allowed ? "allowed" : "denied";
 				trace.data.permissionReason = permission.reason;
 			}
@@ -2093,7 +2107,8 @@ export class AgentSession {
 	 */
 	private _createRpcPermissionContext(toolCallId: string, toolName: string, args: unknown): ExtensionUIContext {
 		const confirm = (_title: string, _message: string, opts?: { signal?: AbortSignal; timeout?: number }) => {
-			this._emit({ type: "tool_permission_requested", toolCallId, toolName, args });
+			const timeoutMs = opts?.timeout ?? this._toolPermissionManager.timeoutMs;
+			this._emit({ type: "tool_permission_requested", toolCallId, toolName, args, timeoutMs });
 			return new Promise<boolean>((resolve) => {
 				let settled = false;
 				const finish = (allowed: boolean) => {
@@ -2105,7 +2120,7 @@ export class AgentSession {
 					resolve(allowed);
 				};
 				const onAbort = () => finish(false);
-				const timer = setTimeout(() => finish(false), opts?.timeout ?? this._toolPermissionManager.timeoutMs);
+				const timer = setTimeout(() => finish(false), timeoutMs);
 				opts?.signal?.addEventListener("abort", onAbort, { once: true });
 				this._pendingToolPermissions.set(toolCallId, finish);
 				if (opts?.signal?.aborted) finish(false);
