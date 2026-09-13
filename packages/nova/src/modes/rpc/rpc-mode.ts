@@ -738,6 +738,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					{
 						agentId: targetAgentId,
 						depth: runtimeDepths.get(targetAgentId) ?? 0,
+						cwd: session.sessionManager.getCwd(),
 						batchId,
 						requestId: command.collaborationContext?.requestId,
 						requestDepth: command.collaborationContext?.requestDepth,
@@ -820,6 +821,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 							{
 								agentId: targetAgentId,
 								depth: runtimeDepths.get(targetAgentId) ?? 0,
+								cwd: session.sessionManager.getCwd(),
 								batchId,
 							},
 							send,

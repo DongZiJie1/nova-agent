@@ -57,6 +57,35 @@ describe("asynchronous Agent tasks", () => {
 		});
 	});
 
+	it("defaults the delegated cwd to the session cwd, not the shared process cwd", async () => {
+		const fetchMock = stubFetch({ task_id: "task-9", agent_id: "agent-new3", created_agent: true });
+
+		await runWithHubAgentContext({ agentId: "agent-self1", depth: 0, cwd: "/worktrees/agent-a" }, () =>
+			createHubDelegateTaskToolDefinition().execute("t1", { task: "isolated work" }, undefined, undefined, ctx),
+		);
+
+		const [, init] = fetchCallArgs(fetchMock, 0);
+		expect(JSON.parse(init.body as string)).toMatchObject({ cwd: "/worktrees/agent-a" });
+		expect(JSON.parse(init.body as string).cwd).not.toBe(process.cwd());
+	});
+
+	it("prefers an explicit delegated cwd over the session cwd", async () => {
+		const fetchMock = stubFetch({ task_id: "task-10", agent_id: "agent-new4", created_agent: true });
+
+		await runWithHubAgentContext({ agentId: "agent-self1", depth: 0, cwd: "/worktrees/agent-a" }, () =>
+			createHubDelegateTaskToolDefinition().execute(
+				"t1",
+				{ task: "elsewhere", cwd: "/explicit/dir" },
+				undefined,
+				undefined,
+				ctx,
+			),
+		);
+
+		const [, init] = fetchCallArgs(fetchMock, 0);
+		expect(JSON.parse(init.body as string)).toMatchObject({ cwd: "/explicit/dir" });
+	});
+
 	it("waits for any delegated task and returns structured results", async () => {
 		const fetchMock = stubFetch({
 			tasks: [
@@ -218,6 +247,17 @@ describe("hub_spawn_agent", () => {
 			depth: 1,
 			parent_agent_id: "agent-self1",
 		});
+	});
+
+	it("defaults the spawned cwd to the session cwd when omitted", async () => {
+		const fetchMock = stubFetch({ agent_id: "agent-child9", info: {} });
+
+		await runWithHubAgentContext({ agentId: "agent-self1", depth: 0, cwd: "/worktrees/agent-b" }, () =>
+			createHubSpawnAgentToolDefinition().execute("t1", {}, undefined, undefined, ctx),
+		);
+
+		const [, init] = fetchCallArgs(fetchMock, 0);
+		expect(JSON.parse(init.body as string)).toMatchObject({ cwd: "/worktrees/agent-b" });
 	});
 
 	it("propagates depth+1 when the caller is itself an agent", async () => {

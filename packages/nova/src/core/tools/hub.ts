@@ -35,6 +35,8 @@ interface HubEnv {
 interface HubAgentContext {
 	agentId: string;
 	depth: number;
+	/** Working directory of the session that owns this run. */
+	cwd?: string;
 	batchId?: string;
 	requestId?: string;
 	requestDepth?: number;
@@ -202,9 +204,11 @@ export function createHubListAgentsToolDefinition(): ToolDefinition<typeof hubLi
 // ─── hub_spawn_agent ───
 
 const hubSpawnAgentSchema = Type.Object({
-	cwd: Type.String({
-		description: "Working directory for the new agent — usually the current project root",
-	}),
+	cwd: Type.Optional(
+		Type.String({
+			description: "Working directory for the new agent. Defaults to this agent's working directory.",
+		}),
+	),
 	model: Type.Optional(Type.String({ description: "Model override for the new agent" })),
 });
 
@@ -245,7 +249,7 @@ export function createHubSpawnAgentToolDefinition(): ToolDefinition<typeof hubSp
 				// hub injects depth+1 into its NOVA_ASK_DEPTH env var. At the
 				// limit this is already refused above, so depth stays < MAX_ASK_DEPTH.
 				const res = await hubRequest("POST", "/agents", {
-					cwd,
+					cwd: cwd ?? hubAgentContext.getStore()?.cwd ?? process.cwd(),
 					model,
 					depth: hub.depth + 1,
 					parent_agent_id: hub.agentId,
@@ -491,7 +495,7 @@ export function createHubDelegateTaskToolDefinition(): ToolDefinition<
 				const res = await hubRequest("POST", "/tasks/delegate", {
 					task,
 					agent_id,
-					cwd: cwd ?? process.cwd(),
+					cwd: cwd ?? hubAgentContext.getStore()?.cwd ?? process.cwd(),
 					model,
 					timeout_secs: timeout_secs ?? 300,
 					source_agent_id: hub.agentId,
