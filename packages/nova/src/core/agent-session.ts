@@ -195,7 +195,8 @@ export type AgentSessionEvent =
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
 	| { type: "bash_execution_update"; id?: string; delta: string }
 	| { type: "tool_permission_requested"; toolCallId: string; toolName: string; args: unknown }
-	| { type: "tool_permission_resolved"; toolCallId: string; toolName: string; allowed: boolean; reason?: string };
+	| { type: "tool_permission_resolved"; toolCallId: string; toolName: string; allowed: boolean; reason?: string }
+	| { type: "tool_permission_mode_changed"; mode: ToolPermissionMode; previousMode: ToolPermissionMode };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -394,6 +395,8 @@ export class AgentSession {
 	private _allowedToolNames?: Set<string>;
 	private _excludedToolNames?: Set<string>;
 	private _toolPermissionManager: ToolPermissionManager;
+	private _rpcPermissionBridgeEnabled = false;
+	private _pendingToolPermissions = new Map<string, (allowed: boolean) => void>();
 	private _baseToolsOverride?: Record<string, AgentTool>;
 	private _sessionStartEvent: SessionStartEvent;
 	private _extensionUIContext?: ExtensionUIContext;
@@ -514,10 +517,15 @@ export class AgentSession {
 	 */
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }, signal) => {
-			this._emit({ type: "tool_permission_requested", toolCallId: toolCall.id, toolName: toolCall.name, args });
+			// The RPC bridge takes precedence over the extension UI context: in RPC mode the
+			// extension context exists but routes through the generic extension_ui_request
+			// channel, while the bridge uses the dedicated tool-permission commands.
+			const uiContext = this._rpcPermissionBridgeEnabled
+				? this._createRpcPermissionContext(toolCall.id, toolCall.name, args)
+				: this._extensionUIContext;
 			const permission = await this._toolPermissionManager.check(
 				{ toolCallId: toolCall.id, toolName: toolCall.name, args, cwd: this._cwd },
-				this._extensionUIContext,
+				uiContext,
 				signal,
 			);
 			const trace = this._activeToolTraces.get(toolCall.id);
@@ -1023,6 +1031,7 @@ export class AgentSession {
 			this.abortBranchSummary();
 			this.abortBash();
 			this.agent.abort();
+			this._resolvePendingToolPermissions(false);
 		} catch {
 			// Dispose must succeed even if an abort hook throws.
 		}
@@ -2021,6 +2030,88 @@ export class AgentSession {
 				previousLevel,
 			});
 		}
+	}
+
+	/**
+	 * Current tool permission mode.
+	 */
+	getToolPermissionMode(): ToolPermissionMode {
+		return this._toolPermissionManager.mode;
+	}
+
+	/**
+	 * Switch tool permission mode for the current session (not persisted).
+	 */
+	setToolPermissionMode(mode: ToolPermissionMode): void {
+		const previousMode = this._toolPermissionManager.mode;
+		if (mode === previousMode) return;
+		this._toolPermissionManager.setMode(mode);
+		this._emit({ type: "tool_permission_mode_changed", mode, previousMode });
+		void this._extensionRunner.emit({ type: "tool_permission_mode_changed", mode, previousMode });
+	}
+
+	/**
+	 * Enable the RPC tool-permission bridge.
+	 *
+	 * In RPC mode there is no interactive UI, so without the bridge every non-read-only tool call
+	 * fails closed immediately. When enabled, permission checks suspend until the RPC client
+	 * answers via {@link respondToToolPermission} (or the request times out / is aborted).
+	 * Print mode never enables this, keeping its fail-closed behavior.
+	 */
+	setRpcPermissionBridgeEnabled(enabled: boolean): void {
+		this._rpcPermissionBridgeEnabled = enabled;
+		if (!enabled) {
+			this._resolvePendingToolPermissions(false);
+		}
+	}
+
+	/**
+	 * Resolve a pending tool permission request from the RPC client.
+	 *
+	 * @returns true if a pending request with this toolCallId was answered.
+	 */
+	respondToToolPermission(toolCallId: string, allowed: boolean): boolean {
+		const resolver = this._pendingToolPermissions.get(toolCallId);
+		if (!resolver) return false;
+		this._pendingToolPermissions.delete(toolCallId);
+		resolver(allowed);
+		return true;
+	}
+
+	private _resolvePendingToolPermissions(allowed: boolean): void {
+		const pending = [...this._pendingToolPermissions.entries()];
+		this._pendingToolPermissions.clear();
+		for (const [, resolver] of pending) {
+			resolver(allowed);
+		}
+	}
+
+	/**
+	 * Build a per-call UI context whose confirm() suspends until the RPC client responds.
+	 * The `tool_permission_requested` event is emitted here — only when a prompt is actually
+	 * shown — so clients never see a request for auto-approved calls.
+	 */
+	private _createRpcPermissionContext(toolCallId: string, toolName: string, args: unknown): ExtensionUIContext {
+		const confirm = (_title: string, _message: string, opts?: { signal?: AbortSignal; timeout?: number }) => {
+			this._emit({ type: "tool_permission_requested", toolCallId, toolName, args });
+			return new Promise<boolean>((resolve) => {
+				let settled = false;
+				const finish = (allowed: boolean) => {
+					if (settled) return;
+					settled = true;
+					clearTimeout(timer);
+					opts?.signal?.removeEventListener("abort", onAbort);
+					this._pendingToolPermissions.delete(toolCallId);
+					resolve(allowed);
+				};
+				const onAbort = () => finish(false);
+				const timer = setTimeout(() => finish(false), opts?.timeout ?? this._toolPermissionManager.timeoutMs);
+				opts?.signal?.addEventListener("abort", onAbort, { once: true });
+				this._pendingToolPermissions.set(toolCallId, finish);
+				if (opts?.signal?.aborted) finish(false);
+			});
+		};
+		return { confirm } as ExtensionUIContext;
 	}
 
 	/**

@@ -13,6 +13,7 @@ import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { ExecutionTrace, ExecutionTraceCategory } from "../../core/execution-traces.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
+import type { ToolPermissionMode } from "../../core/tool-permission-manager.ts";
 import type { AgentLifecycleSnapshot } from "./agent-lifecycle.ts";
 import type { RpcFileReference } from "./file-references.ts";
 
@@ -73,6 +74,11 @@ type RpcSessionCommand =
 	// Queue modes
 	| { id?: string; type: "set_steering_mode"; mode: "all" | "one-at-a-time" }
 	| { id?: string; type: "set_follow_up_mode"; mode: "all" | "one-at-a-time" }
+
+	// Tool permissions
+	| { id?: string; type: "get_tool_permission_mode" }
+	| { id?: string; type: "set_tool_permission_mode"; mode: ToolPermissionMode }
+	| { id?: string; type: "respond_tool_permission"; toolCallId: string; allowed: boolean }
 
 	// Compaction
 	| { id?: string; type: "compact"; customInstructions?: string }
@@ -173,6 +179,7 @@ export interface RpcSessionState {
 	isCompacting: boolean;
 	steeringMode: "all" | "one-at-a-time";
 	followUpMode: "all" | "one-at-a-time";
+	toolPermissionMode: ToolPermissionMode;
 	sessionFile?: string;
 	sessionId: string;
 	sessionName?: string;
@@ -263,6 +270,23 @@ export type RpcResponse =
 	// Queue modes
 	| { id?: string; type: "response"; command: "set_steering_mode"; success: true }
 	| { id?: string; type: "response"; command: "set_follow_up_mode"; success: true }
+
+	// Tool permissions
+	| {
+			id?: string;
+			type: "response";
+			command: "get_tool_permission_mode";
+			success: true;
+			data: { mode: ToolPermissionMode };
+	  }
+	| { id?: string; type: "response"; command: "set_tool_permission_mode"; success: true }
+	| {
+			id?: string;
+			type: "response";
+			command: "respond_tool_permission";
+			success: true;
+			data: { handled: boolean };
+	  }
 
 	// Compaction
 	| { id?: string; type: "response"; command: "compact"; success: true; data: CompactionResult }

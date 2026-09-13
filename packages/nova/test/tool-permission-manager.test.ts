@@ -31,6 +31,42 @@ describe("ToolPermissionManager", () => {
 		expect(confirm).not.toHaveBeenCalled();
 	});
 
+	it.each(["read", "grep", "find", "ls", "ask_user_question", "hub_list_agents", "hub_wait_tasks"])(
+		"auto-approves the read-only %s tool",
+		async (toolName) => {
+			const confirm = vi.fn<ExtensionUIContext["confirm"]>();
+			const result = await new ToolPermissionManager().check({ ...request, toolName }, uiWithConfirm(confirm));
+
+			expect(result).toEqual({ allowed: true, reason: "Read-only tool auto-approved" });
+			expect(confirm).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(["list_projects", "list_sessions", "read_session"])(
+		"auto-approves the read-only nova_data action %s",
+		async (action) => {
+			const confirm = vi.fn<ExtensionUIContext["confirm"]>();
+			const result = await new ToolPermissionManager().check(
+				{ ...request, toolName: "nova_data", args: { action } },
+				uiWithConfirm(confirm),
+			);
+
+			expect(result.allowed).toBe(true);
+			expect(confirm).not.toHaveBeenCalled();
+		},
+	);
+
+	it("still asks before a mutating nova_data action", async () => {
+		const confirm = vi.fn<ExtensionUIContext["confirm"]>().mockResolvedValue(false);
+		const result = await new ToolPermissionManager().check(
+			{ ...request, toolName: "nova_data", args: { action: "delete_session", session_id: "session-1" } },
+			uiWithConfirm(confirm),
+		);
+
+		expect(result.allowed).toBe(false);
+		expect(confirm).toHaveBeenCalledOnce();
+	});
+
 	it("prompts with the tool details and allows an approved call", async () => {
 		const confirm = vi.fn<ExtensionUIContext["confirm"]>().mockResolvedValue(true);
 		const result = await new ToolPermissionManager({ mode: "ask", timeoutMs: 500 }).check(
@@ -96,5 +132,47 @@ describe("ToolPermissionManager", () => {
 		resolvers[1]?.(false);
 		await expect(first).resolves.toEqual({ allowed: true });
 		await expect(second).resolves.toEqual({ allowed: false, reason: "User denied tool execution" });
+	});
+
+	it.each(["edit", "write"])("auto-approves the %s tool in edits mode", async (toolName) => {
+		const confirm = vi.fn<ExtensionUIContext["confirm"]>();
+		const result = await new ToolPermissionManager({ mode: "edits" }).check({ ...request, toolName }, undefined);
+
+		expect(result).toEqual({ allowed: true, reason: "Edit tool auto-approved in edits mode" });
+		expect(confirm).not.toHaveBeenCalled();
+	});
+
+	it("still asks before bash in edits mode", async () => {
+		const confirm = vi.fn<ExtensionUIContext["confirm"]>().mockResolvedValue(true);
+		const result = await new ToolPermissionManager({ mode: "edits" }).check(
+			{ ...request, toolName: "bash" },
+			uiWithConfirm(confirm),
+		);
+
+		expect(result).toEqual({ allowed: true });
+		expect(confirm).toHaveBeenCalledOnce();
+	});
+
+	it("switches modes at runtime via setMode", async () => {
+		const confirm = vi.fn<ExtensionUIContext["confirm"]>().mockResolvedValue(true);
+		const manager = new ToolPermissionManager({ mode: "ask" });
+
+		await expect(manager.check({ ...request, toolName: "edit" }, undefined)).resolves.toEqual({
+			allowed: false,
+			reason: "Tool permission requires an interactive user interface",
+		});
+
+		manager.setMode("edits");
+		expect(manager.mode).toBe("edits");
+		await expect(manager.check({ ...request, toolName: "edit" }, undefined)).resolves.toEqual({
+			allowed: true,
+			reason: "Edit tool auto-approved in edits mode",
+		});
+
+		manager.setMode("allow");
+		await expect(manager.check({ ...request, toolCallId: "call-2", toolName: "bash" }, undefined)).resolves.toEqual({
+			allowed: true,
+		});
+		expect(confirm).not.toHaveBeenCalled();
 	});
 });
