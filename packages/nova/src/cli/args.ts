@@ -6,6 +6,11 @@ import type { ThinkingLevel } from "@dongzijie1/pi-agent-core";
 import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
+import {
+	isValidToolPermissionMode,
+	TOOL_PERMISSION_MODES,
+	type ToolPermissionMode,
+} from "../core/tool-permission-manager.ts";
 
 export type Mode = "text" | "json" | "rpc";
 
@@ -16,6 +21,7 @@ export interface Args {
 	systemPrompt?: string;
 	appendSystemPrompt?: string[];
 	thinking?: ThinkingLevel;
+	permissionMode?: ToolPermissionMode;
 	continue?: boolean;
 	resume?: boolean;
 	help?: boolean;
@@ -140,6 +146,20 @@ export function parseArgs(args: string[]): Args {
 					type: "warning",
 					message: `Invalid thinking level "${level}". Valid values: ${VALID_THINKING_LEVELS.join(", ")}`,
 				});
+			}
+		} else if (arg === "--permission-mode") {
+			const value = i + 1 < args.length ? args[i + 1] : undefined;
+			if (value !== undefined && isValidToolPermissionMode(value)) {
+				result.permissionMode = value;
+				i++;
+			} else if (value !== undefined && !value.startsWith("-")) {
+				result.diagnostics.push({
+					type: "error",
+					message: `Invalid permission mode "${value}". Valid values: ${TOOL_PERMISSION_MODES.join(", ")}`,
+				});
+				i++;
+			} else {
+				result.diagnostics.push({ type: "error", message: "--permission-mode requires a value" });
 			}
 		} else if (arg === "--print" || arg === "-p") {
 			result.print = true;
@@ -266,6 +286,7 @@ ${chalk.bold("Options:")}
   --exclude-tools, -xt <tools>   Comma-separated denylist of tool names to disable
                                  Applies to built-in, extension, and custom tools
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh, max
+  --permission-mode <mode>       Tool permission mode: ask (default), edits, allow
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
   --skill <path>                 Load a skill file or directory (can be used multiple times)

@@ -187,6 +187,50 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--permission-mode flag", () => {
+		test("parses --permission-mode with a valid value", () => {
+			const result = parseArgs(["--permission-mode", "edits"]);
+			expect(result.permissionMode).toBe("edits");
+			expect(result.diagnostics).toEqual([]);
+		});
+
+		test("parses each valid mode value", () => {
+			expect(parseArgs(["--permission-mode", "ask"]).permissionMode).toBe("ask");
+			expect(parseArgs(["--permission-mode", "edits"]).permissionMode).toBe("edits");
+			expect(parseArgs(["--permission-mode", "allow"]).permissionMode).toBe("allow");
+		});
+
+		test("reports an invalid value and does not leak it into unknownFlags", () => {
+			const result = parseArgs(["--permission-mode", "bogus"]);
+			expect(result.permissionMode).toBeUndefined();
+			expect(result.unknownFlags.has("permission-mode")).toBe(false);
+			expect(result.diagnostics).toEqual([
+				{ type: "error", message: 'Invalid permission mode "bogus". Valid values: ask, edits, allow' },
+			]);
+		});
+
+		test("reports a missing value", () => {
+			const result = parseArgs(["--permission-mode"]);
+			expect(result.permissionMode).toBeUndefined();
+			expect(result.unknownFlags.has("permission-mode")).toBe(false);
+			expect(result.diagnostics).toEqual([{ type: "error", message: "--permission-mode requires a value" }]);
+		});
+
+		test("does not consume the next flag as the value", () => {
+			const result = parseArgs(["--permission-mode", "--print"]);
+			expect(result.permissionMode).toBeUndefined();
+			expect(result.print).toBe(true);
+			expect(result.diagnostics).toEqual([{ type: "error", message: "--permission-mode requires a value" }]);
+		});
+
+		test("works alongside other flags", () => {
+			const result = parseArgs(["--permission-mode", "allow", "--print", "hello"]);
+			expect(result.permissionMode).toBe("allow");
+			expect(result.print).toBe(true);
+			expect(result.messages).toEqual(["hello"]);
+		});
+	});
+
 	describe("--no-session flag", () => {
 		test("parses --no-session flag", () => {
 			const result = parseArgs(["--no-session"]);

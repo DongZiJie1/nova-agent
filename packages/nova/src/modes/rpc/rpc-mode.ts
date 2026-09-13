@@ -371,6 +371,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 	const rebindSession = async (): Promise<void> => {
 		session = runtimeHost.session;
+		session.setRpcPermissionBridgeEnabled(true);
 		await session.bindExtensions({
 			uiContext: createExtensionUIContext(),
 			mode: "rpc",
@@ -471,6 +472,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		let unsubscribePressure: (() => void) | undefined;
 		const bind = async () => {
 			siblingSession = sibling.session;
+			siblingSession.setRpcPermissionBridgeEnabled(true);
 			await siblingSession.bindExtensions({
 				uiContext: createExtensionUIContext(agentId),
 				mode: "rpc",
@@ -869,6 +871,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					isCompacting: session.isCompacting,
 					steeringMode: session.steeringMode,
 					followUpMode: session.followUpMode,
+					toolPermissionMode: session.getToolPermissionMode(),
 					sessionFile: session.sessionFile,
 					sessionId: session.sessionId,
 					sessionName: session.sessionName,
@@ -965,6 +968,24 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "set_follow_up_mode": {
 				session.setFollowUpMode(command.mode);
 				return success(id, "set_follow_up_mode");
+			}
+
+			// =================================================================
+			// Tool Permissions
+			// =================================================================
+
+			case "get_tool_permission_mode": {
+				return success(id, "get_tool_permission_mode", { mode: session.getToolPermissionMode() });
+			}
+
+			case "set_tool_permission_mode": {
+				session.setToolPermissionMode(command.mode);
+				return success(id, "set_tool_permission_mode");
+			}
+
+			case "respond_tool_permission": {
+				const handled = session.respondToToolPermission(command.toolCallId, command.allowed);
+				return success(id, "respond_tool_permission", { handled });
 			}
 
 			// =================================================================

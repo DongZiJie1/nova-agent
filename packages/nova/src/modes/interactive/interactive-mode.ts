@@ -89,6 +89,11 @@ import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
+import {
+	isValidToolPermissionMode,
+	TOOL_PERMISSION_MODES,
+	type ToolPermissionMode,
+} from "../../core/tool-permission-manager.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
 import { getUsageCostBreakdown } from "../../core/usage-totals.ts";
@@ -246,6 +251,12 @@ export function formatResumeCommand(sessionManager: SessionManager): string | un
 function hasDefaultModelProvider(providerId: string): providerId is keyof typeof defaultModelPerProvider {
 	return providerId in defaultModelPerProvider;
 }
+
+const PERMISSION_MODE_DESCRIPTIONS: Record<ToolPermissionMode, string> = {
+	ask: "ask before every non-read-only tool call",
+	edits: "auto-approve file edits, ask for the rest",
+	allow: "skip all permission checks",
+};
 
 type LoginProviderCompletionOption = {
 	id: string;
@@ -586,6 +597,26 @@ export class InteractiveMode {
 					label: provider.id,
 					description: formatLoginProviderCompletionDescription(provider),
 				}));
+			};
+		}
+
+		const permissionCommand = slashCommands.find((command) => command.name === "permission");
+		if (permissionCommand) {
+			permissionCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+				const modes = TOOL_PERMISSION_MODES.map((mode) => ({
+					value: mode,
+					description: PERMISSION_MODE_DESCRIPTIONS[mode],
+				}));
+				return createFuzzyAutocompleteItems(
+					modes,
+					prefix,
+					(item) => item.value,
+					(item) => ({
+						value: item.value,
+						label: item.value,
+						description: item.description,
+					}),
+				);
 			};
 		}
 
@@ -2721,6 +2752,12 @@ export class InteractiveMode {
 			if (text === "/trust") {
 				this.showTrustSelector();
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/permission" || text.startsWith("/permission ")) {
+				const modeArg = text.startsWith("/permission ") ? text.slice(12).trim() : undefined;
+				this.editor.setText("");
+				this.handlePermissionCommand(modeArg);
 				return;
 			}
 			if (text === "/login" || text.startsWith("/login ")) {
@@ -5652,6 +5689,32 @@ export class InteractiveMode {
 		}
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("dim", `Session name set: ${sessionName ?? name}`), 1, 0));
+		this.ui.requestRender();
+	}
+
+	private handlePermissionCommand(modeArg?: string): void {
+		if (!modeArg) {
+			const currentMode = this.session.getToolPermissionMode();
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(
+				new Text(
+					`${theme.fg("dim", "Permission mode:")} ${currentMode} ${theme.fg("muted", "(usage: /permission <ask|edits|allow>)")}`,
+					1,
+					0,
+				),
+			);
+			this.ui.requestRender();
+			return;
+		}
+
+		if (!isValidToolPermissionMode(modeArg)) {
+			this.showError(`Invalid permission mode "${modeArg}". Valid values: ask, edits, allow`);
+			return;
+		}
+
+		this.session.setToolPermissionMode(modeArg);
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("dim", `Permission mode set to ${modeArg}`), 1, 0));
 		this.ui.requestRender();
 	}
 

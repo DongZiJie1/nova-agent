@@ -7,6 +7,7 @@ import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
+import type { ToolPermissionMode } from "./tool-permission-manager.ts";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -85,6 +86,7 @@ export interface Settings {
 	defaultProvider?: string;
 	defaultModel?: string;
 	defaultThinkingLevel?: ThinkingLevel;
+	defaultToolPermissionMode?: ToolPermissionMode;
 	transport?: TransportSetting; // default: "auto"
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
@@ -745,6 +747,11 @@ export class SettingsManager {
 		this.globalSettings.defaultThinkingLevel = level;
 		this.markModified("defaultThinkingLevel");
 		this.save();
+	}
+
+	getDefaultToolPermissionMode(): ToolPermissionMode | undefined {
+		const mode = this.settings.defaultToolPermissionMode;
+		return mode === "ask" || mode === "edits" || mode === "allow" ? mode : undefined;
 	}
 
 	getTransport(): TransportSetting {

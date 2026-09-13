@@ -11,6 +11,7 @@ import type { AgentSessionEvent, SessionStats } from "../../core/agent-session.t
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
+import type { ToolPermissionMode } from "../../core/tool-permission-manager.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
 import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.ts";
 
@@ -300,6 +301,31 @@ export class RpcClient {
 	 */
 	async setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<void> {
 		await this.send({ type: "set_follow_up_mode", mode });
+	}
+
+	/**
+	 * Get the current tool permission mode.
+	 */
+	async getToolPermissionMode(): Promise<ToolPermissionMode> {
+		const response = await this.send({ type: "get_tool_permission_mode" });
+		return this.getData<{ mode: ToolPermissionMode }>(response).mode;
+	}
+
+	/**
+	 * Set the tool permission mode for the current session.
+	 */
+	async setToolPermissionMode(mode: ToolPermissionMode): Promise<void> {
+		await this.send({ type: "set_tool_permission_mode", mode });
+	}
+
+	/**
+	 * Answer a pending tool permission request.
+	 *
+	 * @returns true if a pending request with the given toolCallId was answered.
+	 */
+	async respondToolPermission(toolCallId: string, allowed: boolean): Promise<boolean> {
+		const response = await this.send({ type: "respond_tool_permission", toolCallId, allowed });
+		return this.getData<{ handled: boolean }>(response).handled;
 	}
 
 	/**
