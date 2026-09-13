@@ -285,6 +285,39 @@ describe("AgentSession tool permission bridge", () => {
 		expect(trace.permissionDecision).toBe("allowed");
 	});
 
+	it("aborts a turn that outlives the turn timeout and says so", async () => {
+		const hangingTool: AgentTool = {
+			name: "hang",
+			label: "Hang",
+			description: "Never finishes on its own",
+			parameters: Type.Object({}),
+			execute: async (_toolCallId, _params, signal) =>
+				new Promise((_resolve, reject) => {
+					signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+				}),
+		};
+		// 0.01 minutes ≈ 600ms, short enough to test without waiting. Permission mode is
+		// "allow" so the hanging tool actually runs instead of being denied for lack of a UI.
+		const harness = await createHarness({
+			tools: [hangingTool],
+			toolPermissionMode: "allow",
+			settings: { turnTimeoutMinutes: 0.01 },
+		});
+		harnesses.push(harness);
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("hang", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+
+		await harness.session.prompt("start");
+
+		const notice = harness.session.messages.find(
+			(message) => message.role === "custom" && (message as { customType?: string }).customType === "turn_timeout",
+		);
+		expect(notice).toBeDefined();
+	});
+
 	it("denies pending requests on dispose", async () => {
 		const toolRuns: string[] = [];
 		const harness = await createHarness({ tools: [createEchoTool(toolRuns)] });

@@ -8,6 +8,10 @@ import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
 import type { ToolPermissionMode } from "./tool-permission-manager.ts";
+import { DEFAULT_BASH_TIMEOUT_SECONDS, DEFAULT_MAX_CONCURRENT_BASH } from "./tools/limits.ts";
+
+/** Default cap on how long one turn may run, in minutes. */
+const DEFAULT_TURN_TIMEOUT_MINUTES = 30;
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -87,6 +91,12 @@ export interface Settings {
 	defaultModel?: string;
 	defaultThinkingLevel?: ThinkingLevel;
 	defaultToolPermissionMode?: ToolPermissionMode;
+	/** Default bash timeout in seconds when the model passes none. 0 disables the default. */
+	bashTimeoutSeconds?: number;
+	/** Maximum bash commands an agent may run at once. 0 disables the limit. Defaults to 8. */
+	maxConcurrentBash?: number;
+	/** Minutes one turn may run before it is aborted. 0 disables the limit. Defaults to 30. */
+	turnTimeoutMinutes?: number;
 	transport?: TransportSetting; // default: "auto"
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
@@ -752,6 +762,36 @@ export class SettingsManager {
 	getDefaultToolPermissionMode(): ToolPermissionMode | undefined {
 		const mode = this.settings.defaultToolPermissionMode;
 		return mode === "ask" || mode === "edits" || mode === "allow" ? mode : undefined;
+	}
+
+	/**
+	 * Milliseconds a bash command may run when the model passes no timeout.
+	 * Returns undefined when the default is disabled (setting set to 0).
+	 */
+	getBashTimeoutMs(): number | undefined {
+		const seconds = this.settings.bashTimeoutSeconds;
+		if (seconds === undefined) return DEFAULT_BASH_TIMEOUT_SECONDS * 1000;
+		if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+		return seconds * 1000;
+	}
+
+	/** How many bash commands one agent may run at once; falls back to the default. */
+	getMaxConcurrentBash(): number {
+		const limit = this.settings.maxConcurrentBash;
+		if (limit === undefined) return DEFAULT_MAX_CONCURRENT_BASH;
+		if (!Number.isFinite(limit) || limit <= 0) return DEFAULT_MAX_CONCURRENT_BASH;
+		return Math.floor(limit);
+	}
+
+	/**
+	 * Milliseconds one turn may run before it is aborted, or undefined when unlimited.
+	 * The default keeps a runaway turn from holding the agent forever.
+	 */
+	getTurnTimeoutMs(): number | undefined {
+		const minutes = this.settings.turnTimeoutMinutes;
+		if (minutes === undefined) return DEFAULT_TURN_TIMEOUT_MINUTES * 60_000;
+		if (!Number.isFinite(minutes) || minutes <= 0) return undefined;
+		return minutes * 60_000;
 	}
 
 	getTransport(): TransportSetting {

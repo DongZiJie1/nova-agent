@@ -16,6 +16,7 @@ import {
 	untrackDetachedChildPid,
 } from "../../utils/shell.ts";
 import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
+import { DEFAULT_MAX_CONCURRENT_BASH } from "./limits.ts";
 import { OutputAccumulator } from "./output-accumulator.ts";
 import { getTextOutput, invalidArgText, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
@@ -37,9 +38,17 @@ function resolveTimeoutMs(timeout: number | undefined): number | undefined {
 	return timeoutMs;
 }
 
+/** Clamp a configured default so it can never exceed the hard maximum. */
+function normalizeDefaultTimeoutMs(timeoutMs: number | undefined): number | undefined {
+	if (timeoutMs === undefined || !Number.isFinite(timeoutMs) || timeoutMs <= 0) return undefined;
+	return Math.min(timeoutMs, MAX_TIMEOUT_MS);
+}
+
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Bash command to execute" }),
-	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+	timeout: Type.Optional(
+		Type.Number({ description: "Timeout in seconds; defaults to the session's bash timeout setting" }),
+	),
 });
 
 export type BashToolInput = Static<typeof bashSchema>;
@@ -196,6 +205,55 @@ export interface BashToolOptions {
 	exposeSessionEnvironment?: boolean;
 	/** Hook to adjust command, cwd, or env before execution */
 	spawnHook?: BashSpawnHook;
+	/**
+	 * Timeout applied when the model passes none, in milliseconds. Without it a hung
+	 * command keeps the agent busy forever. Undefined or non-positive disables the default.
+	 */
+	defaultTimeoutMs?: number;
+	/** How many commands this agent may run at once; the rest queue. Default: 8. */
+	maxConcurrent?: number;
+}
+
+/**
+ * Bounds concurrent command execution so a burst of parallel tool calls cannot spawn an
+ * unbounded number of processes. Commands beyond the limit wait their turn instead of failing.
+ */
+class CommandSlotPool {
+	private active = 0;
+	private readonly waiters: Array<() => void> = [];
+	private readonly limit: number;
+
+	constructor(limit: number) {
+		this.limit = limit;
+	}
+
+	async run<T>(task: () => Promise<T>): Promise<T> {
+		await this.acquire();
+		try {
+			return await task();
+		} finally {
+			this.release();
+		}
+	}
+
+	private acquire(): Promise<void> {
+		if (this.active < this.limit) {
+			this.active += 1;
+			return Promise.resolve();
+		}
+		return new Promise((resolve) => {
+			this.waiters.push(() => {
+				this.active += 1;
+				resolve();
+			});
+		});
+	}
+
+	private release(): void {
+		this.active -= 1;
+		const next = this.waiters.shift();
+		if (next) next();
+	}
 }
 
 const BASH_PREVIEW_LINES = 5;
@@ -323,10 +381,21 @@ export function createBashToolDefinition(
 	const commandPrefix = options?.commandPrefix;
 	const exposeSessionEnvironment = options?.exposeSessionEnvironment ?? true;
 	const spawnHook = options?.spawnHook;
+	const defaultTimeoutMs = normalizeDefaultTimeoutMs(options?.defaultTimeoutMs);
+	const slots = new CommandSlotPool(
+		options?.maxConcurrent !== undefined && Number.isFinite(options.maxConcurrent) && options.maxConcurrent > 0
+			? Math.floor(options.maxConcurrent)
+			: DEFAULT_MAX_CONCURRENT_BASH,
+	);
+	const defaultTimeoutSeconds = defaultTimeoutMs === undefined ? undefined : Math.round(defaultTimeoutMs / 1000);
 	return {
 		name: "bash",
 		label: "bash",
-		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
+		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file.${
+			defaultTimeoutSeconds === undefined
+				? " Optionally provide a timeout in seconds."
+				: ` Commands are killed after ${defaultTimeoutSeconds} seconds unless a longer timeout is passed.`
+		}`,
 		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
 		promptGuidelines: exposeSessionEnvironment
 			? [
@@ -441,12 +510,19 @@ export function createBashToolDefinition(
 			try {
 				let exitCode: number | null;
 				try {
-					const result = await ops.exec(spawnContext.command, spawnContext.cwd, {
-						onData: handleData,
-						signal,
-						timeout,
-						env: spawnContext.env,
-					});
+					// BashOperations.exec takes seconds and does its own millisecond conversion.
+					let effectiveTimeoutSeconds = defaultTimeoutMs === undefined ? undefined : defaultTimeoutMs / 1000;
+					if (timeout !== undefined) {
+						effectiveTimeoutSeconds = (resolveTimeoutMs(timeout) as number) / 1000;
+					}
+					const result = await slots.run(() =>
+						ops.exec(spawnContext.command, spawnContext.cwd, {
+							onData: handleData,
+							signal,
+							timeout: effectiveTimeoutSeconds,
+							env: spawnContext.env,
+						}),
+					);
 					exitCode = result.exitCode;
 				} catch (err) {
 					const snapshot = await finishOutput();
@@ -456,7 +532,12 @@ export function createBashToolDefinition(
 					}
 					if (err instanceof Error && err.message.startsWith("timeout:")) {
 						const timeoutSecs = err.message.split(":")[1];
-						throw new Error(appendStatus(text, `Command timed out after ${timeoutSecs} seconds`));
+						throw new Error(
+							appendStatus(
+								text,
+								`Command timed out after ${timeoutSecs} seconds. Pass a larger timeout to allow more time.`,
+							),
+						);
 					}
 					throw err;
 				}

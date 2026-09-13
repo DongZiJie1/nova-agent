@@ -1313,15 +1313,38 @@ export class AgentSession {
 
 	private async _runAgentPrompt(messages: AgentMessage | AgentMessage[]): Promise<void> {
 		this._isAgentRunActive = true;
+		// A turn that never finishes would otherwise hold the agent (and its tools) forever.
+		const turnTimeoutMs = this.settingsManager.getTurnTimeoutMs();
+		let turnTimedOut = false;
+		const timeoutHandle =
+			turnTimeoutMs === undefined
+				? undefined
+				: setTimeout(() => {
+						turnTimedOut = true;
+						this.agent.abort();
+					}, turnTimeoutMs);
 		try {
 			await this.agent.prompt(messages);
 			while (await this._handlePostAgentRun()) {
 				await this.agent.continue();
 			}
 		} finally {
+			if (timeoutHandle) clearTimeout(timeoutHandle);
 			this._systemPromptOverride = undefined;
 			this._flushPendingBashMessages();
 			await this._emitAgentSettled();
+		}
+		if (turnTimedOut) {
+			// Say so in the conversation: an unexplained abort looks like a crash.
+			const minutes = Math.round((turnTimeoutMs ?? 0) / 60_000);
+			await this.sendCustomMessage(
+				{
+					customType: "turn_timeout",
+					content: [{ type: "text", text: `本轮已运行超过 ${minutes} 分钟，已自动中止。` }],
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
 		}
 	}
 
@@ -2992,7 +3015,12 @@ export class AgentSession {
 				)
 			: createAllToolDefinitions(this._cwd, {
 					read: { autoResizeImages },
-					bash: { commandPrefix: shellCommandPrefix, shellPath },
+					bash: {
+						commandPrefix: shellCommandPrefix,
+						shellPath,
+						defaultTimeoutMs: this.settingsManager.getBashTimeoutMs(),
+						maxConcurrent: this.settingsManager.getMaxConcurrentBash(),
+					},
 				});
 
 		this._baseToolDefinitions = new Map(
