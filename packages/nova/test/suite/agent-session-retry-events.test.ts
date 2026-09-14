@@ -289,6 +289,9 @@ describe("AgentSession retry and event characterization", () => {
 			"message_update",
 			"message_end:assistant",
 			"tool_execution_start:echo",
+			// The permission bridge resolves the call (auto-approved in this harness)
+			// before the tool itself runs.
+			"tool_permission_resolved",
 			"tool_execution_end:echo",
 			"message_start:toolResult",
 			"message_end:toolResult",

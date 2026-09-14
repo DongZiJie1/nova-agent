@@ -44,6 +44,11 @@ const context: Context = {
 	messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
 };
 
+/** Fixture models are registered dynamically, so pin the api the raw Azure api expects. */
+function azureModel(id = "gpt-4o-mini"): Model<"azure-openai-responses"> {
+	return getModel("azure-openai-responses", id) as Model<"azure-openai-responses">;
+}
+
 const originalAzureOpenAIBaseUrl = process.env.AZURE_OPENAI_BASE_URL;
 const originalAzureOpenAIResourceName = process.env.AZURE_OPENAI_RESOURCE_NAME;
 const originalAzureOpenAIApiVersion = process.env.AZURE_OPENAI_API_VERSION;
@@ -86,7 +91,7 @@ afterEach(() => {
 
 async function captureClientBaseUrl(baseUrl: string): Promise<string> {
 	process.env.AZURE_OPENAI_BASE_URL = baseUrl;
-	const model = getModel("azure-openai-responses", "gpt-4o-mini");
+	const model = azureModel();
 	await streamAzureOpenAIResponses(model, context, { apiKey: "test-api-key" }).result();
 	expect(azureMock.constructorCalls).toHaveLength(1);
 	return azureMock.constructorCalls[0].baseURL;
@@ -140,14 +145,14 @@ describe("azure-openai-responses base URL normalization", () => {
 
 	it("throws on invalid URLs", async () => {
 		process.env.AZURE_OPENAI_BASE_URL = "not-a-url";
-		const model = getModel("azure-openai-responses", "gpt-4o-mini");
+		const model = azureModel();
 		const result = await streamAzureOpenAIResponses(model, context, { apiKey: "test-api-key" }).result();
 		expect(result.stopReason).toBe("error");
 		expect(result.errorMessage).toContain("Invalid Azure OpenAI base URL");
 	});
 
 	it("clamps prompt_cache_key to OpenAI's 64-character limit", async () => {
-		const model = getModel("azure-openai-responses", "gpt-4o-mini");
+		const model = azureModel();
 		await streamAzureOpenAIResponses(model, context, {
 			apiKey: "test-api-key",
 			azureBaseUrl: "https://my-resource.openai.azure.com",
@@ -158,7 +163,7 @@ describe("azure-openai-responses base URL normalization", () => {
 	});
 
 	it("disables server-side response storage", async () => {
-		const model = getModel("azure-openai-responses", "gpt-4o-mini");
+		const model = azureModel();
 		await streamAzureOpenAIResponses(model, context, {
 			apiKey: "test-api-key",
 			azureBaseUrl: "https://my-resource.openai.azure.com",
@@ -168,7 +173,7 @@ describe("azure-openai-responses base URL normalization", () => {
 	});
 
 	it("honors supportsStrictMode: false", async () => {
-		const baseModel = getModel("azure-openai-responses", "gpt-4o-mini");
+		const baseModel = azureModel();
 		const model: Model<"azure-openai-responses"> = {
 			...baseModel,
 			compat: { ...baseModel.compat, supportsStrictMode: false },
@@ -195,7 +200,7 @@ describe("azure-openai-responses base URL normalization", () => {
 
 	it("builds correct default URL from AZURE_OPENAI_RESOURCE_NAME", async () => {
 		process.env.AZURE_OPENAI_RESOURCE_NAME = "my-resource";
-		const model = getModel("azure-openai-responses", "gpt-4o-mini");
+		const model = azureModel();
 		await streamAzureOpenAIResponses(model, context, { apiKey: "test-api-key" }).result();
 		expect(azureMock.constructorCalls).toHaveLength(1);
 		expect(azureMock.constructorCalls[0].baseURL).toBe("https://my-resource.openai.azure.com/openai/v1");

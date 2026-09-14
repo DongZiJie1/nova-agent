@@ -1,8 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
 import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
-import { getModel } from "../src/compat.ts";
-import type { Context } from "../src/types.ts";
+import type { Context, Model } from "../src/types.ts";
 
 function createSseResponse(events: Array<{ event: string; data: string }>): Response {
 	const body = events.map(({ event, data }) => `event: ${event}\ndata: ${data}\n`).join("\n");
@@ -56,12 +55,24 @@ function eventsWithCacheCreation(
 	];
 }
 
-// claude-opus-4-8: input 5, cacheWrite (5m) 6.25 per Mtok. 1h write = 2x input = 10.
+// Model rates the assertions below depend on: input 5, cacheWrite (5m) 6.25 per
+// Mtok. A 1h cache write costs 2x input = 10 per Mtok.
+const model: Model<"anthropic-messages"> = {
+	id: "claude-opus-4-8",
+	name: "Claude Opus 4.8",
+	api: "anthropic-messages",
+	provider: "anthropic",
+	baseUrl: "https://api.anthropic.com",
+	reasoning: true,
+	input: ["text", "image"],
+	cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+	contextWindow: 200000,
+	maxTokens: 32000,
+};
 const context: Context = { messages: [{ role: "user", content: "hi", timestamp: Date.now() }] };
 
 describe("Anthropic 1h cache write cost", () => {
 	it("prices the 1h portion at 2x input and the rest at the 5m rate", async () => {
-		const model = getModel("anthropic", "claude-opus-4-8");
 		const response = createSseResponse(
 			eventsWithCacheCreation({ ephemeral_5m_input_tokens: 600_000, ephemeral_1h_input_tokens: 400_000 }),
 		);
@@ -74,7 +85,6 @@ describe("Anthropic 1h cache write cost", () => {
 	});
 
 	it("falls back to the 5m rate when no breakdown is reported", async () => {
-		const model = getModel("anthropic", "claude-opus-4-8");
 		const response = createSseResponse(eventsWithCacheCreation(undefined));
 		const result = await streamAnthropic(model, context, { client: createFakeAnthropicClient(response) }).result();
 

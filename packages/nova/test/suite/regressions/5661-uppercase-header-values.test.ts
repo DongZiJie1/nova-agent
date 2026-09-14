@@ -61,7 +61,7 @@ describe("regression #5661: uppercase models.json header values", () => {
 							apiKey: "CUSTOM_API_KEY",
 							api: "openai-completions",
 							headers: { Authorization: "BEARER" },
-							models: [{ id: "my-model" }],
+							models: [{ id: "my-model", contextWindow: 128000, maxTokens: 8192, input: ["text"] }],
 						},
 					},
 				},

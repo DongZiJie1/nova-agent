@@ -21,7 +21,7 @@ function modelsJson(provider: string, model: string): Record<string, unknown> {
 				baseUrl: "https://example.test/v1",
 				api: "openai-completions",
 				apiKey: "test-key",
-				models: [{ id: model }],
+				models: [{ id: model, contextWindow: 128000, maxTokens: 8192, input: ["text"] }],
 			},
 		},
 	};
@@ -56,6 +56,9 @@ describe("issue #6999 models.json hot reload", () => {
 			[],
 			() => {},
 			() => {},
+			// The list only renders a window of rows, so search for the model the
+			// reloaded catalog added instead of relying on it landing on screen.
+			"new-model",
 		);
 
 		await vi.waitFor(() => {

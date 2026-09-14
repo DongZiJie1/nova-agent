@@ -197,6 +197,24 @@ Keep `retry.provider.maxRetries` at `0` unless provider-level retries are explic
 
 `npmCommand` is used for all npm package-manager operations, including installs, uninstalls, and dependency installs inside git packages. User-scoped npm packages install under `~/.nova/agent/npm/`; project-scoped npm packages install under `.nova/npm/`. Use argv-style entries exactly as the process should be launched. When `npmCommand` is configured, git package dependency installs use plain `install` to avoid npm-specific flags in wrappers or alternate package managers.
 
+### Resource Limits
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `bashTimeoutSeconds` | number | `600` | Timeout applied to bash commands that do not pass one. Use `0` to disable the default and let commands run until they finish. |
+| `maxConcurrentBash` | number | `8` | How many bash commands one agent may run at once; further commands queue instead of spawning more processes. |
+| `turnTimeoutMinutes` | number | `30` | How long one turn may run before it is aborted with a notice in the conversation. Use `0` to disable. |
+
+```json
+{
+  "bashTimeoutSeconds": 1800,
+  "maxConcurrentBash": 4,
+  "turnTimeoutMinutes": 60
+}
+```
+
+These are backstops against runaway work, not budgets: a command that legitimately needs longer should be given an explicit `timeout`, and a long turn raises `turnTimeoutMinutes`.
+
 ### Sessions
 
 | Setting | Type | Default | Description |

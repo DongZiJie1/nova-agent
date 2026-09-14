@@ -53,9 +53,13 @@ describe("buildSystemPrompt", () => {
 			cwd: process.cwd(),
 		});
 
+		expect(prompt).toContain("Nova documentation (consult only for questions or changes about Nova itself):");
+		// The doc roots are rendered as absolute paths, not as paths relative to the project.
+		expect(prompt).toMatch(/- Reference docs: [/\\]/);
+		expect(prompt).toMatch(/- Examples: [/\\]/);
 		expect(prompt).toContain(
-			"- When reading nova docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory",
+			"- Resolve docs/... under Reference docs and examples/... under Examples, not relative to the current project",
 		);
-		expect(prompt).toContain("environment variables (docs/environment-variables.md)");
+		expect(prompt).toContain("models/providers (docs/models.md, docs/custom-provider.md)");
 	});
 });

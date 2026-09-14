@@ -46,10 +46,28 @@ vi.mock("@aws-sdk/client-bedrock-runtime", () => {
 });
 
 import { stream as streamBedrock } from "../src/api/bedrock-converse-stream.ts";
-import { getModel } from "../src/compat.ts";
-import type { Context, Message } from "../src/types.ts";
+import type { Context, Message, Model } from "../src/types.ts";
 
-const baseModel = getModel("amazon-bedrock", "us.anthropic.claude-sonnet-4-5-20250929-v1:0");
+function makeBedrockModel(
+	id: string,
+	compat?: Model<"bedrock-converse-stream">["compat"],
+): Model<"bedrock-converse-stream"> {
+	return {
+		id,
+		name: id,
+		api: "bedrock-converse-stream",
+		provider: "amazon-bedrock",
+		baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+		contextWindow: 200000,
+		maxTokens: 32000,
+		compat,
+	};
+}
+
+const baseModel = makeBedrockModel("us.anthropic.claude-sonnet-4-5-20250929-v1:0");
 
 async function capturePayload(context: Context, model = baseModel): Promise<unknown> {
 	let capturedPayload: unknown;
@@ -80,12 +98,16 @@ describe("Bedrock constrained sampling", () => {
 				},
 			],
 		};
-		const payload = await capturePayload(context);
+		// Bedrock defaults supportsStrictMode to false, so a model must opt in.
+		const payload = await capturePayload(
+			context,
+			makeBedrockModel("us.anthropic.claude-sonnet-4-5-20250929-v1:0", { supportsStrictMode: true }),
+		);
 		const toolConfig = (payload as { toolConfig: { tools: Array<{ toolSpec: { strict?: boolean } }> } }).toolConfig;
 		expect(toolConfig.tools[0].toolSpec.strict).toBe(true);
 
 		context.tools![0].constrainedSampling = { type: "json_schema", strict: "prefer" };
-		const novaPayload = await capturePayload(context, getModel("amazon-bedrock", "amazon.nova-lite-v1:0"));
+		const novaPayload = await capturePayload(context, makeBedrockModel("amazon.nova-lite-v1:0"));
 		const novaToolConfig = (
 			novaPayload as {
 				toolConfig: { tools: Array<{ toolSpec: { strict?: boolean } }> };

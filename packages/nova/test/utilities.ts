@@ -249,7 +249,11 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 		streamFn: streamSimple,
 	});
 
-	const sessionManager = options.inMemory ? SessionManager.inMemory() : SessionManager.create(tempDir);
+	// Keep session files under tempDir; the one-arg overload falls back to the
+	// real ~/.nova/agent/sessions/<cwd-slug>/ and leaks them per run.
+	const sessionManager = options.inMemory
+		? SessionManager.inMemory()
+		: SessionManager.create(tempDir, join(tempDir, "sessions"));
 	const settingsManager = SettingsManager.create(tempDir, tempDir);
 
 	if (options.settingsOverrides) {
@@ -266,6 +270,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 		cwd: tempDir,
 		modelRuntime: getModelRuntime(modelRegistry),
 		resourceLoader: createTestResourceLoader(),
+		toolPermissionMode: "allow",
 	});
 
 	// Must subscribe to enable session persistence

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type BuiltinProvider, complete, getModels, getProviders } from "../src/compat.ts";
+import { complete, getModels, getProviders } from "../src/compat.ts";
 import { getEnvApiKey } from "../src/env-api-keys.ts";
 import type { Api, KnownProvider, Model, ProviderStreamOptions } from "../src/types.ts";
 import { resolveApiKey } from "./oauth.ts";
@@ -8,19 +8,20 @@ const githubCopilotToken = await resolveApiKey("github-copilot");
 
 interface AnthropicLongCacheRetentionE2ECase {
 	name: string;
-	provider: BuiltinProvider;
+	provider: string;
 	model: Model<"anthropic-messages">;
 	apiKey: string | undefined;
 }
 
-function getE2EApiKey(provider: KnownProvider): string | undefined {
+function getE2EApiKey(provider: string): string | undefined {
 	if (provider === "github-copilot") {
 		return githubCopilotToken;
 	}
-	return getEnvApiKey(provider);
+	// Fixture provider ids are configured provider ids, not the built-in catalog union.
+	return getEnvApiKey(provider as KnownProvider);
 }
 
-function getAnthropicMessagesModels(provider: BuiltinProvider): Model<"anthropic-messages">[] {
+function getAnthropicMessagesModels(provider: string): Model<"anthropic-messages">[] {
 	const models = getModels(provider) as Model<Api>[];
 	return models.filter((model) => model.api === "anthropic-messages") as Model<"anthropic-messages">[];
 }
@@ -51,7 +52,7 @@ function getProbePriority(model: Model<"anthropic-messages">): number {
 }
 
 function selectOneCasePerProvider(cases: AnthropicLongCacheRetentionE2ECase[]): AnthropicLongCacheRetentionE2ECase[] {
-	const byProvider = new Map<BuiltinProvider, AnthropicLongCacheRetentionE2ECase[]>();
+	const byProvider = new Map<string, AnthropicLongCacheRetentionE2ECase[]>();
 	for (const testCase of cases) {
 		const providerCases = byProvider.get(testCase.provider) ?? [];
 		providerCases.push(testCase);

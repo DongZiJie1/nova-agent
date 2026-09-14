@@ -1,6 +1,6 @@
 {
 	"name": "@dongzijie1/pi-ai",
-	"version": "1.4.0",
+	"version": "1.5.0",
 	"description": "Unified LLM API with automatic model discovery and provider configuration",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -49,13 +49,8 @@
 	],
 	"scripts": {
 		"clean": "shx rm -rf dist",
-		"generate-models": "node scripts/generate-models.ts --strict",
-		"hydrate-model-data": "node scripts/generate-models.ts --strict --data-only",
-		"generate-model-catalog": "node scripts/generate-models.ts --strict --json-only --json-output ../../.artifacts/model-catalog",
-		"generate-image-models": "node scripts/generate-image-models.ts --strict",
-		"check:model-data": "node scripts/check-model-data.ts",
-		"build": "npm run generate-models && npm run build:offline",
-		"build:offline": "npm run check:model-data && tsgo -p tsconfig.build.json && shx rm -rf dist/providers/data && shx cp -r src/providers/data dist/providers/data",
+		"build": "npm run build:offline",
+		"build:offline": "shx rm -rf dist && tsgo -p tsconfig.build.json",
 		"test": "vitest --run",
 		"prepublishOnly": "npm run clean && npm run build"
 	},

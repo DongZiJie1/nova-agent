@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Provider } from "@dongzijie1/pi-ai";
@@ -50,6 +50,34 @@ describe("AgentSession dynamic provider registration", () => {
 		}
 	});
 
+	/**
+	 * Anthropic ships no bundled models, so a provider-level baseUrl override only
+	 * has models to rewrite once the user has configured some.
+	 */
+	function writeAnthropicModelsJson() {
+		writeFileSync(
+			join(agentDir, "models.json"),
+			JSON.stringify({
+				providers: {
+					anthropic: {
+						api: "anthropic-messages",
+						baseUrl: "https://api.anthropic.com",
+						apiKey: "test-key",
+						models: [
+							{
+								id: "claude-sonnet-4-5",
+								contextWindow: 200_000,
+								maxTokens: 64_000,
+								input: ["text", "image"],
+								reasoning: true,
+							},
+						],
+					},
+				},
+			}),
+		);
+	}
+
 	async function createSession(extensionFactories: ExtensionFactory[]) {
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
 		const sessionManager = SessionManager.inMemory();
@@ -93,6 +121,7 @@ describe("AgentSession dynamic provider registration", () => {
 	}
 
 	it("applies top-level registerProvider overrides to the active model", async () => {
+		writeAnthropicModelsJson();
 		const session = await createSession([
 			(pi) => {
 				pi.registerProvider("anthropic", { baseUrl: "http://localhost:8080/top-level" });
@@ -106,6 +135,7 @@ describe("AgentSession dynamic provider registration", () => {
 	});
 
 	it("applies session_start registerProvider overrides to the active model", async () => {
+		writeAnthropicModelsJson();
 		const session = await createSession([
 			(pi) => {
 				pi.on("session_start", () => {
@@ -136,6 +166,7 @@ describe("AgentSession dynamic provider registration", () => {
 	});
 
 	it("applies command-time registerProvider overrides without reload", async () => {
+		writeAnthropicModelsJson();
 		const session = await createSession([
 			(pi) => {
 				pi.registerCommand("use-proxy", {

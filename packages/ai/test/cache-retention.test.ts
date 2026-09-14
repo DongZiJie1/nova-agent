@@ -3,7 +3,6 @@ import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
 import { stream as streamOpenAICompletions } from "../src/api/openai-completions.ts";
 import { stream as streamOpenAIResponses } from "../src/api/openai-responses.ts";
 import { getModel, stream } from "../src/compat.ts";
-import { MODELS } from "../src/models.generated.ts";
 import type { Context, Model } from "../src/types.ts";
 
 class PayloadCaptured extends Error {
@@ -28,6 +27,155 @@ function stopAfterPayload<TPayload>(capture: (payload: TPayload) => void): (payl
 		throw new PayloadCaptured();
 	};
 }
+
+/** Fixture models are registered dynamically, so pin the api the raw api functions expect. */
+function anthropicFixture(id: string): Model<"anthropic-messages"> {
+	return getModel("anthropic", id) as Model<"anthropic-messages">;
+}
+
+function openaiResponsesFixture(id: string): Model<"openai-responses"> {
+	return getModel("openai", id) as Model<"openai-responses">;
+}
+
+/** OpenAI Responses model with explicit prompt-cache mode support. */
+const RESPONSES_MODELS: Record<string, Model<"openai-responses">> = {
+	"openai/gpt-5.6-sol": {
+		id: "gpt-5.6-sol",
+		name: "GPT-5.6 Sol",
+		api: "openai-responses",
+		provider: "openai",
+		baseUrl: "https://api.openai.com/v1",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 2, output: 10, cacheRead: 0.25, cacheWrite: 3.125 },
+		contextWindow: 272000,
+		maxTokens: 128000,
+		compat: {
+			supportsStrictMode: true,
+			supportsOpenAIGrammarTools: true,
+			supportsToolSearch: true,
+			supportsExplicitPromptCacheMode: true,
+		},
+	},
+};
+
+/** OpenCode models: long cache retention is refused, which is per-model compat. */
+const OPENCODE_MODELS: Record<string, Model<"openai-completions">> = {
+	"opencode/deepseek-v4-flash": {
+		id: "deepseek-v4-flash",
+		name: "deepseek-v4-flash",
+		api: "openai-completions",
+		provider: "opencode",
+		baseUrl: "https://opencode.ai/zen/v1",
+		reasoning: true,
+		input: ["text"],
+		cost: { input: 0.14, output: 0.28, cacheRead: 0.028, cacheWrite: 0 },
+		contextWindow: 1000000,
+		maxTokens: 384000,
+		compat: {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			maxTokensField: "max_tokens",
+			supportsLongCacheRetention: false,
+			requiresReasoningContentOnAssistantMessages: true,
+		},
+	},
+	"opencode/deepseek-v4-pro": {
+		id: "deepseek-v4-pro",
+		name: "deepseek-v4-pro",
+		api: "openai-completions",
+		provider: "opencode",
+		baseUrl: "https://opencode.ai/zen/v1",
+		reasoning: true,
+		input: ["text"],
+		cost: { input: 1.74, output: 3.84, cacheRead: 0.145, cacheWrite: 0 },
+		contextWindow: 1000000,
+		maxTokens: 384000,
+		compat: {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			maxTokensField: "max_tokens",
+			supportsLongCacheRetention: false,
+			requiresReasoningContentOnAssistantMessages: true,
+		},
+	},
+	"opencode/kimi-k2.5": {
+		id: "kimi-k2.5",
+		name: "kimi-k2.5",
+		api: "openai-completions",
+		provider: "opencode",
+		baseUrl: "https://opencode.ai/zen/v1",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 0.6, output: 3, cacheRead: 0.08, cacheWrite: 0 },
+		contextWindow: 262144,
+		maxTokens: 65536,
+		compat: {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			maxTokensField: "max_tokens",
+			supportsLongCacheRetention: false,
+		},
+	},
+	"opencode/kimi-k2.6": {
+		id: "kimi-k2.6",
+		name: "kimi-k2.6",
+		api: "openai-completions",
+		provider: "opencode",
+		baseUrl: "https://opencode.ai/zen/v1",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 0.95, output: 4, cacheRead: 0.16, cacheWrite: 0 },
+		contextWindow: 262144,
+		maxTokens: 65536,
+		compat: {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			thinkingFormat: "deepseek",
+			supportsReasoningEffort: false,
+			maxTokensField: "max_tokens",
+			supportsLongCacheRetention: false,
+		},
+	},
+	"opencode/minimax-m2.7": {
+		id: "minimax-m2.7",
+		name: "minimax-m2.7",
+		api: "openai-completions",
+		provider: "opencode",
+		baseUrl: "https://opencode.ai/zen/v1",
+		reasoning: true,
+		input: ["text"],
+		cost: { input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0 },
+		contextWindow: 204800,
+		maxTokens: 131072,
+		compat: {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			maxTokensField: "max_tokens",
+			supportsLongCacheRetention: false,
+		},
+	},
+	"opencode-go/kimi-k2.6": {
+		id: "kimi-k2.6",
+		name: "kimi-k2.6",
+		api: "openai-completions",
+		provider: "opencode-go",
+		baseUrl: "https://opencode.ai/zen/go/v1",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 0.95, output: 4, cacheRead: 0.16, cacheWrite: 0 },
+		contextWindow: 262144,
+		maxTokens: 65536,
+		compat: {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			thinkingFormat: "deepseek",
+			supportsReasoningEffort: false,
+			maxTokensField: "max_tokens",
+			supportsLongCacheRetention: false,
+		},
+	},
+};
 
 describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 	const originalEnv = process.env.PI_CACHE_RETENTION;
@@ -100,7 +248,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 			process.env.PI_CACHE_RETENTION = "long";
 
 			// Create a model with a different baseUrl (simulating a proxy)
-			const baseModel = getModel("anthropic", "claude-haiku-4-5");
+			const baseModel = anthropicFixture("claude-haiku-4-5");
 			const proxyModel = {
 				...baseModel,
 				baseUrl: "https://my-proxy.example.com/v1",
@@ -136,7 +284,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 		});
 
 		it("should omit ttl when supportsLongCacheRetention is false", async () => {
-			const baseModel = getModel("anthropic", "claude-haiku-4-5");
+			const baseModel = anthropicFixture("claude-haiku-4-5");
 			const proxyModel = {
 				...baseModel,
 				baseUrl: "https://my-proxy.example.com/v1",
@@ -165,7 +313,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 		});
 
 		it("should omit cache_control when cacheRetention is none", async () => {
-			const baseModel = getModel("anthropic", "claude-haiku-4-5");
+			const baseModel = anthropicFixture("claude-haiku-4-5");
 			let capturedPayload: any = null;
 
 			try {
@@ -189,7 +337,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 		});
 
 		it("should add cache_control to string user messages", async () => {
-			const baseModel = getModel("anthropic", "claude-haiku-4-5");
+			const baseModel = anthropicFixture("claude-haiku-4-5");
 			let capturedPayload: any = null;
 
 			try {
@@ -215,7 +363,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 		});
 
 		it("should set 1h cache TTL when cacheRetention is long", async () => {
-			const baseModel = getModel("anthropic", "claude-haiku-4-5");
+			const baseModel = anthropicFixture("claude-haiku-4-5");
 			let capturedPayload: any = null;
 
 			try {
@@ -289,7 +437,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 			process.env.PI_CACHE_RETENTION = "long";
 
 			// Create a model with a different baseUrl (simulating a proxy)
-			const baseModel = getModel("openai", "gpt-4o-mini");
+			const baseModel = openaiResponsesFixture("gpt-4o-mini");
 			const proxyModel = {
 				...baseModel,
 				baseUrl: "https://my-proxy.example.com/v1",
@@ -319,7 +467,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 
 		it("should omit prompt_cache_retention when supportsLongCacheRetention is false", async () => {
 			const model = {
-				...getModel("openai", "gpt-4o-mini"),
+				...openaiResponsesFixture("gpt-4o-mini"),
 				compat: { supportsLongCacheRetention: false },
 			};
 			let capturedPayload: any = null;
@@ -346,7 +494,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 		});
 
 		it("should omit prompt_cache_key and disable implicit writes when cacheRetention is none", async () => {
-			const model = getModel("openai", "gpt-5.6-sol");
+			const model = RESPONSES_MODELS["openai/gpt-5.6-sol"];
 			let capturedPayload: OpenAIResponsesCachePayload | undefined;
 
 			try {
@@ -373,7 +521,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 		});
 
 		it("should omit prompt_cache_options for models that reject it", async () => {
-			const model = getModel("openai", "gpt-4o-mini");
+			const model = openaiResponsesFixture("gpt-4o-mini");
 			let capturedPayload: OpenAIResponsesCachePayload | undefined;
 
 			try {
@@ -399,7 +547,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 		});
 
 		it("should set prompt_cache_retention when cacheRetention is long", async () => {
-			const model = getModel("openai", "gpt-4o-mini");
+			const model = openaiResponsesFixture("gpt-4o-mini");
 			let capturedPayload: any = null;
 
 			try {
@@ -493,14 +641,14 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 		});
 
 		it.each([
-			MODELS.opencode["deepseek-v4-flash"],
-			MODELS.opencode["deepseek-v4-pro"],
-			MODELS.opencode["kimi-k2.5"],
-			MODELS.opencode["kimi-k2.6"],
-			MODELS.opencode["minimax-m2.7"],
-			MODELS["opencode-go"]["kimi-k2.6"],
-		] as const)("should omit long cache retention for $provider/$id", async (metadata) => {
-			const model = metadata as Model<"openai-completions">;
+			"opencode/deepseek-v4-flash",
+			"opencode/deepseek-v4-pro",
+			"opencode/kimi-k2.5",
+			"opencode/kimi-k2.6",
+			"opencode/minimax-m2.7",
+			"opencode-go/kimi-k2.6",
+		] as const)("should omit long cache retention for %s", async (fixtureKey) => {
+			const model = OPENCODE_MODELS[fixtureKey];
 			let capturedPayload: OpenAICompletionsCachePayload | undefined;
 
 			try {

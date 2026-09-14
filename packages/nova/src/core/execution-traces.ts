@@ -1,5 +1,6 @@
 import type { Usage } from "@dongzijie1/pi-ai/compat";
 import type { SessionEntry } from "./session-manager.ts";
+import type { ToolPermissionMode } from "./tool-permission-manager.ts";
 
 export const EXECUTION_TRACE_CUSTOM_TYPE = "nova.execution_trace";
 
@@ -18,6 +19,8 @@ export interface ExecutionTraceEntryData {
 	provider?: string;
 	model?: string;
 	toolName?: string;
+	permissionMode?: ToolPermissionMode;
+	permissionPrompted?: boolean;
 	permissionDecision?: "allowed" | "denied";
 	permissionReason?: string;
 	status?: Exclude<ExecutionTraceStatus, "running" | "interrupted">;
@@ -45,6 +48,8 @@ export interface ExecutionTrace {
 	provider?: string;
 	model?: string;
 	toolName?: string;
+	permissionMode?: ToolPermissionMode;
+	permissionPrompted?: boolean;
 	permissionDecision?: "allowed" | "denied";
 	permissionReason?: string;
 	status: ExecutionTraceStatus;
@@ -117,6 +122,8 @@ export function mergeExecutionTraces(
 			provider: data.provider ?? trace.provider,
 			model: data.model ?? trace.model,
 			toolName: data.toolName ?? trace.toolName,
+			permissionMode: data.permissionMode ?? trace.permissionMode,
+			permissionPrompted: data.permissionPrompted ?? trace.permissionPrompted,
 			permissionDecision: data.permissionDecision ?? trace.permissionDecision,
 			permissionReason: data.permissionReason ?? trace.permissionReason,
 		});

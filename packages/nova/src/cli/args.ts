@@ -6,6 +6,11 @@ import type { ThinkingLevel } from "@dongzijie1/pi-agent-core";
 import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
+import {
+	isValidToolPermissionMode,
+	TOOL_PERMISSION_MODES,
+	type ToolPermissionMode,
+} from "../core/tool-permission-manager.ts";
 
 export type Mode = "text" | "json" | "rpc";
 
@@ -16,6 +21,7 @@ export interface Args {
 	systemPrompt?: string;
 	appendSystemPrompt?: string[];
 	thinking?: ThinkingLevel;
+	permissionMode?: ToolPermissionMode;
 	continue?: boolean;
 	resume?: boolean;
 	help?: boolean;
@@ -45,6 +51,7 @@ export interface Args {
 	noThemes?: boolean;
 	noContextFiles?: boolean;
 	listModels?: string | true;
+	listModelsJson?: boolean;
 	listSessions?: boolean;
 	offline?: boolean;
 	verbose?: boolean;
@@ -141,6 +148,20 @@ export function parseArgs(args: string[]): Args {
 					message: `Invalid thinking level "${level}". Valid values: ${VALID_THINKING_LEVELS.join(", ")}`,
 				});
 			}
+		} else if (arg === "--permission-mode") {
+			const value = i + 1 < args.length ? args[i + 1] : undefined;
+			if (value !== undefined && isValidToolPermissionMode(value)) {
+				result.permissionMode = value;
+				i++;
+			} else if (value !== undefined && !value.startsWith("-")) {
+				result.diagnostics.push({
+					type: "error",
+					message: `Invalid permission mode "${value}". Valid values: ${TOOL_PERMISSION_MODES.join(", ")}`,
+				});
+				i++;
+			} else {
+				result.diagnostics.push({ type: "error", message: "--permission-mode requires a value" });
+			}
 		} else if (arg === "--print" || arg === "-p") {
 			result.print = true;
 			const next = args[i + 1];
@@ -179,6 +200,9 @@ export function parseArgs(args: string[]): Args {
 			} else {
 				result.listModels = true;
 			}
+		} else if (arg === "--json") {
+			// Only meaningful together with --list-models; ignored elsewhere.
+			result.listModelsJson = true;
 		} else if (arg === "--list-sessions") {
 			result.listSessions = true;
 		} else if (arg === "--verbose") {
@@ -266,6 +290,7 @@ ${chalk.bold("Options:")}
   --exclude-tools, -xt <tools>   Comma-separated denylist of tool names to disable
                                  Applies to built-in, extension, and custom tools
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh, max
+  --permission-mode <mode>       Tool permission mode: ask (default), edits, allow
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
   --skill <path>                 Load a skill file or directory (can be used multiple times)
@@ -277,6 +302,7 @@ ${chalk.bold("Options:")}
   --no-context-files, -nc        Disable AGENTS.md and CLAUDE.md discovery and loading
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
+  --json                         With --list-models, print the provider/model directory as JSON
   --list-sessions               List all persisted sessions as JSON and exit
   --verbose                      Force verbose startup (overrides quietStartup setting)
   --approve, -a                  Trust project-local files for this run

@@ -84,6 +84,9 @@ describe("Radius provider", () => {
 			modelsPath: null,
 		});
 
+		// Catalog refresh is opt-in: create() never touches the network.
+		await runtime.refresh({ allowNetwork: true });
+
 		expect(runtime.getModel(RADIUS_PROVIDER_ID, "auto")).toBeDefined();
 		expect((await modelsStore.read(RADIUS_PROVIDER_ID))?.models).toHaveLength(1);
 		expect(vi.mocked(fetch).mock.calls[0]?.[1]?.headers).toMatchObject({ authorization: "Bearer access-token" });
@@ -138,6 +141,9 @@ describe("Radius provider", () => {
 			modelsStore: new InMemoryModelsStore(),
 			modelsPath,
 		});
+
+		// Catalog refresh is opt-in: create() never touches the network.
+		await runtime.refresh({ allowNetwork: true });
 
 		expect(runtime.getModel("radius-dev", "auto")).toMatchObject({
 			api: "pi-messages",

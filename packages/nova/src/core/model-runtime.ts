@@ -32,6 +32,7 @@ import {
 import * as builtinProviderCatalog from "@dongzijie1/pi-ai/providers/all";
 import { getAgentDir } from "../config.ts";
 import { AuthStorage as DefaultAuthStorage } from "./auth-storage.ts";
+import type { ModelCatalog, ModelCatalogModel, ModelCatalogProvider } from "./model-catalog.ts";
 import { ModelConfig } from "./model-config.ts";
 import { FileModelsStore, InMemoryCodingAgentModelsStore } from "./models-store.ts";
 import {
@@ -297,6 +298,46 @@ export class ModelRuntime implements Models {
 
 	getAvailableSnapshot(): readonly Model<Api>[] {
 		return this.snapshot.available;
+	}
+
+	/**
+	 * User-configured model directory: only providers and model ids declared in
+	 * models.json, with fully resolved field values. Built-in catalog entries are
+	 * deliberately excluded so callers see exactly what the user configured.
+	 */
+	getModelCatalog(): ModelCatalog {
+		const providers: ModelCatalogProvider[] = [];
+		for (const providerId of this.config.getProviderIds()) {
+			const config = this.config.getProvider(providerId);
+			if (!config) continue;
+			const composed = this.models.getProvider(providerId);
+			const resolved = new Map(this.models.getModels(providerId).map((model) => [model.id, model]));
+			const models: ModelCatalogModel[] = [];
+			for (const definition of config.models ?? []) {
+				const model = resolved.get(definition.id);
+				if (!model) continue;
+				models.push({
+					id: model.id,
+					name: model.name,
+					api: model.api,
+					baseUrl: model.baseUrl,
+					contextWindow: model.contextWindow,
+					maxTokens: model.maxTokens,
+					reasoning: model.reasoning,
+					input: [...model.input],
+				});
+			}
+			const auth = this.getProviderAuthStatus(providerId);
+			providers.push({
+				provider: providerId,
+				name: composed?.name ?? config.name ?? providerId,
+				api: config.api ?? models[0]?.api,
+				baseUrl: config.baseUrl,
+				auth: { configured: auth.configured, source: auth.source },
+				models,
+			});
+		}
+		return { providers };
 	}
 
 	getError(): string | undefined {

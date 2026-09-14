@@ -1,7 +1,6 @@
 import { bedrockConverseStreamApi } from "../api/bedrock-converse-stream.lazy.ts";
 import type { ApiKeyAuth } from "../auth/types.ts";
 import { createProvider, type Provider } from "../models.ts";
-import { AMAZON_BEDROCK_MODELS } from "./amazon-bedrock.models.ts";
 
 /**
  * Bedrock accepts a bearer token or the AWS SDK's default credential chain.
@@ -72,11 +71,11 @@ const bedrockAuth: ApiKeyAuth = {
 };
 
 export function amazonBedrockProvider(): Provider<"bedrock-converse-stream"> {
-	return createProvider({
+	return createProvider<"bedrock-converse-stream">({
 		id: "amazon-bedrock",
 		name: "Amazon Bedrock",
 		auth: { apiKey: bedrockAuth },
-		models: Object.values(AMAZON_BEDROCK_MODELS),
+		models: [],
 		api: bedrockConverseStreamApi(),
 	});
 }

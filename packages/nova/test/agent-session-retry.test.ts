@@ -116,6 +116,7 @@ describe("AgentSession retry", () => {
 			settingsManager,
 			cwd: tempDir,
 			modelRuntime: getModelRuntime(modelRegistry),
+			toolPermissionMode: "allow",
 			resourceLoader: createTestResourceLoader(),
 		});
 
@@ -217,6 +218,7 @@ describe("AgentSession retry", () => {
 			settingsManager,
 			cwd: tempDir,
 			modelRuntime: getModelRuntime(modelRegistry),
+			toolPermissionMode: "allow",
 			resourceLoader: createTestResourceLoader(),
 		});
 
@@ -303,6 +305,7 @@ describe("AgentSession retry", () => {
 			settingsManager,
 			cwd: tempDir,
 			modelRuntime: getModelRuntime(modelRegistry),
+			toolPermissionMode: "allow",
 			resourceLoader: createTestResourceLoader(),
 			baseToolsOverride: { echo: echoTool },
 		});

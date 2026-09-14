@@ -121,6 +121,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			settingsManager,
 			cwd: tempDir,
 			modelRuntime: getModelRuntime(modelRegistry),
+			toolPermissionMode: "allow",
 			resourceLoader: createTestResourceLoader(),
 		});
 
@@ -256,6 +257,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			settingsManager,
 			cwd: tempDir,
 			modelRuntime: getModelRuntime(modelRegistry),
+			toolPermissionMode: "allow",
 			resourceLoader: createTestResourceLoader({ extensionsResult }),
 		});
 		session.subscribe((event) => {
@@ -323,6 +325,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			settingsManager,
 			cwd: tempDir,
 			modelRuntime: getModelRuntime(modelRegistry),
+			toolPermissionMode: "allow",
 			resourceLoader: createTestResourceLoader(),
 		});
 
@@ -429,6 +432,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			settingsManager,
 			cwd: tempDir,
 			modelRuntime: getModelRuntime(modelRegistry),
+			toolPermissionMode: "allow",
 			resourceLoader: createTestResourceLoader(),
 			baseToolsOverride: { dummy: tool },
 		});
@@ -576,6 +580,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			settingsManager,
 			cwd: tempDir,
 			modelRuntime: getModelRuntime(modelRegistry),
+			toolPermissionMode: "allow",
 			resourceLoader: createTestResourceLoader(),
 			baseToolsOverride: { dummy: tool },
 		});

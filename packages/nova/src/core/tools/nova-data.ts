@@ -33,7 +33,12 @@ const novaDataSchema = Type.Object({
 				"Delete multiple sessions in one confirmed operation; preferred over repeated delete_session calls",
 		}),
 	),
-	project_path: Type.Optional(Type.String({ description: "Filter a project or disambiguate duplicate session ids" })),
+	project_path: Type.Optional(
+		Type.String({
+			description:
+				"A project is identified by its working-directory path; use this to filter a project or disambiguate duplicate session ids",
+		}),
+	),
 	limit: Type.Optional(Type.Number({ minimum: 1, maximum: MAX_LIMIT, description: "Maximum sessions to list" })),
 	message_limit: Type.Optional(
 		Type.Number({ minimum: 1, maximum: MAX_MESSAGE_LIMIT, description: "Maximum recent messages to read" }),
@@ -113,9 +118,11 @@ export function createNovaDataToolDefinition(): ToolDefinition<typeof novaDataSc
 		name: "nova_data",
 		label: "nova_data",
 		description:
-			"Manage Nova's own conversation data. List projects and sessions, read another session's user/assistant messages, or delete one or multiple sessions after direct user confirmation. This never deletes project source directories.",
-		promptSnippet: "Inspect and manage Nova conversation history across projects.",
+			"Manage Nova's own conversation data: Nova projects, the sessions inside them, and their messages. A Nova project is the working directory its sessions were started in, and the UI labels it 「工作区」/「工作空间」/「workspace」. List projects and sessions, read another session's user/assistant messages, or delete one or multiple sessions after direct user confirmation. This never deletes project source directories.",
+		promptSnippet: "Inspect and manage Nova projects and conversation history.",
 		promptGuidelines: [
+			"In nova_data, 「工作区」/「工作空间」/「workspace」 all mean a Nova project — the working directory a session was started in; this mapping is defined here, no source-code lookup is needed.",
+			"A nova_data delete_session only removes Nova's own session files, never the working directory on disk.",
 			"Use nova_data instead of filesystem commands when inspecting or deleting Nova sessions.",
 			"Deleting a session requires direct user confirmation inside the tool and never deletes project source files.",
 			"When deleting multiple sessions, make one delete_session call with session_ids instead of one tool call per session.",
@@ -208,6 +215,10 @@ export function createNovaDataToolDefinition(): ToolDefinition<typeof novaDataSc
 				) {
 					throw new Error("Cannot delete the currently active session");
 				}
+				// This is the only approval gate for deleting a session: the tool is
+				// auto-approved by ToolPermissionManager, so the confirmation below runs
+				// in every permission mode, "allow" included. Keep it that way — adding a
+				// permission-mode check in tool-permission-manager.ts would prompt twice.
 				if (!ctx.hasUI) throw new Error("Deleting a session requires interactive user confirmation");
 				const confirmed = await ctx.ui.confirm(
 					sessionsToDelete.length === 1
@@ -220,6 +231,7 @@ export function createNovaDataToolDefinition(): ToolDefinition<typeof novaDataSc
 						),
 						"The session will be moved to the system trash. Project files will not be touched.",
 					].join("\n"),
+					{ variant: "danger" },
 				);
 				if (!confirmed) {
 					return {

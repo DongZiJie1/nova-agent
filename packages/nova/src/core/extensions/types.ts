@@ -65,6 +65,7 @@ import type {
 import type { SlashCommandInfo } from "../slash-commands.ts";
 import type { SourceInfo } from "../source-info.ts";
 import type { BuildSystemPromptOptions } from "../system-prompt.ts";
+import type { ToolPermissionMode } from "../tool-permission-manager.ts";
 import type { BashOperations } from "../tools/bash.ts";
 import type { EditToolDetails } from "../tools/edit.ts";
 import type {
@@ -97,6 +98,11 @@ export interface ExtensionUIDialogOptions {
 	signal?: AbortSignal;
 	/** Timeout in milliseconds. Dialog auto-dismisses with live countdown display. */
 	timeout?: number;
+	/**
+	 * Visual weight of the affirmative action. Use "danger" when confirming would destroy
+	 * something the user cannot get back; clients render that confirm action as a warning.
+	 */
+	variant?: "default" | "danger";
 }
 
 /** Placement for extension widgets. */
@@ -799,6 +805,13 @@ export interface ThinkingLevelSelectEvent {
 	previousLevel: ThinkingLevel;
 }
 
+/** Fired when the tool permission mode is switched at runtime */
+export interface ToolPermissionModeChangeEvent {
+	type: "tool_permission_mode_changed";
+	mode: ToolPermissionMode;
+	previousMode: ToolPermissionMode;
+}
+
 // ============================================================================
 // User Bash Events
 // ============================================================================
@@ -1047,6 +1060,7 @@ export type ExtensionEvent =
 	| ToolExecutionEndEvent
 	| ModelSelectEvent
 	| ThinkingLevelSelectEvent
+	| ToolPermissionModeChangeEvent
 	| UserBashEvent
 	| InputEvent
 	| ToolCallEvent
@@ -1219,6 +1233,7 @@ export interface ExtensionAPI {
 	on(event: "tool_execution_end", handler: ExtensionHandler<ToolExecutionEndEvent>): void;
 	on(event: "model_select", handler: ExtensionHandler<ModelSelectEvent>): void;
 	on(event: "thinking_level_select", handler: ExtensionHandler<ThinkingLevelSelectEvent>): void;
+	on(event: "tool_permission_mode_changed", handler: ExtensionHandler<ToolPermissionModeChangeEvent>): void;
 	on(event: "tool_call", handler: ExtensionHandler<ToolCallEvent, ToolCallEventResult>): void;
 	on(event: "tool_result", handler: ExtensionHandler<ToolResultEvent, ToolResultEventResult>): void;
 	on(event: "user_bash", handler: ExtensionHandler<UserBashEvent, UserBashEventResult>): void;

@@ -417,6 +417,7 @@ async function createHarnessWithResourceLoader(
 		modelRuntime: getModelRuntime(modelRegistry),
 		resourceLoader,
 		baseToolsOverride: options.baseToolsOverride,
+		toolPermissionMode: "allow",
 	});
 
 	const events: AgentSessionEvent[] = [];

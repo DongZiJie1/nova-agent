@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
-import { getModel } from "../src/compat.ts";
-import { getSupportedThinkingLevels } from "../src/models.ts";
-import type { Context } from "../src/types.ts";
+import type { Context, Model } from "../src/types.ts";
 
 const mockState = vi.hoisted(() => ({
 	constructorOpts: undefined as Record<string, unknown> | undefined,
@@ -55,20 +53,32 @@ describe("Copilot Claude via Anthropic Messages", () => {
 		messages: [{ role: "user", content: "Hello", timestamp: Date.now() }],
 	};
 
-	it("applies Copilot-specific adaptive thinking effort overrides", () => {
-		const opus47 = getModel("github-copilot", "claude-opus-4.7");
-		expect(opus47.thinkingLevelMap).toMatchObject({ minimal: "low", xhigh: "xhigh", max: "max" });
-		expect(getSupportedThinkingLevels(opus47)).toContain("xhigh");
-		expect(getSupportedThinkingLevels(opus47)).toContain("max");
-
-		const sonnet46 = getModel("github-copilot", "claude-sonnet-4.6");
-		expect(sonnet46.thinkingLevelMap).toMatchObject({ minimal: "low", max: "max" });
-		expect(getSupportedThinkingLevels(sonnet46)).toContain("max");
-		expect(getSupportedThinkingLevels(sonnet46)).not.toContain("xhigh");
-	});
+	// Copilot models carry the static editor headers, which the user configures
+	// per model in models.json.
+	function makeCopilotModel(compat?: Model<"anthropic-messages">["compat"]): Model<"anthropic-messages"> {
+		return {
+			id: "claude-sonnet-4.6",
+			name: "Claude Sonnet 4.6",
+			api: "anthropic-messages",
+			provider: "github-copilot",
+			baseUrl: "https://api.individual.githubcopilot.com",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+			contextWindow: 1000000,
+			maxTokens: 64000,
+			headers: {
+				"User-Agent": "GitHubCopilotChat/0.35.0",
+				"Editor-Version": "vscode/1.107.0",
+				"Editor-Plugin-Version": "copilot-chat/0.35.0",
+				"Copilot-Integration-Id": "vscode-chat",
+			},
+			compat,
+		};
+	}
 
 	it("uses Bearer auth, Copilot headers, and valid Anthropic Messages payload", async () => {
-		const model = getModel("github-copilot", "claude-sonnet-4.6");
+		const model = makeCopilotModel();
 		expect(model.api).toBe("anthropic-messages");
 
 		const s = streamAnthropic(model, context, { apiKey: "tid_copilot_session_test_token" });
@@ -105,7 +115,7 @@ describe("Copilot Claude via Anthropic Messages", () => {
 	});
 
 	it("omits interleaved-thinking beta for adaptive-thinking models", async () => {
-		const model = getModel("github-copilot", "claude-sonnet-4.6");
+		const model = makeCopilotModel({ forceAdaptiveThinking: true });
 		const s = streamAnthropic(model, context, {
 			apiKey: "tid_copilot_session_test_token",
 			interleavedThinking: true,

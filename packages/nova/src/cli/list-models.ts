@@ -23,13 +23,33 @@ function formatTokenCount(count: number): string {
 	return count.toString();
 }
 
+export interface ListModelsOptions {
+	/**
+	 * Emit the structured model directory as JSON instead of the human-readable
+	 * table. Search patterns are ignored in this mode: consumers need the whole
+	 * directory, and the table's unit formatting would lose precision.
+	 */
+	json?: boolean;
+}
+
 /**
  * List available models, optionally filtered by search pattern
  */
-export async function listModels(modelRuntime: ModelRuntime, searchPattern?: string): Promise<void> {
+export async function listModels(
+	modelRuntime: ModelRuntime,
+	searchPattern?: string,
+	options: ListModelsOptions = {},
+): Promise<void> {
 	const loadError = modelRuntime.getError();
 	if (loadError) {
 		console.error(chalk.yellow(`Warning: errors loading models.json:\n${loadError}`));
+	}
+
+	if (options.json) {
+		// Refresh availability so `auth.configured` reflects stored credentials.
+		await modelRuntime.getAvailable();
+		console.log(JSON.stringify(modelRuntime.getModelCatalog()));
+		return;
 	}
 
 	const models = [...(await modelRuntime.getAvailable())];

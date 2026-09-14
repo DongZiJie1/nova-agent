@@ -194,8 +194,16 @@ export type AgentSessionEvent =
 	| { type: "summarization_retry_finished" }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
 	| { type: "bash_execution_update"; id?: string; delta: string }
-	| { type: "tool_permission_requested"; toolCallId: string; toolName: string; args: unknown }
-	| { type: "tool_permission_resolved"; toolCallId: string; toolName: string; allowed: boolean; reason?: string };
+	| {
+			type: "tool_permission_requested";
+			toolCallId: string;
+			toolName: string;
+			args: unknown;
+			/** How long the client has to answer before the request fails closed. */
+			timeoutMs?: number;
+	  }
+	| { type: "tool_permission_resolved"; toolCallId: string; toolName: string; allowed: boolean; reason?: string }
+	| { type: "tool_permission_mode_changed"; mode: ToolPermissionMode; previousMode: ToolPermissionMode };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -231,6 +239,8 @@ export interface AgentSessionConfig {
 	excludedToolNames?: string[];
 	/** Runtime policy applied before every validated tool call. */
 	toolPermissionMode?: ToolPermissionMode;
+	/** How long a permission prompt may stay unanswered before it fails closed. Default: 120s. */
+	toolPermissionTimeoutMs?: number;
 	/**
 	 * Override base tools (useful for custom runtimes).
 	 *
@@ -394,6 +404,8 @@ export class AgentSession {
 	private _allowedToolNames?: Set<string>;
 	private _excludedToolNames?: Set<string>;
 	private _toolPermissionManager: ToolPermissionManager;
+	private _rpcPermissionBridgeEnabled = false;
+	private _pendingToolPermissions = new Map<string, (allowed: boolean) => void>();
 	private _baseToolsOverride?: Record<string, AgentTool>;
 	private _sessionStartEvent: SessionStartEvent;
 	private _extensionUIContext?: ExtensionUIContext;
@@ -431,7 +443,10 @@ export class AgentSession {
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
 		this._excludedToolNames = config.excludedToolNames ? new Set(config.excludedToolNames) : undefined;
-		this._toolPermissionManager = new ToolPermissionManager({ mode: config.toolPermissionMode });
+		this._toolPermissionManager = new ToolPermissionManager({
+			mode: config.toolPermissionMode,
+			timeoutMs: config.toolPermissionTimeoutMs,
+		});
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
 
@@ -514,14 +529,21 @@ export class AgentSession {
 	 */
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }, signal) => {
-			this._emit({ type: "tool_permission_requested", toolCallId: toolCall.id, toolName: toolCall.name, args });
+			// The RPC bridge takes precedence over the extension UI context: in RPC mode the
+			// extension context exists but routes through the generic extension_ui_request
+			// channel, while the bridge uses the dedicated tool-permission commands.
+			const uiContext = this._rpcPermissionBridgeEnabled
+				? this._createRpcPermissionContext(toolCall.id, toolCall.name, args)
+				: this._extensionUIContext;
 			const permission = await this._toolPermissionManager.check(
 				{ toolCallId: toolCall.id, toolName: toolCall.name, args, cwd: this._cwd },
-				this._extensionUIContext,
+				uiContext,
 				signal,
 			);
 			const trace = this._activeToolTraces.get(toolCall.id);
 			if (trace) {
+				trace.data.permissionMode = this._toolPermissionManager.mode;
+				trace.data.permissionPrompted = permission.prompted ?? false;
 				trace.data.permissionDecision = permission.allowed ? "allowed" : "denied";
 				trace.data.permissionReason = permission.reason;
 			}
@@ -1023,6 +1045,7 @@ export class AgentSession {
 			this.abortBranchSummary();
 			this.abortBash();
 			this.agent.abort();
+			this._resolvePendingToolPermissions(false);
 		} catch {
 			// Dispose must succeed even if an abort hook throws.
 		}
@@ -1290,15 +1313,38 @@ export class AgentSession {
 
 	private async _runAgentPrompt(messages: AgentMessage | AgentMessage[]): Promise<void> {
 		this._isAgentRunActive = true;
+		// A turn that never finishes would otherwise hold the agent (and its tools) forever.
+		const turnTimeoutMs = this.settingsManager.getTurnTimeoutMs();
+		let turnTimedOut = false;
+		const timeoutHandle =
+			turnTimeoutMs === undefined
+				? undefined
+				: setTimeout(() => {
+						turnTimedOut = true;
+						this.agent.abort();
+					}, turnTimeoutMs);
 		try {
 			await this.agent.prompt(messages);
 			while (await this._handlePostAgentRun()) {
 				await this.agent.continue();
 			}
 		} finally {
+			if (timeoutHandle) clearTimeout(timeoutHandle);
 			this._systemPromptOverride = undefined;
 			this._flushPendingBashMessages();
 			await this._emitAgentSettled();
+		}
+		if (turnTimedOut) {
+			// Say so in the conversation: an unexplained abort looks like a crash.
+			const minutes = Math.round((turnTimeoutMs ?? 0) / 60_000);
+			await this.sendCustomMessage(
+				{
+					customType: "turn_timeout",
+					content: [{ type: "text", text: `本轮已运行超过 ${minutes} 分钟，已自动中止。` }],
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
 		}
 	}
 
@@ -2021,6 +2067,89 @@ export class AgentSession {
 				previousLevel,
 			});
 		}
+	}
+
+	/**
+	 * Current tool permission mode.
+	 */
+	getToolPermissionMode(): ToolPermissionMode {
+		return this._toolPermissionManager.mode;
+	}
+
+	/**
+	 * Switch tool permission mode for the current session (not persisted).
+	 */
+	setToolPermissionMode(mode: ToolPermissionMode): void {
+		const previousMode = this._toolPermissionManager.mode;
+		if (mode === previousMode) return;
+		this._toolPermissionManager.setMode(mode);
+		this._emit({ type: "tool_permission_mode_changed", mode, previousMode });
+		void this._extensionRunner.emit({ type: "tool_permission_mode_changed", mode, previousMode });
+	}
+
+	/**
+	 * Enable the RPC tool-permission bridge.
+	 *
+	 * In RPC mode there is no interactive UI, so without the bridge every non-read-only tool call
+	 * fails closed immediately. When enabled, permission checks suspend until the RPC client
+	 * answers via {@link respondToToolPermission} (or the request times out / is aborted).
+	 * Print mode never enables this, keeping its fail-closed behavior.
+	 */
+	setRpcPermissionBridgeEnabled(enabled: boolean): void {
+		this._rpcPermissionBridgeEnabled = enabled;
+		if (!enabled) {
+			this._resolvePendingToolPermissions(false);
+		}
+	}
+
+	/**
+	 * Resolve a pending tool permission request from the RPC client.
+	 *
+	 * @returns true if a pending request with this toolCallId was answered.
+	 */
+	respondToToolPermission(toolCallId: string, allowed: boolean): boolean {
+		const resolver = this._pendingToolPermissions.get(toolCallId);
+		if (!resolver) return false;
+		this._pendingToolPermissions.delete(toolCallId);
+		resolver(allowed);
+		return true;
+	}
+
+	private _resolvePendingToolPermissions(allowed: boolean): void {
+		const pending = [...this._pendingToolPermissions.entries()];
+		this._pendingToolPermissions.clear();
+		for (const [, resolver] of pending) {
+			resolver(allowed);
+		}
+	}
+
+	/**
+	 * Build a per-call UI context whose confirm() suspends until the RPC client responds.
+	 * The `tool_permission_requested` event is emitted here — only when a prompt is actually
+	 * shown — so clients never see a request for auto-approved calls.
+	 */
+	private _createRpcPermissionContext(toolCallId: string, toolName: string, args: unknown): ExtensionUIContext {
+		const confirm = (_title: string, _message: string, opts?: { signal?: AbortSignal; timeout?: number }) => {
+			const timeoutMs = opts?.timeout ?? this._toolPermissionManager.timeoutMs;
+			this._emit({ type: "tool_permission_requested", toolCallId, toolName, args, timeoutMs });
+			return new Promise<boolean>((resolve) => {
+				let settled = false;
+				const finish = (allowed: boolean) => {
+					if (settled) return;
+					settled = true;
+					clearTimeout(timer);
+					opts?.signal?.removeEventListener("abort", onAbort);
+					this._pendingToolPermissions.delete(toolCallId);
+					resolve(allowed);
+				};
+				const onAbort = () => finish(false);
+				const timer = setTimeout(() => finish(false), timeoutMs);
+				opts?.signal?.addEventListener("abort", onAbort, { once: true });
+				this._pendingToolPermissions.set(toolCallId, finish);
+				if (opts?.signal?.aborted) finish(false);
+			});
+		};
+		return { confirm } as ExtensionUIContext;
 	}
 
 	/**
@@ -2886,7 +3015,12 @@ export class AgentSession {
 				)
 			: createAllToolDefinitions(this._cwd, {
 					read: { autoResizeImages },
-					bash: { commandPrefix: shellCommandPrefix, shellPath },
+					bash: {
+						commandPrefix: shellCommandPrefix,
+						shellPath,
+						defaultTimeoutMs: this.settingsManager.getBashTimeoutMs(),
+						maxConcurrent: this.settingsManager.getMaxConcurrentBash(),
+					},
 				});
 
 		this._baseToolDefinitions = new Map(

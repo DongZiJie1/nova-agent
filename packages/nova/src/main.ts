@@ -452,6 +452,9 @@ function buildSessionOptions(
 		options.excludeTools = [...parsed.excludeTools];
 	}
 
+	// Tool permission mode: CLI flag > settings.json default > "ask"
+	options.toolPermissionMode = parsed.permissionMode ?? settingsManager.getDefaultToolPermissionMode() ?? "ask";
+
 	return { options, cliThinkingFromModel, diagnostics };
 }
 
@@ -761,7 +764,7 @@ export async function main(args: string[], options?: MainOptions) {
 			excludeTools: sessionOptions.excludeTools,
 			noTools: sessionOptions.noTools,
 			customTools: sessionOptions.customTools,
-			toolPermissionMode: "ask",
+			toolPermissionMode: sessionOptions.toolPermissionMode,
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
 		if (created.session.model && cliThinkingOverride) {
@@ -796,7 +799,7 @@ export async function main(args: string[], options?: MainOptions) {
 
 	if (parsed.listModels !== undefined) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
-		await listModels(modelRuntime, searchPattern);
+		await listModels(modelRuntime, searchPattern, { json: parsed.listModelsJson });
 		process.exit(0);
 	}
 

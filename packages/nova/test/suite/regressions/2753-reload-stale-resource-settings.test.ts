@@ -82,7 +82,9 @@ describe("issue #2753 reload stale resource settings", () => {
 		const runtime = await createAgentSessionRuntime(createRuntime, {
 			cwd: tempDir,
 			agentDir,
-			sessionManager: SessionManager.create(tempDir),
+			// Keep session files inside tempDir; the one-arg overload falls back to
+			// the real ~/.nova/agent/sessions/<cwd-slug>/ and leaks them per run.
+			sessionManager: SessionManager.create(tempDir, join(agentDir, "sessions")),
 		});
 
 		cleanups.push(() => {

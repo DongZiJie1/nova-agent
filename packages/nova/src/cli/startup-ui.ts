@@ -24,7 +24,7 @@ import {
 } from "../modes/interactive/theme/theme.ts";
 
 const OFFICIAL_PACKAGE_NAME = "@dongzijie1/nova";
-const OFFICIAL_APP_NAME = "pi";
+const OFFICIAL_APP_NAME = "nova";
 const OFFICIAL_CONFIG_DIR_NAME = ".nova";
 
 interface DistributionMetadata {

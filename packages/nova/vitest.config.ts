@@ -10,6 +10,7 @@ export default mergeConfig(
 			testTimeout: 30000,
 			reporters: process.env.GITHUB_ACTIONS ? ["dot", "github-actions"] : ["dot"],
 			silent: "passed-only",
+			setupFiles: ["./test/setup-model-fixtures.ts"],
 			server: {
 				deps: {
 					external: [/@silvia-odwyer\/photon-node/],

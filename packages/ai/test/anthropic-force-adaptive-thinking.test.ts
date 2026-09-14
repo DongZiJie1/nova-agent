@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getModel, streamSimple } from "../src/compat.ts";
+import { streamSimple } from "../src/compat.ts";
 import type { Context, Model, SimpleStreamOptions } from "../src/types.ts";
 
 interface AnthropicThinkingPayload {
@@ -20,10 +20,11 @@ function makeContext(): Context {
 	};
 }
 
-function makeCustomModel(compat?: Model<"anthropic-messages">["compat"]): Model<"anthropic-messages"> {
+function makeCustomModel(
+	compat?: Model<"anthropic-messages">["compat"],
+	thinkingLevelMap?: Model<"anthropic-messages">["thinkingLevelMap"],
+): Model<"anthropic-messages"> {
 	return {
-		// Id intentionally does not match any built-in adaptive substring. This
-		// mirrors corporate proxy schemes such as `anthropic--claude-opus-latest`.
 		id: "vendor--claude-opus-latest",
 		name: "Vendor Proxy Opus Latest",
 		api: "anthropic-messages",
@@ -35,6 +36,7 @@ function makeCustomModel(compat?: Model<"anthropic-messages">["compat"]): Model<
 		contextWindow: 200000,
 		maxTokens: 32000,
 		compat,
+		thinkingLevelMap,
 	};
 }
 
@@ -82,33 +84,19 @@ describe("Anthropic forceAdaptiveThinking compat override", () => {
 		expect(payload.output_config).toEqual({ effort: "medium" });
 	});
 
-	it("uses adaptive thinking with native xhigh effort for Claude Fable 5", async () => {
-		const payload = await capturePayload(getModel("anthropic", "claude-fable-5"), { reasoning: "xhigh" });
+	it.each([
+		["xhigh", "xhigh"],
+		["max", "max"],
+	] as const)("maps %s reasoning to a native %s effort when the model maps it", async (reasoning, effort) => {
+		const model = makeCustomModel({ forceAdaptiveThinking: true }, { xhigh: "xhigh", max: "max" });
+		const payload = await capturePayload(model, { reasoning });
 
 		expect(payload.thinking).toEqual({ type: "adaptive", display: "summarized" });
-		expect(payload.output_config).toEqual({ effort: "xhigh" });
+		expect(payload.output_config).toEqual({ effort });
 	});
 
-	it.each([
-		["kimi-for-coding", "medium", "medium"],
-		["k3", "max", "max"],
-		["kimi-for-coding-highspeed", "medium", "medium"],
-	] as const)(
-		"uses adaptive thinking effort without a token budget for Kimi Coding %s",
-		async (modelId, reasoning, effort) => {
-			const payload = await capturePayload(getModel("kimi-coding", modelId), { reasoning });
-
-			expect(payload.thinking).toEqual({ type: "adaptive", display: "summarized" });
-			expect(payload.output_config).toEqual({ effort });
-		},
-	);
-
-	it("allows built-in adaptive models to opt out with compat.forceAdaptiveThinking false", async () => {
-		const model: Model<"anthropic-messages"> = {
-			...getModel("anthropic", "claude-opus-4-8"),
-			compat: { forceAdaptiveThinking: false },
-		};
-		const payload = await capturePayload(model, { reasoning: "medium" });
+	it("keeps budget-based thinking when forceAdaptiveThinking is explicitly false", async () => {
+		const payload = await capturePayload(makeCustomModel({ forceAdaptiveThinking: false }), { reasoning: "medium" });
 
 		expect(payload.thinking?.type).toBe("enabled");
 		expect(payload.output_config).toBeUndefined();
