@@ -215,6 +215,10 @@ export function createNovaDataToolDefinition(): ToolDefinition<typeof novaDataSc
 				) {
 					throw new Error("Cannot delete the currently active session");
 				}
+				// This is the only approval gate for deleting a session: the tool is
+				// auto-approved by ToolPermissionManager, so the confirmation below runs
+				// in every permission mode, "allow" included. Keep it that way — adding a
+				// permission-mode check in tool-permission-manager.ts would prompt twice.
 				if (!ctx.hasUI) throw new Error("Deleting a session requires interactive user confirmation");
 				const confirmed = await ctx.ui.confirm(
 					sessionsToDelete.length === 1
@@ -227,6 +231,7 @@ export function createNovaDataToolDefinition(): ToolDefinition<typeof novaDataSc
 						),
 						"The session will be moved to the system trash. Project files will not be touched.",
 					].join("\n"),
+					{ variant: "danger" },
 				);
 				if (!confirmed) {
 					return {

@@ -98,6 +98,11 @@ export interface ExtensionUIDialogOptions {
 	signal?: AbortSignal;
 	/** Timeout in milliseconds. Dialog auto-dismisses with live countdown display. */
 	timeout?: number;
+	/**
+	 * Visual weight of the affirmative action. Use "danger" when confirming would destroy
+	 * something the user cannot get back; clients render that confirm action as a warning.
+	 */
+	variant?: "default" | "danger";
 }
 
 /** Placement for extension widgets. */

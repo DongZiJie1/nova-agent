@@ -21,7 +21,12 @@ export interface ToolPermissionManagerOptions {
 	timeoutMs?: number;
 }
 
-const READ_ONLY_TOOLS = new Set([
+/**
+ * Requests that never prompt, in any mode. `nova_data` is included as a whole
+ * tool: session deletion does not need a second gate here because the tool runs
+ * its own confirmation in every mode (see nova-data.ts).
+ */
+const AUTO_APPROVED_TOOLS = new Set([
 	"read",
 	"grep",
 	"find",
@@ -29,6 +34,7 @@ const READ_ONLY_TOOLS = new Set([
 	"ask_user_question",
 	"hub_list_agents",
 	"hub_wait_tasks",
+	"nova_data",
 ]);
 
 const EDIT_TOOLS = new Set(["edit", "write"]);
@@ -37,13 +43,6 @@ export const TOOL_PERMISSION_MODES = ["ask", "edits", "allow"] as const;
 
 export function isValidToolPermissionMode(mode: string): mode is ToolPermissionMode {
 	return (TOOL_PERMISSION_MODES as readonly string[]).includes(mode);
-}
-
-function isReadOnlyRequest(request: ToolPermissionRequest): boolean {
-	if (READ_ONLY_TOOLS.has(request.toolName)) return true;
-	if (request.toolName !== "nova_data" || !request.args || typeof request.args !== "object") return false;
-	const action = (request.args as { action?: unknown }).action;
-	return action === "list_projects" || action === "list_sessions" || action === "read_session";
 }
 
 function formatPermissionMessage(request: ToolPermissionRequest): string {
@@ -81,7 +80,7 @@ export class ToolPermissionManager {
 		signal?: AbortSignal,
 	): Promise<ToolPermissionResult> {
 		if (this._mode === "allow") return { allowed: true };
-		if (isReadOnlyRequest(request)) return { allowed: true, reason: "Read-only tool auto-approved" };
+		if (AUTO_APPROVED_TOOLS.has(request.toolName)) return { allowed: true, reason: "Tool auto-approved" };
 		if (this._mode === "edits" && EDIT_TOOLS.has(request.toolName)) {
 			return { allowed: true, reason: "Edit tool auto-approved in edits mode" };
 		}

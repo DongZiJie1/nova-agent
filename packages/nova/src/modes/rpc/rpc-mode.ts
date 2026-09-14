@@ -173,7 +173,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				agentId,
 				opts,
 				false,
-				{ method: "confirm", title, message, timeout: opts?.timeout },
+				{ method: "confirm", title, message, timeout: opts?.timeout, variant: opts?.variant },
 				(r) => ("cancelled" in r && r.cancelled ? false : "confirmed" in r ? r.confirmed : false),
 			),
 

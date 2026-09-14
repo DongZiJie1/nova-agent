@@ -38,7 +38,7 @@ describe("ToolPermissionManager", () => {
 			const confirm = vi.fn<ExtensionUIContext["confirm"]>();
 			const result = await new ToolPermissionManager().check({ ...request, toolName }, uiWithConfirm(confirm));
 
-			expect(result).toEqual({ allowed: true, reason: "Read-only tool auto-approved" });
+			expect(result).toEqual({ allowed: true, reason: "Tool auto-approved" });
 			expect(confirm).not.toHaveBeenCalled();
 		},
 	);
@@ -57,15 +57,31 @@ describe("ToolPermissionManager", () => {
 		},
 	);
 
-	it("still asks before a mutating nova_data action", async () => {
-		const confirm = vi.fn<ExtensionUIContext["confirm"]>().mockResolvedValue(false);
-		const result = await new ToolPermissionManager().check(
-			{ ...request, toolName: "nova_data", args: { action: "delete_session", session_id: "session-1" } },
-			uiWithConfirm(confirm),
+	// delete_session must not be gated here: the tool runs its own confirmation in
+	// every mode, so a prompt at this layer would ask the user twice.
+	it.each(["ask", "edits", "allow"] as const)(
+		"auto-approves delete_session in %s mode so only the tool's own confirm is shown",
+		async (mode) => {
+			const confirm = vi.fn<ExtensionUIContext["confirm"]>().mockResolvedValue(false);
+			const result = await new ToolPermissionManager({ mode }).check(
+				{ ...request, toolName: "nova_data", args: { action: "delete_session", session_id: "session-1" } },
+				uiWithConfirm(confirm),
+			);
+
+			expect(result.allowed).toBe(true);
+			expect(confirm).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(["ask", "edits"] as const)("auto-approves reading via nova_data in %s mode without a UI", async (mode) => {
+		const confirm = vi.fn<ExtensionUIContext["confirm"]>();
+		const result = await new ToolPermissionManager({ mode }).check(
+			{ ...request, toolName: "nova_data", args: { action: "list_sessions" } },
+			undefined,
 		);
 
-		expect(result.allowed).toBe(false);
-		expect(confirm).toHaveBeenCalledOnce();
+		expect(result).toEqual({ allowed: true, reason: "Tool auto-approved" });
+		expect(confirm).not.toHaveBeenCalled();
 	});
 
 	it("prompts with the tool details and allows an approved call", async () => {
