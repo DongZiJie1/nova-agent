@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { getNovaEnv } from "./env-compat.ts";
 import { setKittyProtocolActive } from "./keys.ts";
 import { isNativeModifierPressed } from "./native-modifiers.ts";
 import { StdinBuffer } from "./stdin-buffer.ts";
@@ -109,7 +110,7 @@ export class ProcessTerminal implements Terminal {
 	private stdinDataHandler?: (data: string) => void;
 	private progressInterval?: ReturnType<typeof setInterval>;
 	private writeLogPath = (() => {
-		const env = process.env.PI_TUI_WRITE_LOG || "";
+		const env = getNovaEnv("TUI_WRITE_LOG") || "";
 		if (!env) return "";
 		try {
 			if (fs.statSync(env).isDirectory()) {

@@ -555,19 +555,21 @@ export async function loadExtensionsCached(
 	return loadExtensionsInternal(paths, cwd, eventBus, runtime, true);
 }
 
-interface PiManifest {
+interface NovaManifest {
 	extensions?: string[];
 	themes?: string[];
 	skills?: string[];
 	prompts?: string[];
 }
 
-function readPiManifest(packageJsonPath: string): PiManifest | null {
+function readNovaManifest(packageJsonPath: string): NovaManifest | null {
 	try {
 		const content = fs.readFileSync(packageJsonPath, "utf-8");
 		const pkg = JSON.parse(content);
-		if (pkg.pi && typeof pkg.pi === "object") {
-			return pkg.pi as PiManifest;
+		// `pi` is the pre-rebrand manifest key and is still honored.
+		const manifest = pkg.nova ?? pkg.pi;
+		if (manifest && typeof manifest === "object") {
+			return manifest as NovaManifest;
 		}
 		return null;
 	} catch {
@@ -583,16 +585,16 @@ function isExtensionFile(name: string): boolean {
  * Resolve extension entry points from a directory.
  *
  * Checks for:
- * 1. package.json with "pi.extensions" field -> returns declared paths
+ * 1. package.json with "nova.extensions" field -> returns declared paths
  * 2. index.ts or index.js -> returns the index file
  *
  * Returns resolved paths or null if no entry points found.
  */
 function resolveExtensionEntries(dir: string): string[] | null {
-	// Check for package.json with "pi" field first
+	// Check for package.json with a "nova" (or legacy "pi") field first
 	const packageJsonPath = path.join(dir, "package.json");
 	if (fs.existsSync(packageJsonPath)) {
-		const manifest = readPiManifest(packageJsonPath);
+		const manifest = readNovaManifest(packageJsonPath);
 		if (manifest?.extensions?.length) {
 			const entries: string[] = [];
 			for (const extPath of manifest.extensions) {

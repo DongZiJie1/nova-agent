@@ -106,12 +106,12 @@ describe("createAgentSession session manager defaults", () => {
 		expect(session.sessionFile).toBeTruthy();
 		// Tool snippets/guidelines are intentionally NOT in the system prompt
 		// (they are passed via the API `tools` parameter instead).
-		expect(session.systemPrompt).not.toContain("PI_* variables");
+		expect(session.systemPrompt).not.toContain("NOVA_* variables");
 
 		const bashTool = session.agent.state.tools.find((tool) => tool.name === "bash");
 		expect(bashTool).toBeTruthy();
 		const result = await bashTool!.execute("test", {
-			command: `printf '%s\\n' "$PI_SESSION_ID" "$PI_SESSION_FILE" "$PI_PROVIDER" "$PI_MODEL" "$PI_REASONING_LEVEL"`,
+			command: `printf '%s\\n' "$NOVA_SESSION_ID" "$NOVA_SESSION_FILE" "$NOVA_PROVIDER" "$NOVA_MODEL" "$NOVA_REASONING_LEVEL"`,
 		});
 		const output = result.content
 			.filter((item): item is { type: "text"; text: string } => item.type === "text")

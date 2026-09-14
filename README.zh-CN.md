@@ -3,7 +3,7 @@
 </p>
 <p align="center">
   <a href="https://www.npmjs.com/package/@dongzijie1/nova"><img alt="npm" src="https://img.shields.io/npm/v/@dongzijie1/nova?style=flat-square" /></a>
-  <a href="https://github.com/DongZiJie1/pi-mutant/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
+  <a href="https://github.com/DongZiJie1/nova-agent/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
 </p>
 
 <p align="center">
@@ -78,7 +78,7 @@ npm run check
 ./test.sh
 
 # 从源码运行
-./pi-test.sh
+./nova-test.sh
 ```
 
 ## 开发路线

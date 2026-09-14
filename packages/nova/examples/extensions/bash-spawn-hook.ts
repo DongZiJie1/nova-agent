@@ -4,24 +4,24 @@
  * Adjusts command, cwd, and env before execution.
  *
  * Usage:
- *   pi -e ./bash-spawn-hook.ts
+ *   nova -e ./bash-spawn-hook.ts
  */
 
 import type { ExtensionAPI } from "@dongzijie1/nova";
 import { createBashTool } from "@dongzijie1/nova";
 
-export default function (pi: ExtensionAPI) {
+export default function (nova: ExtensionAPI) {
 	const cwd = process.cwd();
 
 	const bashTool = createBashTool(cwd, {
 		spawnHook: ({ command, cwd, env }) => ({
 			command: `source ~/.profile\n${command}`,
 			cwd,
-			env: { ...env, PI_SPAWN_HOOK: "1" },
+			env: { ...env, NOVA_SPAWN_HOOK: "1" },
 		}),
 	});
 
-	pi.registerTool({
+	nova.registerTool({
 		...bashTool,
 		execute: async (id, params, signal, onUpdate, _ctx) => {
 			return bashTool.execute(id, params, signal, onUpdate);

@@ -1,3 +1,5 @@
+import { getNovaEnv } from "../utils/env-compat.ts";
+
 export function areExperimentalFeaturesEnabled(): boolean {
-	return process.env.PI_EXPERIMENTAL === "1";
+	return getNovaEnv("EXPERIMENTAL") === "1";
 }

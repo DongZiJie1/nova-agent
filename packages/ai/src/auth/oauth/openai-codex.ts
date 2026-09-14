@@ -17,7 +17,7 @@ if (typeof process !== "undefined" && (process.versions?.node || process.version
 	});
 }
 
-import { getProviderEnvValue } from "../../utils/provider-env.ts";
+import { getNovaEnv } from "../../utils/env-compat.ts";
 import type { AuthInteraction, OAuthAuth, OAuthCredential } from "../types.ts";
 import { pollOAuthDeviceCodeFlow } from "./device-code.ts";
 import { oauthErrorHtml, oauthSuccessHtml } from "./oauth-page.ts";
@@ -42,7 +42,7 @@ type OAuthToken = { access: string; refresh: string; expires: number };
 type TokenOperation = "exchange" | "refresh";
 
 function getCallbackHost(): string {
-	return getProviderEnvValue("PI_OAUTH_CALLBACK_HOST") || "127.0.0.1";
+	return getNovaEnv("OAUTH_CALLBACK_HOST") || "127.0.0.1";
 }
 
 type DeviceAuthInfo = {

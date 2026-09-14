@@ -64,19 +64,26 @@ vi.mock("openai", () => {
 });
 
 describe("openai-completions prompt caching", () => {
-	const originalEnv = process.env.PI_CACHE_RETENTION;
+	const originalNovaEnv = process.env.NOVA_CACHE_RETENTION;
+	const originalLegacyEnv = process.env.PI_CACHE_RETENTION;
 
 	beforeEach(() => {
 		mockState.lastParams = undefined;
 		mockState.lastClientOptions = undefined;
+		delete process.env.NOVA_CACHE_RETENTION;
 		delete process.env.PI_CACHE_RETENTION;
 	});
 
 	afterEach(() => {
-		if (originalEnv === undefined) {
+		if (originalNovaEnv === undefined) {
+			delete process.env.NOVA_CACHE_RETENTION;
+		} else {
+			process.env.NOVA_CACHE_RETENTION = originalNovaEnv;
+		}
+		if (originalLegacyEnv === undefined) {
 			delete process.env.PI_CACHE_RETENTION;
 		} else {
-			process.env.PI_CACHE_RETENTION = originalEnv;
+			process.env.PI_CACHE_RETENTION = originalLegacyEnv;
 		}
 	});
 
@@ -151,8 +158,8 @@ describe("openai-completions prompt caching", () => {
 		expect(payload?.prompt_cache_retention).toBeUndefined();
 	});
 
-	it("uses PI_CACHE_RETENTION for direct OpenAI requests", async () => {
-		process.env.PI_CACHE_RETENTION = "long";
+	it("uses NOVA_CACHE_RETENTION for direct OpenAI requests", async () => {
+		process.env.NOVA_CACHE_RETENTION = "long";
 		const { payload } = await captureRequest({ sessionId: "session-env" });
 
 		expect(payload?.prompt_cache_key).toBe("session-env");

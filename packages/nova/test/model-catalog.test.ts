@@ -11,7 +11,7 @@ describe("ModelRuntime.getModelCatalog", () => {
 	let modelsJsonPath: string;
 
 	beforeEach(() => {
-		tempDir = join(tmpdir(), `pi-test-model-catalog-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		tempDir = join(tmpdir(), `nova-test-model-catalog-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 		modelsJsonPath = join(tempDir, "models.json");
 	});
@@ -129,7 +129,7 @@ describe("ModelRuntime.getModelCatalog", () => {
 
 describe("listModels --json", () => {
 	test("prints the catalog as JSON without any table formatting", async () => {
-		const tempDir = join(tmpdir(), `pi-test-list-models-json-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		const tempDir = join(tmpdir(), `nova-test-list-models-json-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 		const modelsJsonPath = join(tempDir, "models.json");
 		writeFileSync(

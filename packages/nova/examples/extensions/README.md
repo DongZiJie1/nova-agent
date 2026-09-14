@@ -6,7 +6,7 @@ Example extensions for nova.
 
 ```bash
 # Load an extension with --extension flag
-pi --extension examples/extensions/permission-gate.ts
+nova --extension examples/extensions/permission-gate.ts
 
 # Or copy to extensions directory for auto-discovery
 cp permission-gate.ts ~/.nova/agent/extensions/
@@ -61,7 +61,7 @@ cp permission-gate.ts ~/.nova/agent/extensions/
 | `model-status.ts` | Shows model changes in status bar via `model_select` hook |
 | `snake.ts` | Snake game with custom UI, keyboard handling, and session persistence |
 | `tic-tac-toe.ts` | Tic-tac-toe vs the agent with `executionMode: "sequential"` tools to prevent race conditions on shared cursor state |
-| `send-user-message.ts` | Demonstrates `pi.sendUserMessage()` for sending user messages from extensions |
+| `send-user-message.ts` | Demonstrates `nova.sendUserMessage()` for sending user messages from extensions |
 | `timed-confirm.ts` | Demonstrates AbortSignal for auto-dismissing `ctx.ui.confirm()` and `ctx.ui.select()` dialogs |
 | `rpc-demo.ts` | Exercises all RPC-supported extension UI methods; pair with [`examples/rpc-extension-ui.ts`](../rpc-extension-ui.ts) |
 | `modal-editor.ts` | Custom vim-like modal editor via `ctx.ui.setEditorComponent()` |
@@ -100,7 +100,7 @@ cp permission-gate.ts ~/.nova/agent/extensions/
 
 | Extension | Description |
 |-----------|-------------|
-| `mac-system-theme.ts` | Syncs pi theme with macOS dark/light mode |
+| `mac-system-theme.ts` | Syncs nova theme with macOS dark/light mode |
 
 ### Resources
 
@@ -114,7 +114,7 @@ cp permission-gate.ts ~/.nova/agent/extensions/
 |-----------|-------------|
 | `message-renderer.ts` | Custom message rendering with colors and expandable details via `registerMessageRenderer` |
 | `entry-renderer.ts` | TUI-only session entry rendering via `appendEntry` and `registerEntryRenderer` |
-| `event-bus.ts` | Inter-extension communication via `pi.events` |
+| `event-bus.ts` | Inter-extension communication via `nova.events` |
 
 ### Session Metadata
 
@@ -142,12 +142,12 @@ cp permission-gate.ts ~/.nova/agent/extensions/
 See [docs/extensions.md](../../docs/extensions.md) for full documentation.
 
 ```typescript
-import type { ExtensionAPI } from "@earendil-works/nova";
+import type { ExtensionAPI } from "@dongzijie1/nova";
 import { Type } from "typebox";
 
-export default function (pi: ExtensionAPI) {
+export default function (nova: ExtensionAPI) {
   // Subscribe to lifecycle events
-  pi.on("tool_call", async (event, ctx) => {
+  nova.on("tool_call", async (event, ctx) => {
     if (event.toolName === "bash" && event.input.command?.includes("rm -rf")) {
       const ok = await ctx.ui.confirm("Dangerous!", "Allow rm -rf?");
       if (!ok) return { block: true, reason: "Blocked by user" };
@@ -155,7 +155,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Register custom tools
-  pi.registerTool({
+  nova.registerTool({
     name: "greet",
     label: "Greeting",
     description: "Generate a greeting",
@@ -171,7 +171,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Register commands
-  pi.registerCommand("hello", {
+  nova.registerCommand("hello", {
     description: "Say hello",
     handler: async (args, ctx) => {
       ctx.ui.notify("Hello!", "info");
@@ -184,7 +184,7 @@ export default function (pi: ExtensionAPI) {
 
 **Use StringEnum for string parameters** (required for Google API compatibility):
 ```typescript
-import { StringEnum } from "@earendil-works/pi-ai";
+import { StringEnum } from "@dongzijie1/pi-ai";
 
 // Good
 action: StringEnum(["list", "add"] as const)
@@ -202,7 +202,7 @@ return {
 };
 
 // Reconstruct on session events
-pi.on("session_start", async (_event, ctx) => {
+nova.on("session_start", async (_event, ctx) => {
   for (const entry of ctx.sessionManager.getBranch()) {
     if (entry.type === "message" && entry.message.toolName === "my_tool") {
       const details = entry.message.details;

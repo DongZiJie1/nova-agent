@@ -99,12 +99,13 @@ import { getUsageCostBreakdown } from "../../core/usage-totals.ts";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
 import { copyToClipboard, readClipboardText } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
+import { getNovaEnv } from "../../utils/env-compat.ts";
 import { parseGitUrl } from "../../utils/git.ts";
+import { getNovaUserAgent } from "../../utils/nova-user-agent.ts";
 import { getCwdRelativePath } from "../../utils/paths.ts";
-import { getPiUserAgent } from "../../utils/pi-user-agent.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { ensureTool } from "../../utils/tools-manager.ts";
-import { checkForNewPiVersion, type LatestPiRelease } from "../../utils/version-check.ts";
+import { checkForNewNovaVersion, type LatestNovaRelease } from "../../utils/version-check.ts";
 import { ArminComponent } from "./components/armin.ts";
 import { AssistantMessageComponent } from "./components/assistant-message.ts";
 import { BashExecutionComponent } from "./components/bash-execution.ts";
@@ -116,7 +117,6 @@ import { CustomEntryComponent } from "./components/custom-entry.ts";
 import { CustomMessageComponent } from "./components/custom-message.ts";
 import { DaxnutsComponent } from "./components/daxnuts.ts";
 import { DynamicBorder } from "./components/dynamic-border.ts";
-import { EarendilAnnouncementComponent } from "./components/earendil-announcement.ts";
 import { ExtensionEditorComponent } from "./components/extension-editor.ts";
 import { ExtensionInputComponent } from "./components/extension-input.ts";
 import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
@@ -858,7 +858,7 @@ export class InteractiveMode {
 	async run(): Promise<void> {
 		await this.init();
 
-		if (!process.env.PI_OFFLINE) {
+		if (!getNovaEnv("OFFLINE")) {
 			void this.session.modelRuntime
 				.refresh()
 				.then(() => this.updateAvailableProviderCount())
@@ -866,7 +866,7 @@ export class InteractiveMode {
 		}
 
 		// Start version check asynchronously
-		checkForNewPiVersion(this.version).then((newRelease) => {
+		checkForNewNovaVersion(this.version).then((newRelease) => {
 			if (newRelease) {
 				this.showNewVersionNotification(newRelease);
 			}
@@ -946,7 +946,7 @@ export class InteractiveMode {
 	}
 
 	private async checkForPackageUpdates(): Promise<string[]> {
-		if (process.env.PI_OFFLINE) {
+		if (getNovaEnv("OFFLINE")) {
 			return [];
 		}
 
@@ -1042,7 +1042,14 @@ export class InteractiveMode {
 	}
 
 	private reportInstallTelemetry(version: string): void {
-		if (process.env.PI_OFFLINE) {
+		// No endpoint ships with Nova, so nothing is reported unless the operator
+		// points NOVA_TELEMETRY_URL at a collector they control.
+		const endpoint = getNovaEnv("TELEMETRY_URL");
+		if (!endpoint) {
+			return;
+		}
+
+		if (getNovaEnv("OFFLINE")) {
 			return;
 		}
 
@@ -1050,9 +1057,10 @@ export class InteractiveMode {
 			return;
 		}
 
-		void fetch(`https://pi.dev/api/report-install?version=${encodeURIComponent(version)}`, {
+		const separator = endpoint.includes("?") ? "&" : "?";
+		void fetch(`${endpoint}${separator}version=${encodeURIComponent(version)}`, {
 			headers: {
-				"User-Agent": getPiUserAgent(version),
+				"User-Agent": getNovaUserAgent(version),
 			},
 			signal: AbortSignal.timeout(5000),
 		})
@@ -2792,11 +2800,6 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
-			if (text === "/dementedelves") {
-				this.handleDementedDelves();
-				this.editor.setText("");
-				return;
-			}
 			if (text === "/resume") {
 				this.showSessionSelector();
 				this.editor.setText("");
@@ -3928,10 +3931,10 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	showNewVersionNotification(release: LatestPiRelease): void {
+	showNewVersionNotification(release: LatestNovaRelease): void {
 		const action = theme.fg("accent", `${APP_NAME} update`);
 		const updateInstruction = theme.fg("muted", `New version ${release.version} is available. Run `) + action;
-		const changelogUrl = "https://pi.dev/changelog";
+		const changelogUrl = "https://github.com/DongZiJie1/nova-agent/blob/main/CHANGELOG.md";
 		const changelogLink = getCapabilities().hyperlinks
 			? hyperlink(theme.fg("accent", changelogUrl), changelogUrl)
 			: theme.fg("accent", changelogUrl);
@@ -5974,12 +5977,6 @@ export class InteractiveMode {
 	private handleArminSaysHi(): void {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new ArminComponent(this.ui));
-		this.ui.requestRender();
-	}
-
-	private handleDementedDelves(): void {
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new EarendilAnnouncementComponent());
 		this.ui.requestRender();
 	}
 

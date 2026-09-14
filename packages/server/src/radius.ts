@@ -2,6 +2,7 @@ import { hostname, platform } from "node:os";
 import { readStoredCredential } from "@dongzijie1/nova";
 import type { OAuthCredential } from "@dongzijie1/pi-ai";
 import { getServerDir, getSocketPath, VERSION } from "./config.ts";
+import { getNovaEnv } from "./env-compat.ts";
 import { loadMachine, saveMachine } from "./storage.ts";
 import type { InstanceRecord, MachineRecord, RadiusRegistration } from "./types.ts";
 
@@ -105,11 +106,11 @@ function logRadiusRetry(scope: string, action: string, delayMs: number, failureC
 }
 
 export function getRadiusUrl(): string {
-	return process.env.PI_RADIUS_URL || DEFAULT_RADIUS_URL;
+	return getNovaEnv("RADIUS_URL") || DEFAULT_RADIUS_URL;
 }
 
 export function getRadiusServerBaseUrl(): string {
-	const explicitUrl = process.env.PI_RADIUS_SERVER_URL;
+	const explicitUrl = getNovaEnv("RADIUS_SERVER_URL");
 	if (explicitUrl) {
 		return explicitUrl;
 	}

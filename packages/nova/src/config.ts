@@ -3,6 +3,7 @@ import { homedir } from "os";
 import { basename, dirname, join, resolve, sep, win32 } from "path";
 import { fileURLToPath } from "url";
 import { spawnProcessSync } from "./utils/child-process.ts";
+import { getNovaEnv } from "./utils/env-compat.ts";
 import { normalizePath } from "./utils/paths.ts";
 
 // =============================================================================
@@ -333,7 +334,7 @@ export function getSelfUpdateUnavailableInstruction(
 	const method = detectInstallMethod();
 	const target = normalizeSelfUpdatePackageTarget(updatePackageTarget);
 	if (method === "bun-binary") {
-		return `Download from: https://github.com/earendil-works/pi-mono/releases/latest`;
+		return `Download from: https://github.com/DongZiJie1/nova-agent/releases/latest`;
 	}
 	const command = getSelfUpdateCommandForMethod(method, packageName, target, npmCommand);
 	if (command) {
@@ -366,7 +367,7 @@ export function getUpdateInstruction(packageName: string): string {
  */
 export function getPackageDir(): string {
 	// Allow override via environment variable (useful for Nix/Guix where store paths tokenize poorly)
-	const envDir = process.env.PI_PACKAGE_DIR;
+	const envDir = getNovaEnv("PACKAGE_DIR");
 	if (envDir) {
 		return normalizePath(envDir);
 	}
@@ -486,12 +487,12 @@ try {
 
 const novaConfigName: string | undefined = pkg.novaConfig?.name;
 export const PACKAGE_NAME: string = pkg.name || "@dongzijie1/nova";
-export const APP_NAME: string = novaConfigName || "pi";
-export const APP_TITLE: string = novaConfigName ? APP_NAME : "π";
+export const APP_NAME: string = novaConfigName || "nova";
+export const APP_TITLE: string = APP_NAME;
 export const CONFIG_DIR_NAME: string = pkg.novaConfig?.configDir || ".nova";
 export const VERSION: string = pkg.version || "0.0.0";
 
-// e.g., PI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
+// e.g., NOVA_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
 export const ENV_SESSION_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_SESSION_DIR`;
 
@@ -503,7 +504,7 @@ const DEFAULT_SHARE_VIEWER_URL = "https://pi.dev/session/";
 
 /** Get the share viewer URL for a gist ID */
 export function getShareViewerUrl(gistId: string): string {
-	const baseUrl = process.env.PI_SHARE_VIEWER_URL || DEFAULT_SHARE_VIEWER_URL;
+	const baseUrl = getNovaEnv("SHARE_VIEWER_URL") || DEFAULT_SHARE_VIEWER_URL;
 	return `${baseUrl}#${gistId}`;
 }
 
@@ -513,7 +514,7 @@ export function getShareViewerUrl(gistId: string): string {
 
 /** Get the agent config directory (e.g., ~/.nova/agent/) */
 export function getAgentDir(): string {
-	const envDir = process.env[ENV_AGENT_DIR];
+	const envDir = getNovaEnv("CODING_AGENT_DIR");
 	if (envDir) {
 		return expandTildePath(envDir);
 	}

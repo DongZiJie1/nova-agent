@@ -1,10 +1,11 @@
 import { compare, valid } from "semver";
-import { getPiUserAgent } from "./pi-user-agent.ts";
+import { getNovaEnv } from "./env-compat.ts";
+import { getNovaUserAgent } from "./nova-user-agent.ts";
 
-const LATEST_VERSION_URL = "https://pi.dev/api/latest-version";
+const DEFAULT_LATEST_VERSION_URL = "https://registry.npmjs.org/@dongzijie1%2Fnova/latest";
 const DEFAULT_VERSION_CHECK_TIMEOUT_MS = 10000;
 
-export interface LatestPiRelease {
+export interface LatestNovaRelease {
 	version: string;
 	packageName?: string;
 	note?: string;
@@ -27,15 +28,23 @@ export function isNewerPackageVersion(candidateVersion: string, currentVersion: 
 	return candidateVersion.trim() !== currentVersion.trim();
 }
 
-export async function getLatestPiRelease(
+/** Release tag names may carry a `v` prefix; semver parsing does not accept one. */
+function normalizeReleaseVersion(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const version = value.trim().replace(/^v/, "");
+	return version ? version : undefined;
+}
+
+export async function getLatestNovaRelease(
 	currentVersion: string,
 	options: { timeoutMs?: number } = {},
-): Promise<LatestPiRelease | undefined> {
-	if (process.env.PI_OFFLINE) return undefined;
+): Promise<LatestNovaRelease | undefined> {
+	if (getNovaEnv("OFFLINE")) return undefined;
 
-	const response = await fetch(LATEST_VERSION_URL, {
+	const url = getNovaEnv("LATEST_VERSION_URL") || DEFAULT_LATEST_VERSION_URL;
+	const response = await fetch(url, {
 		headers: {
-			"User-Agent": getPiUserAgent(currentVersion),
+			"User-Agent": getNovaUserAgent(currentVersion),
 			accept: "application/json",
 		},
 		signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_VERSION_CHECK_TIMEOUT_MS),
@@ -45,33 +54,35 @@ export async function getLatestPiRelease(
 	const data = (await response.json()) as {
 		packageName?: unknown;
 		version?: unknown;
+		tag_name?: unknown;
 		note?: unknown;
 	};
-	if (typeof data.version !== "string" || !data.version.trim()) {
+	const version = normalizeReleaseVersion(data.version) ?? normalizeReleaseVersion(data.tag_name);
+	if (!version) {
 		return undefined;
 	}
 	const packageName =
 		typeof data.packageName === "string" && data.packageName.trim() ? data.packageName.trim() : undefined;
 	const note = typeof data.note === "string" && data.note.trim() ? data.note.trim() : undefined;
 	return {
-		version: data.version.trim(),
+		version,
 		packageName,
 		...(note ? { note } : {}),
 	};
 }
 
-export async function getLatestPiVersion(
+export async function getLatestNovaVersion(
 	currentVersion: string,
 	options: { timeoutMs?: number } = {},
 ): Promise<string | undefined> {
-	return (await getLatestPiRelease(currentVersion, options))?.version;
+	return (await getLatestNovaRelease(currentVersion, options))?.version;
 }
 
-export async function checkForNewPiVersion(currentVersion: string): Promise<LatestPiRelease | undefined> {
-	if (process.env.PI_SKIP_VERSION_CHECK) return undefined;
+export async function checkForNewNovaVersion(currentVersion: string): Promise<LatestNovaRelease | undefined> {
+	if (getNovaEnv("SKIP_VERSION_CHECK")) return undefined;
 
 	try {
-		const latestRelease = await getLatestPiRelease(currentVersion);
+		const latestRelease = await getLatestNovaRelease(currentVersion);
 		if (latestRelease && isNewerPackageVersion(latestRelease.version, currentVersion)) {
 			return latestRelease;
 		}

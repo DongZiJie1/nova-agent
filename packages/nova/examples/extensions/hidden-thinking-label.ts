@@ -5,7 +5,7 @@
  * when thinking blocks are hidden.
  *
  * Usage:
- *   pi --extension examples/extensions/hidden-thinking-label.ts
+ *   nova --extension examples/extensions/hidden-thinking-label.ts
  *
  * Test:
  *   1. Load this extension
@@ -22,18 +22,18 @@ import type { ExtensionAPI, ExtensionContext } from "@dongzijie1/nova";
 
 const DEFAULT_LABEL = "Pondering...";
 
-export default function (pi: ExtensionAPI) {
+export default function (nova: ExtensionAPI) {
 	let label = DEFAULT_LABEL;
 
 	const applyLabel = (ctx: ExtensionContext) => {
 		ctx.ui.setHiddenThinkingLabel(label);
 	};
 
-	pi.on("session_start", async (_event, ctx) => {
+	nova.on("session_start", async (_event, ctx) => {
 		applyLabel(ctx);
 	});
 
-	pi.registerCommand("thinking-label", {
+	nova.registerCommand("thinking-label", {
 		description: "Set the hidden thinking label. Use without args to reset.",
 		handler: async (args, ctx) => {
 			const nextLabel = args.trim();

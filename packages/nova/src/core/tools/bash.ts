@@ -172,23 +172,23 @@ function resolveSpawnContext(
 	ctx: ExtensionContext | undefined,
 ): BashSpawnContext {
 	const env = { ...getShellEnv() };
-	delete env.PI_SESSION_ID;
-	delete env.PI_SESSION_FILE;
-	delete env.PI_PROVIDER;
-	delete env.PI_MODEL;
-	delete env.PI_REASONING_LEVEL;
+	delete env.NOVA_SESSION_ID;
+	delete env.NOVA_SESSION_FILE;
+	delete env.NOVA_PROVIDER;
+	delete env.NOVA_MODEL;
+	delete env.NOVA_REASONING_LEVEL;
 	// Never expose hub/internal tokens to the model's bash commands.
 	delete env.NOVA_HUB_TOKEN;
 	if (exposeSessionEnvironment && ctx) {
 		const model = ctx.model;
-		env.PI_SESSION_ID = ctx.sessionManager.getSessionId();
+		env.NOVA_SESSION_ID = ctx.sessionManager.getSessionId();
 		const sessionFile = ctx.sessionManager.getSessionFile();
-		if (sessionFile) env.PI_SESSION_FILE = sessionFile;
+		if (sessionFile) env.NOVA_SESSION_FILE = sessionFile;
 		if (model) {
-			env.PI_PROVIDER = model.provider;
-			env.PI_MODEL = model.id;
+			env.NOVA_PROVIDER = model.provider;
+			env.NOVA_MODEL = model.id;
 		}
-		if (ctx.thinkingLevel) env.PI_REASONING_LEVEL = ctx.thinkingLevel;
+		if (ctx.thinkingLevel) env.NOVA_REASONING_LEVEL = ctx.thinkingLevel;
 	}
 	const baseContext: BashSpawnContext = { command, cwd, env };
 	return spawnHook ? spawnHook(baseContext) : baseContext;
@@ -201,7 +201,7 @@ export interface BashToolOptions {
 	commandPrefix?: string;
 	/** Optional explicit shell path from settings */
 	shellPath?: string;
-	/** Expose current Pi session metadata as PI_* environment variables. Default: true */
+	/** Expose current Pi session metadata as NOVA_* environment variables. Default: true */
 	exposeSessionEnvironment?: boolean;
 	/** Hook to adjust command, cwd, or env before execution */
 	spawnHook?: BashSpawnHook;
@@ -399,7 +399,7 @@ export function createBashToolDefinition(
 		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
 		promptGuidelines: exposeSessionEnvironment
 			? [
-					"To learn the current model or session details, read specific PI_* variables (e.g. 'echo $PI_MODEL'). Never run env or printenv — dumping the full environment exposes secrets and is not an answer to the user.",
+					"To learn the current model or session details, read specific NOVA_* variables (e.g. 'echo $NOVA_MODEL'). Never run env or printenv — dumping the full environment exposes secrets and is not an answer to the user.",
 				]
 			: undefined,
 		parameters: bashSchema,

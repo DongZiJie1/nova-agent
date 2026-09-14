@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
+import { getNovaEnv } from "../utils/env-compat.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
 import type { ToolPermissionMode } from "./tool-permission-manager.ts";
@@ -1142,7 +1143,7 @@ export class SettingsManager {
 		if (this.settings.terminal?.clearOnShrink !== undefined) {
 			return this.settings.terminal.clearOnShrink;
 		}
-		return process.env.PI_CLEAR_ON_SHRINK === "1";
+		return getNovaEnv("CLEAR_ON_SHRINK") === "1";
 	}
 
 	setClearOnShrink(enabled: boolean): void {
@@ -1226,7 +1227,7 @@ export class SettingsManager {
 	}
 
 	getShowHardwareCursor(): boolean {
-		return this.settings.showHardwareCursor ?? process.env.PI_HARDWARE_CURSOR === "1";
+		return this.settings.showHardwareCursor ?? getNovaEnv("HARDWARE_CURSOR") === "1";
 	}
 
 	setShowHardwareCursor(enabled: boolean): void {

@@ -17,7 +17,7 @@
  * is used automatically (syntax highlighting, line numbers, truncation warnings).
  *
  * Usage:
- *   pi -e ./tool-override.ts
+ *   nova -e ./tool-override.ts
  */
 
 import { type ExtensionAPI, getAgentDir, withFileMutationQueue } from "@dongzijie1/nova";
@@ -65,8 +65,8 @@ const readSchema = Type.Object({
 	limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
 });
 
-export default function (pi: ExtensionAPI) {
-	pi.registerTool({
+export default function (nova: ExtensionAPI) {
+	nova.registerTool({
 		name: "read", // Same name as built-in - this will override it
 		label: "read (audited)",
 		description:
@@ -129,7 +129,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Also register a command to view the access log
-	pi.registerCommand("read-log", {
+	nova.registerCommand("read-log", {
 		description: "View the file access log",
 		handler: async (_args, ctx) => {
 			try {

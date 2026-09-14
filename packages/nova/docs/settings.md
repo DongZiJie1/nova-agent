@@ -1,6 +1,6 @@
 # Settings
 
-Pi uses JSON settings files with project settings overriding global settings.
+Nova uses JSON settings files with project settings overriding global settings.
 
 | Location | Scope |
 |----------|-------|
@@ -11,7 +11,7 @@ Edit directly or use `/settings` for common options.
 
 ## Project Trust
 
-On interactive startup, pi asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.nova/agent/trust.json`. Trusting a project allows pi to load `.nova/settings.json` and `.nova` resources, install missing project packages, and execute project extensions.
+On interactive startup, nova asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.nova/agent/trust.json`. Trusting a project allows nova to load `.nova/settings.json` and `.nova` resources, install missing project packages, and execute project extensions.
 
 Non-interactive modes (`-p`, `--mode json`, and `--mode rpc`) do not show a trust prompt. Without an applicable saved trust decision, they use `defaultProjectTrust` from global settings: `ask` (default) and `never` ignore those project resources, while `always` trusts them. Pass `--approve`/`-a` or `--no-approve`/`-na` to override project trust for one run.
 
@@ -19,7 +19,7 @@ If no extension or saved decision applies, `defaultProjectTrust` controls the fa
 
 `nova config` and package commands use the same project trust flow, except `nova update` never prompts. Pass `--approve` to trust project-local settings for one command or `--no-approve` to ignore them.
 
-Use `/trust` in interactive mode to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.nova/agent/trust.json` only; the current session is not reloaded, so restart pi for changes to take effect.
+Use `/trust` in interactive mode to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.nova/agent/trust.json` only; the current session is not reloaded, so restart nova for changes to take effect.
 
 ## All Settings
 
@@ -57,7 +57,7 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 | `defaultProjectTrust` | string | `"ask"` | Fallback project trust behavior: `"ask"`, `"always"`, or `"never"`. Global setting only |
 | `collapseChangelog` | boolean | `false` | Show condensed changelog after updates |
 | `enableInstallTelemetry` | boolean | `true` | Send an anonymous install/update version ping after first install or changelog-detected updates. This does not control update checks |
-| `enableAnalytics` | boolean | `false` | Opt-in analytics data sharing. Currently only asked for during the experimental first-time setup (`PI_EXPERIMENTAL=1`) |
+| `enableAnalytics` | boolean | `false` | Opt-in analytics data sharing. Currently only asked for during the experimental first-time setup (`NOVA_EXPERIMENTAL=1`) |
 | `trackingId` | string | - | Analytics tracking identifier, generated when `enableAnalytics` is turned on |
 | `doubleEscapeAction` | string | `"tree"` | Action for double-escape: `"tree"`, `"fork"`, or `"none"` |
 | `treeFilterMode` | string | `"default"` | Default filter for `/tree`: `"default"`, `"no-tools"`, `"user-only"`, `"labeled-only"`, `"all"` |
@@ -66,7 +66,7 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 | `autocompleteMaxVisible` | number | `5` | Max visible items in autocomplete dropdown (3-20) |
 | `showHardwareCursor` | boolean | `false` | Show the terminal cursor while TUI positions it for IME support |
 
-For VS Code, include `--wait` so pi resumes after the editor exits:
+For VS Code, include `--wait` so nova resumes after the editor exits:
 
 ```json
 {
@@ -76,9 +76,9 @@ For VS Code, include `--wait` so pi resumes after the editor exits:
 
 ### Telemetry and update checks
 
-`enableInstallTelemetry` only controls the anonymous install/update ping to `https://pi.dev/api/report-install`. Opting out of telemetry does not disable update checks; Pi can still fetch `https://pi.dev/api/latest-version` to look for the latest version.
+`enableInstallTelemetry` controls opt-in install/update telemetry. Telemetry is off unless `NOVA_TELEMETRY_URL` is set, in which case an anonymous install/update ping is sent to that URL. Opting out of telemetry does not disable update checks; Nova can still query the npm registry for the latest published version, unless `NOVA_SKIP_VERSION_CHECK=1` is set.
 
-Set `PI_SKIP_VERSION_CHECK=1` to disable the Pi version update check. Use `--offline` or `PI_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
+Set `NOVA_SKIP_VERSION_CHECK=1` to disable the Nova version update check. Use `--offline` or `NOVA_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry. The pre-rebrand `PI_SKIP_VERSION_CHECK` and `PI_OFFLINE` names are still read as a fallback.
 
 ### Network
 
@@ -144,7 +144,7 @@ Set `PI_SKIP_VERSION_CHECK=1` to disable the Pi version update check. Use `--off
 
 When a provider requests a retry delay longer than `retry.provider.maxRetryDelayMs`, the request fails immediately with an informative error instead of waiting silently. Set it to `0` to disable the limit.
 
-Keep `retry.provider.maxRetries` at `0` unless provider-level retries are explicitly needed. Setting it above `0` can make SDK/provider retries handle out-of-usage-limit errors before Pi sees them, which may block the agent until the provider quota resets in some circumstances.
+Keep `retry.provider.maxRetries` at `0` unless provider-level retries are explicitly needed. Setting it above `0` can make SDK/provider retries handle out-of-usage-limit errors before Nova sees them, which may block the agent until the provider quota resets in some circumstances.
 
 ```json
 {
@@ -225,7 +225,7 @@ These are backstops against runaway work, not budgets: a command that legitimate
 { "sessionDir": ".nova/sessions" }
 ```
 
-When multiple sources specify a session directory, precedence is `--session-dir`, `PI_CODING_AGENT_SESSION_DIR`, then `sessionDir` in settings.json.
+When multiple sources specify a session directory, precedence is `--session-dir`, `NOVA_CODING_AGENT_SESSION_DIR`, then `sessionDir` in settings.json. The pre-rebrand `PI_CODING_AGENT_SESSION_DIR` name is still read as a fallback.
 
 ### Model Cycling
 

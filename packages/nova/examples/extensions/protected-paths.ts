@@ -7,10 +7,10 @@
 
 import type { ExtensionAPI } from "@dongzijie1/nova";
 
-export default function (pi: ExtensionAPI) {
+export default function (nova: ExtensionAPI) {
 	const protectedPaths = [".env", ".git/", "node_modules/"];
 
-	pi.on("tool_call", async (event, ctx) => {
+	nova.on("tool_call", async (event, ctx) => {
 		if (event.toolName !== "write" && event.toolName !== "edit") {
 			return undefined;
 		}

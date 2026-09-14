@@ -1,6 +1,6 @@
 # Terminal Setup
 
-Pi uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Most modern terminals support this protocol, but some require configuration.
+Nova uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Most modern terminals support this protocol, but some require configuration.
 
 ## Kitty, iTerm2
 
@@ -8,7 +8,7 @@ Work out of the box.
 
 ## Apple Terminal
 
-Pi enables enhanced key reporting when available. If Terminal.app still sends plain Return for `Shift+Enter`, pi uses a local macOS modifier fallback to treat that Return as `Shift+Enter`.
+Nova enables enhanced key reporting when available. If Terminal.app still sends plain Return for `Shift+Enter`, nova uses a local macOS modifier fallback to treat that Return as `Shift+Enter`.
 
 This fallback only works when nova runs on the same Mac as Terminal.app. It cannot detect the local keyboard over remote SSH.
 
@@ -26,11 +26,11 @@ Older Claude Code versions may have added this Ghostty mapping:
 keybind = shift+enter=text:\n
 ```
 
-That mapping sends a raw linefeed byte. Inside pi, that is indistinguishable from `Ctrl+J`, so tmux and pi no longer see a real `shift+enter` key event.
+That mapping sends a raw linefeed byte. Inside nova, that is indistinguishable from `Ctrl+J`, so tmux and nova no longer see a real `shift+enter` key event.
 
 If Claude Code 2.x or newer is the only reason you added that mapping, you can remove it, unless you want to use Claude Code in tmux, where it still requires that Ghostty mapping.
 
-Pi binds `Ctrl+J` as a default newline alias, so `Shift+Enter` keeps working in tmux via that remap without extra pi configuration.
+Nova binds `Ctrl+J` as a default newline alias, so `Shift+Enter` keeps working in tmux via that remap without extra nova configuration.
 
 ## WezTerm
 
@@ -43,7 +43,7 @@ config.enable_kitty_keyboard = true
 return config
 ```
 
-On macOS, WezTerm binds `Option+Enter` to fullscreen by default. To use `Option+Enter` for pi follow-up queueing, add this key override:
+On macOS, WezTerm binds `Option+Enter` to fullscreen by default. To use `Option+Enter` for nova follow-up queueing, add this key override:
 
 ```lua
 local wezterm = require 'wezterm'
@@ -60,11 +60,11 @@ return config
 
 If you already have a `config.keys` table, add the entry to it.
 
-On WSL, WezTerm may require a visible hardware cursor for IME candidate window positioning. If CJK IME candidates do not follow the text cursor, set `PI_HARDWARE_CURSOR=1` before running pi or set `showHardwareCursor` to `true` in settings.
+On WSL, WezTerm may require a visible hardware cursor for IME candidate window positioning. If CJK IME candidates do not follow the text cursor, set `NOVA_HARDWARE_CURSOR=1` before running nova or set `showHardwareCursor` to `true` in settings.
 
 ## Alacritty
 
-Alacritty usually works out of the box for `Shift+Enter`. On macOS, `Option+Enter` may arrive as plain `Enter`. To use `Option+Enter` for pi follow-up queueing, add to `~/.config/alacritty/alacritty.toml`:
+Alacritty usually works out of the box for `Shift+Enter`. On macOS, `Option+Enter` may arrive as plain `Enter`. To use `Option+Enter` for nova follow-up queueing, add to `~/.config/alacritty/alacritty.toml`:
 
 ```toml
 [[keyboard.bindings]]
@@ -99,7 +99,7 @@ Add to `keybindings.json`:
 
 ## Windows Terminal
 
-Add to `settings.json` (Ctrl+Shift+, or Settings → Open JSON file) to forward the modified Enter keys pi uses:
+Add to `settings.json` (Ctrl+Shift+, or Settings → Open JSON file) to forward the modified Enter keys nova uses:
 
 ```json
 {
@@ -117,8 +117,8 @@ Add to `settings.json` (Ctrl+Shift+, or Settings → Open JSON file) to forward 
 ```
 
 - `Shift+Enter` inserts a new line.
-- Windows Terminal binds `Alt+Enter` to fullscreen by default. That prevents pi from receiving `Alt+Enter` for follow-up queueing.
-- Remapping `Alt+Enter` to `sendInput` forwards the real key chord to pi instead.
+- Windows Terminal binds `Alt+Enter` to fullscreen by default. That prevents nova from receiving `Alt+Enter` for follow-up queueing.
+- Remapping `Alt+Enter` to `sendInput` forwards the real key chord to nova instead.
 
 If you already have an `actions` array, add the objects to it. If the old fullscreen behavior persists, fully close and reopen Windows Terminal.
 
@@ -137,6 +137,6 @@ For the best experience, use a terminal that supports the Kitty keyboard protoco
 
 The built-in terminal has limited escape sequence support. Shift+Enter cannot be distinguished from Enter in IntelliJ's terminal.
 
-If you want the hardware cursor visible, set `PI_HARDWARE_CURSOR=1` before running pi (disabled by default for compatibility).
+If you want the hardware cursor visible, set `NOVA_HARDWARE_CURSOR=1` before running nova (disabled by default for compatibility).
 
 Consider using a dedicated terminal emulator for the best experience.

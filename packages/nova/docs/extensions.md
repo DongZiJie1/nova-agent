@@ -1,18 +1,18 @@
-> pi can create extensions. Ask it to build one for your use case.
+> nova can create extensions. Ask it to build one for your use case.
 
 # Extensions
 
-Extensions are TypeScript modules that extend pi's behavior. They can subscribe to lifecycle events, register custom tools callable by the LLM, add commands, and more.
+Extensions are TypeScript modules that extend nova's behavior. They can subscribe to lifecycle events, register custom tools callable by the LLM, add commands, and more.
 
 > **Placement for /reload:** Put extensions in `~/.nova/agent/extensions/` (global) or `.nova/extensions/` (project-local) for auto-discovery. Use `nova -e ./path.ts` only for quick tests. Extensions in auto-discovered locations can be hot-reloaded with `/reload`.
 
 **Key capabilities:**
-- **Custom tools** - Register tools the LLM can call via `pi.registerTool()`
+- **Custom tools** - Register tools the LLM can call via `nova.registerTool()`
 - **Event interception** - Block or modify tool calls, inject context, customize compaction
 - **User interaction** - Prompt users via `ctx.ui` (select, confirm, input, notify)
 - **Custom UI components** - Full TUI components with keyboard input via `ctx.ui.custom()` for complex interactions
-- **Custom commands** - Register commands like `/mycommand` via `pi.registerCommand()`
-- **Session persistence** - Store state that survives restarts via `pi.appendEntry()`
+- **Custom commands** - Register commands like `/mycommand` via `nova.registerCommand()`
+- **Session persistence** - Store state that survives restarts via `nova.appendEntry()`
 - **Custom rendering** - Control how tool calls/results and messages appear in TUI
 
 **Example use cases:**
@@ -61,13 +61,13 @@ Create `~/.nova/agent/extensions/my-extension.ts`:
 import type { ExtensionAPI } from "@dongzijie1/nova";
 import { Type } from "typebox";
 
-export default function (pi: ExtensionAPI) {
+export default function (nova: ExtensionAPI) {
   // React to events
-  pi.on("session_start", async (_event, ctx) => {
+  nova.on("session_start", async (_event, ctx) => {
     ctx.ui.notify("Extension loaded!", "info");
   });
 
-  pi.on("tool_call", async (event, ctx) => {
+  nova.on("tool_call", async (event, ctx) => {
     if (event.toolName === "bash" && event.input.command?.includes("rm -rf")) {
       const ok = await ctx.ui.confirm("Dangerous!", "Allow rm -rf?");
       if (!ok) return { block: true, reason: "Blocked by user" };
@@ -75,7 +75,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Register a custom tool
-  pi.registerTool({
+  nova.registerTool({
     name: "greet",
     label: "Greet",
     description: "Greet someone by name",
@@ -91,7 +91,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Register a command
-  pi.registerCommand("hello", {
+  nova.registerCommand("hello", {
     description: "Say hello",
     handler: async (args, ctx) => {
       ctx.ui.notify(`Hello ${args || "world"}!`, "info");
@@ -134,7 +134,7 @@ Additional paths via `settings.json`:
 }
 ```
 
-To share extensions via npm or git as pi packages, see [packages.md](packages.md).
+To share extensions via npm or git as nova packages, see [packages.md](packages.md).
 
 ## Available Imports
 
@@ -142,8 +142,8 @@ To share extensions via npm or git as pi packages, see [packages.md](packages.md
 |---------|---------|
 | `@dongzijie1/nova` | Extension types (`ExtensionAPI`, `ExtensionContext`, events) |
 | `typebox` | Schema definitions for tool parameters |
-| `@earendil-works/pi-ai` | AI utilities (`StringEnum` for Google-compatible enums) |
-| `@earendil-works/pi-tui` | TUI components for custom rendering |
+| `@dongzijie1/pi-ai` | AI utilities (`StringEnum` for Google-compatible enums) |
+| `@dongzijie1/pi-tui` | TUI components for custom rendering |
 
 npm dependencies work too. Add a `package.json` next to your extension (or in a parent directory), run `npm install`, and imports from `node_modules/` are resolved automatically.
 
@@ -158,9 +158,9 @@ An extension exports a default factory function that receives `ExtensionAPI`. Th
 ```typescript
 import type { ExtensionAPI } from "@dongzijie1/nova";
 
-export default function (pi: ExtensionAPI) {
+export default function (nova: ExtensionAPI) {
   // Subscribe to events
-  pi.on("event_name", async (event, ctx) => {
+  nova.on("event_name", async (event, ctx) => {
     // ctx.ui for user interaction
     const ok = await ctx.ui.confirm("Title", "Are you sure?");
     ctx.ui.notify("Done!", "info");
@@ -169,16 +169,16 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Register tools, commands, shortcuts, flags
-  pi.registerTool({ ... });
-  pi.registerCommand("name", { ... });
-  pi.registerShortcut("ctrl+x", { ... });
-  pi.registerFlag("my-flag", { ... });
+  nova.registerTool({ ... });
+  nova.registerCommand("name", { ... });
+  nova.registerShortcut("ctrl+x", { ... });
+  nova.registerFlag("my-flag", { ... });
 }
 ```
 
 Extensions are loaded via [jiti](https://github.com/unjs/jiti), so TypeScript works without compilation.
 
-If the factory returns a `Promise`, pi awaits it before continuing startup. That means async initialization completes before `session_start`, before `resources_discover`, and before provider registrations queued via `pi.registerProvider()` are flushed.
+If the factory returns a `Promise`, nova awaits it before continuing startup. That means async initialization completes before `session_start`, before `resources_discover`, and before provider registrations queued via `nova.registerProvider()` are flushed.
 
 ### Async factory functions
 
@@ -187,7 +187,7 @@ Use an async factory for one-time startup work such as fetching remote configura
 ```typescript
 import type { ExtensionAPI } from "@dongzijie1/nova";
 
-export default async function (pi: ExtensionAPI) {
+export default async function (nova: ExtensionAPI) {
   const response = await fetch("http://localhost:1234/v1/models");
   const payload = (await response.json()) as {
     data: Array<{
@@ -198,7 +198,7 @@ export default async function (pi: ExtensionAPI) {
     }>;
   };
 
-  pi.registerProvider("local-openai", {
+  nova.registerProvider("local-openai", {
     baseUrl: "http://localhost:1234/v1",
     apiKey: "$LOCAL_OPENAI_API_KEY",
     api: "openai-completions",
@@ -262,7 +262,7 @@ Defer background resource startup until `session_start` or the command/tool/even
     "zod": "^3.0.0",
     "chalk": "^5.0.0"
   },
-  "pi": {
+  "nova": {
     "extensions": ["./src/index.ts"]
   }
 }
@@ -325,7 +325,7 @@ user sends another prompt ◄─────────────────
   ├─► session_start { reason: "fork", previousSessionFile }
   └─► resources_discover { reason: "startup" }
 
-/name or pi.setSessionName()
+/name or nova.setSessionName()
   └─► session_info_changed
 
 /compact or auto-compaction
@@ -340,7 +340,7 @@ user sends another prompt ◄─────────────────
   ├─► thinking_level_select (if model change changes/clamps thinking level)
   └─► model_select
 
-thinking level changes (settings, keybinding, pi.setThinkingLevel())
+thinking level changes (settings, keybinding, nova.setThinkingLevel())
   └─► thinking_level_select
 
 exit (Ctrl+C, Ctrl+D, SIGHUP, SIGTERM)
@@ -351,10 +351,10 @@ exit (Ctrl+C, Ctrl+D, SIGHUP, SIGTERM)
 
 #### project_trust
 
-Fired before pi decides whether to trust a project with dynamic configs (`.nova` or `.agents/skills`). It runs during startup and when session replacement (for example `/resume`) enters a cwd whose trust has not been resolved in the current process. Only user/global extensions and CLI `-e` extensions participate; project-local extensions are not loaded until after trust is resolved.
+Fired before nova decides whether to trust a project with dynamic configs (`.nova` or `.agents/skills`). It runs during startup and when session replacement (for example `/resume`) enters a cwd whose trust has not been resolved in the current process. Only user/global extensions and CLI `-e` extensions participate; project-local extensions are not loaded until after trust is resolved.
 
 ```typescript
-pi.on("project_trust", async (event, ctx) => {
+nova.on("project_trust", async (event, ctx) => {
   // event.cwd - current working directory
   // ctx has a limited trust context: cwd, mode, hasUI, and select/confirm/input/notify UI helpers
   if (await ctx.ui.confirm("Trust project?", event.cwd)) {
@@ -364,7 +364,7 @@ pi.on("project_trust", async (event, ctx) => {
 });
 ```
 
-A `project_trust` handler must return `{ trusted: "yes" | "no" | "undecided" }`. A user/global or CLI extension that returns `"yes"` or `"no"` owns the decision; the first yes/no decision wins and suppresses the built-in trust prompt. Use `remember: true` to persist a yes/no decision; otherwise it applies only to the current process. Return `"undecided"` to let later handlers or the built-in trust flow decide. Check `ctx.hasUI` before prompting. If no handler returns yes/no, normal trust resolution continues: saved `trust.json` decisions apply first, then `defaultProjectTrust` controls whether pi asks, trusts, or declines by default.
+A `project_trust` handler must return `{ trusted: "yes" | "no" | "undecided" }`. A user/global or CLI extension that returns `"yes"` or `"no"` owns the decision; the first yes/no decision wins and suppresses the built-in trust prompt. Use `remember: true` to persist a yes/no decision; otherwise it applies only to the current process. Return `"undecided"` to let later handlers or the built-in trust flow decide. Check `ctx.hasUI` before prompting. If no handler returns yes/no, normal trust resolution continues: saved `trust.json` decisions apply first, then `defaultProjectTrust` controls whether nova asks, trusts, or declines by default.
 
 ### Resource Events
 
@@ -374,7 +374,7 @@ Fired after `session_start` so extensions can contribute additional skill, promp
 The startup path uses `reason: "startup"`. Reload uses `reason: "reload"`.
 
 ```typescript
-pi.on("resources_discover", async (event, _ctx) => {
+nova.on("resources_discover", async (event, _ctx) => {
   // event.cwd - current working directory
   // event.reason - "startup" | "reload"
   return {
@@ -394,7 +394,7 @@ See [Session Format](session-format.md) for session storage internals and the Se
 Fired when a session is started, loaded, or reloaded.
 
 ```typescript
-pi.on("session_start", async (event, ctx) => {
+nova.on("session_start", async (event, ctx) => {
   // event.reason - "startup" | "reload" | "new" | "resume" | "fork"
   // event.previousSessionFile - present for "new", "resume", and "fork"
   ctx.ui.notify(`Session: ${ctx.sessionManager.getSessionFile() ?? "ephemeral"}`, "info");
@@ -403,10 +403,10 @@ pi.on("session_start", async (event, ctx) => {
 
 #### session_info_changed
 
-Fired when the current session display name is set via `/name`, RPC, or `pi.setSessionName()`.
+Fired when the current session display name is set via `/name`, RPC, or `nova.setSessionName()`.
 
 ```typescript
-pi.on("session_info_changed", async (event, ctx) => {
+nova.on("session_info_changed", async (event, ctx) => {
   // event.name - current normalized name, or undefined if cleared
   ctx.ui.notify(`Session renamed: ${event.name ?? "(none)"}`, "info");
 });
@@ -417,7 +417,7 @@ pi.on("session_info_changed", async (event, ctx) => {
 Fired before starting a new session (`/new`) or switching sessions (`/resume`).
 
 ```typescript
-pi.on("session_before_switch", async (event, ctx) => {
+nova.on("session_before_switch", async (event, ctx) => {
   // event.reason - "new" or "resume"
   // event.targetSessionFile - session we're switching to (only for "resume")
 
@@ -428,7 +428,7 @@ pi.on("session_before_switch", async (event, ctx) => {
 });
 ```
 
-After a successful switch or new-session action, pi emits `session_shutdown` for the old extension instance, reloads and rebinds extensions for the new session, then emits `session_start` with `reason: "new" | "resume"` and `previousSessionFile`.
+After a successful switch or new-session action, nova emits `session_shutdown` for the old extension instance, reloads and rebinds extensions for the new session, then emits `session_start` with `reason: "new" | "resume"` and `previousSessionFile`.
 Do cleanup work in `session_shutdown`, then reestablish any in-memory state in `session_start`.
 
 #### session_before_fork
@@ -436,7 +436,7 @@ Do cleanup work in `session_shutdown`, then reestablish any in-memory state in `
 Fired when forking via `/fork` or cloning via `/clone`.
 
 ```typescript
-pi.on("session_before_fork", async (event, ctx) => {
+nova.on("session_before_fork", async (event, ctx) => {
   // event.entryId - ID of the selected entry
   // event.position - "before" for /fork, "at" for /clone
   return { cancel: true }; // Cancel fork/clone
@@ -445,7 +445,7 @@ pi.on("session_before_fork", async (event, ctx) => {
 });
 ```
 
-After a successful fork or clone, pi emits `session_shutdown` for the old extension instance, reloads and rebinds extensions for the new session, then emits `session_start` with `reason: "fork"` and `previousSessionFile`.
+After a successful fork or clone, nova emits `session_shutdown` for the old extension instance, reloads and rebinds extensions for the new session, then emits `session_start` with `reason: "fork"` and `previousSessionFile`.
 Do cleanup work in `session_shutdown`, then reestablish any in-memory state in `session_start`.
 
 #### session_before_compact / session_compact
@@ -453,7 +453,7 @@ Do cleanup work in `session_shutdown`, then reestablish any in-memory state in `
 Fired on compaction. See [compaction.md](compaction.md) for details.
 
 ```typescript
-pi.on("session_before_compact", async (event, ctx) => {
+nova.on("session_before_compact", async (event, ctx) => {
   const { preparation, branchEntries, customInstructions, reason, willRetry, signal } = event;
 
   // reason - "manual" (/compact), "threshold", or "overflow"
@@ -473,7 +473,7 @@ pi.on("session_before_compact", async (event, ctx) => {
   };
 });
 
-pi.on("session_compact", async (event, ctx) => {
+nova.on("session_compact", async (event, ctx) => {
   // event.compactionEntry - the saved compaction
   // event.fromExtension - whether extension provided it
   // event.reason - "manual" (/compact), "threshold", or "overflow"
@@ -486,7 +486,7 @@ pi.on("session_compact", async (event, ctx) => {
 Fired on `/tree` navigation. See [Sessions](sessions.md) for tree navigation concepts.
 
 ```typescript
-pi.on("session_before_tree", async (event, ctx) => {
+nova.on("session_before_tree", async (event, ctx) => {
   const { preparation, signal } = event;
   return { cancel: true };
   // OR provide custom summary:
@@ -499,7 +499,7 @@ pi.on("session_before_tree", async (event, ctx) => {
   };
 });
 
-pi.on("session_tree", async (event, ctx) => {
+nova.on("session_tree", async (event, ctx) => {
   // event.newLeafId, oldLeafId, summaryEntry, fromExtension
 });
 ```
@@ -509,7 +509,7 @@ pi.on("session_tree", async (event, ctx) => {
 Fired before a started session runtime is torn down. Use this to clean up resources opened from `session_start` or other session-scoped hooks.
 
 ```typescript
-pi.on("session_shutdown", async (event, ctx) => {
+nova.on("session_shutdown", async (event, ctx) => {
   // event.reason - "quit" | "reload" | "new" | "resume" | "fork"
   // event.targetSessionFile - destination session for session replacement flows
   // Cleanup, save state, etc.
@@ -523,7 +523,7 @@ pi.on("session_shutdown", async (event, ctx) => {
 Fired after user submits prompt, before agent loop. Can inject a message and/or modify the system prompt.
 
 ```typescript
-pi.on("before_agent_start", async (event, ctx) => {
+nova.on("before_agent_start", async (event, ctx) => {
   // event.prompt - user's prompt text
   // event.images - attached images (if any)
   // event.systemPrompt - current chained system prompt for this handler
@@ -551,22 +551,22 @@ pi.on("before_agent_start", async (event, ctx) => {
 });
 ```
 
-The `systemPromptOptions` field gives extensions access to the same structured data Pi uses to build the system prompt. This lets you inspect what Pi has loaded — custom prompts, guidelines, tool snippets, context files, skills — without re-discovering resources or re-parsing flags. Use it when your extension needs to make deep, informed changes to the system prompt while respecting user-provided configuration.
+The `systemPromptOptions` field gives extensions access to the same structured data Nova uses to build the system prompt. This lets you inspect what Nova has loaded — custom prompts, guidelines, tool snippets, context files, skills — without re-discovering resources or re-parsing flags. Use it when your extension needs to make deep, informed changes to the system prompt while respecting user-provided configuration.
 
 Inside `before_agent_start`, `event.systemPrompt` and `ctx.getSystemPrompt()` both reflect the chained system prompt as of the current handler. Later `before_agent_start` handlers can still modify it again.
 
 #### agent_start / agent_end / agent_settled
 
-`agent_start` fires when a low-level agent run begins. `agent_end` fires when that run ends, but Pi may still auto-retry, auto-compact and retry, or continue with queued follow-up messages. Use `agent_settled` for status integrations that need to know Pi will not continue running automatically.
+`agent_start` fires when a low-level agent run begins. `agent_end` fires when that run ends, but Nova may still auto-retry, auto-compact and retry, or continue with queued follow-up messages. Use `agent_settled` for status integrations that need to know Nova will not continue running automatically.
 
 ```typescript
-pi.on("agent_start", async (_event, ctx) => {});
+nova.on("agent_start", async (_event, ctx) => {});
 
-pi.on("agent_end", async (event, ctx) => {
+nova.on("agent_end", async (event, ctx) => {
   // event.messages - messages from this low-level run
 });
 
-pi.on("agent_settled", async (_event, ctx) => {
+nova.on("agent_settled", async (_event, ctx) => {
   // ctx.isIdle() is true here unless another extension started a new run.
 });
 ```
@@ -576,11 +576,11 @@ pi.on("agent_settled", async (_event, ctx) => {
 Fired for each turn (one LLM response + tool calls).
 
 ```typescript
-pi.on("turn_start", async (event, ctx) => {
+nova.on("turn_start", async (event, ctx) => {
   // event.turnIndex, event.timestamp
 });
 
-pi.on("turn_end", async (event, ctx) => {
+nova.on("turn_end", async (event, ctx) => {
   // event.turnIndex, event.message, event.toolResults
 });
 ```
@@ -594,16 +594,16 @@ Fired for message lifecycle updates.
 - `message_end` handlers can return `{ message }` to replace the finalized message. The replacement must keep the same `role`.
 
 ```typescript
-pi.on("message_start", async (event, ctx) => {
+nova.on("message_start", async (event, ctx) => {
   // event.message
 });
 
-pi.on("message_update", async (event, ctx) => {
+nova.on("message_update", async (event, ctx) => {
   // event.message
   // event.assistantMessageEvent (token-by-token stream event)
 });
 
-pi.on("message_end", async (event, ctx) => {
+nova.on("message_end", async (event, ctx) => {
   if (event.message.role !== "assistant") return;
 
   return {
@@ -632,15 +632,15 @@ In parallel tool mode:
 - final `toolResult` message events are still emitted later in assistant source order
 
 ```typescript
-pi.on("tool_execution_start", async (event, ctx) => {
+nova.on("tool_execution_start", async (event, ctx) => {
   // event.toolCallId, event.toolName, event.args
 });
 
-pi.on("tool_execution_update", async (event, ctx) => {
+nova.on("tool_execution_update", async (event, ctx) => {
   // event.toolCallId, event.toolName, event.args, event.partialResult
 });
 
-pi.on("tool_execution_end", async (event, ctx) => {
+nova.on("tool_execution_end", async (event, ctx) => {
   // event.toolCallId, event.toolName, event.result, event.isError
 });
 ```
@@ -650,7 +650,7 @@ pi.on("tool_execution_end", async (event, ctx) => {
 Fired before each LLM call. Modify messages non-destructively. See [Session Format](session-format.md) for message types.
 
 ```typescript
-pi.on("context", async (event, ctx) => {
+nova.on("context", async (event, ctx) => {
   // event.messages - deep copy, safe to modify
   const filtered = event.messages.filter(m => !shouldPrune(m));
   return { messages: filtered };
@@ -664,11 +664,11 @@ Fired after the outgoing HTTP headers are assembled. Use it to add, override, or
 Handlers mutate `event.headers` in place. Set a key to a string to add or override it, or to `null` to delete it.
 
 ```typescript
-pi.on("before_provider_headers", (event, ctx) => {
+nova.on("before_provider_headers", (event, ctx) => {
   // Add or override — e.g. a session id for gateway tracing/attribution
   event.headers["x-session-id"] = ctx.sessionManager.getSessionId();
 
-  // Drop a tracking header pi adds for this call
+  // Drop a tracking header nova adds for this call
   event.headers["X-OpenRouter-Title"] = null;
 });
 ```
@@ -679,10 +679,10 @@ Runs once per provider request; retries reuse the same headers rather than re-fi
 
 Fired after the provider-specific payload is built, right before the request is sent. Handlers run in extension load order. Returning `undefined` keeps the payload unchanged. Returning any other value replaces the payload for later handlers and for the actual request.
 
-This hook can rewrite provider-level system instructions or remove them entirely. Those payload-level changes are not reflected by `ctx.getSystemPrompt()`, which reports Pi's system prompt string rather than the final serialized provider payload.
+This hook can rewrite provider-level system instructions or remove them entirely. Those payload-level changes are not reflected by `ctx.getSystemPrompt()`, which reports Nova's system prompt string rather than the final serialized provider payload.
 
 ```typescript
-pi.on("before_provider_request", (event, ctx) => {
+nova.on("before_provider_request", (event, ctx) => {
   console.log(JSON.stringify(event.payload, null, 2));
 
   // Optional: replace payload
@@ -697,7 +697,7 @@ This is mainly useful for debugging provider serialization and cache behavior.
 Fired after an HTTP response is received and before its stream body is consumed. Handlers run in extension load order.
 
 ```typescript
-pi.on("after_provider_response", (event, ctx) => {
+nova.on("after_provider_response", (event, ctx) => {
   // event.status - HTTP status code
   // event.headers - normalized response headers
   if (event.status === 429) {
@@ -715,7 +715,7 @@ Header availability depends on provider and transport. Providers that abstract H
 Fired when the model changes via `/model` command, model cycling (`Ctrl+P`), or session restore.
 
 ```typescript
-pi.on("model_select", async (event, ctx) => {
+nova.on("model_select", async (event, ctx) => {
   // event.model - newly selected model
   // event.previousModel - previous model (undefined if first selection)
   // event.source - "set" | "cycle" | "restore"
@@ -736,7 +736,7 @@ Use this to update UI elements (status bars, footers) or perform model-specific 
 Fired when the thinking level changes. This is notification-only; handler return values are ignored.
 
 ```typescript
-pi.on("thinking_level_select", async (event, ctx) => {
+nova.on("thinking_level_select", async (event, ctx) => {
   // event.level - newly selected thinking level
   // event.previousLevel - previous thinking level
 
@@ -744,7 +744,7 @@ pi.on("thinking_level_select", async (event, ctx) => {
 });
 ```
 
-Use this to update extension UI when `pi.setThinkingLevel()`, model changes, or built-in thinking-level controls change the active thinking level.
+Use this to update extension UI when `nova.setThinkingLevel()`, model changes, or built-in thinking-level controls change the active thinking level.
 
 ### Tool Events
 
@@ -752,7 +752,7 @@ Use this to update extension UI when `pi.setThinkingLevel()`, model changes, or 
 
 Fired after `tool_execution_start`, before the tool executes. **Can block.** Use `isToolCallEventType` to narrow and get typed inputs.
 
-Before `tool_call` runs, pi waits for previously emitted Agent events to finish draining through `AgentSession`. This means `ctx.sessionManager` is up to date through the current assistant tool-calling message.
+Before `tool_call` runs, nova waits for previously emitted Agent events to finish draining through `AgentSession`. This means `ctx.sessionManager` is up to date through the current assistant tool-calling message.
 
 In the default parallel tool execution mode, sibling tool calls from the same assistant message are preflighted sequentially, then executed concurrently. `tool_call` is not guaranteed to see sibling tool results from that same assistant message in `ctx.sessionManager`.
 
@@ -767,7 +767,7 @@ Behavior guarantees:
 ```typescript
 import { isToolCallEventType } from "@dongzijie1/nova";
 
-pi.on("tool_call", async (event, ctx) => {
+nova.on("tool_call", async (event, ctx) => {
   // event.toolName - "bash", "read", "write", "edit", etc.
   // event.toolCallId
   // event.input - tool parameters (mutable)
@@ -804,7 +804,7 @@ Use `isToolCallEventType` with explicit type parameters:
 import { isToolCallEventType } from "@dongzijie1/nova";
 import type { MyToolInput } from "my-extension";
 
-pi.on("tool_call", (event) => {
+nova.on("tool_call", (event) => {
   if (isToolCallEventType<"my_tool", MyToolInput>("my_tool", event)) {
     event.input.action;  // typed
   }
@@ -827,7 +827,7 @@ Use `ctx.signal` for nested async work inside the handler. This lets Esc cancel 
 ```typescript
 import { isBashToolResult } from "@dongzijie1/nova";
 
-pi.on("tool_result", async (event, ctx) => {
+nova.on("tool_result", async (event, ctx) => {
   // event.toolName, event.toolCallId, event.input
   // event.content, event.details, event.isError, event.usage
 
@@ -855,7 +855,7 @@ Fired when user executes `!` or `!!` commands. **Can intercept.**
 ```typescript
 import { createLocalBashOperations } from "@dongzijie1/nova";
 
-pi.on("user_bash", (event, ctx) => {
+nova.on("user_bash", (event, ctx) => {
   // event.command - the bash command
   // event.excludeFromContext - true if !! prefix
   // event.cwd - working directory
@@ -863,7 +863,7 @@ pi.on("user_bash", (event, ctx) => {
   // Option 1: Provide custom operations (e.g., SSH)
   return { operations: remoteBashOps };
 
-  // Option 2: Wrap pi's built-in local bash backend
+  // Option 2: Wrap nova's built-in local bash backend
   const local = createLocalBashOperations();
   return {
     operations: {
@@ -892,7 +892,7 @@ Fired when user input is received, after extension commands are checked but befo
 5. Agent processing begins (`before_agent_start`, etc.)
 
 ```typescript
-pi.on("input", async (event, ctx) => {
+nova.on("input", async (event, ctx) => {
   // event.text - raw input (before skill/template expansion)
   // event.images - attached images, if any
   // event.source - "interactive" (typed), "rpc" (API), or "extension" (via sendUserMessage)
@@ -955,8 +955,8 @@ Use `CONFIG_DIR_NAME` instead of hardcoding `.nova` when constructing project-lo
 import { CONFIG_DIR_NAME, type ExtensionAPI } from "@dongzijie1/nova";
 import { join } from "node:path";
 
-export default function (pi: ExtensionAPI) {
-  pi.on("session_start", (_event, ctx) => {
+export default function (nova: ExtensionAPI) {
+  nova.on("session_start", (_event, ctx) => {
     const projectConfigPath = join(ctx.cwd, CONFIG_DIR_NAME, "my-extension.json");
     // ...
   });
@@ -996,10 +996,10 @@ Use this for abort-aware nested work started by extension handlers, for example:
 - file or process helpers that accept `AbortSignal`
 
 `ctx.signal` is typically defined during active turn events such as `tool_call`, `tool_result`, `message_update`, and `turn_end`.
-It is usually `undefined` in idle or non-turn contexts such as session events, extension commands, and shortcuts fired while pi is idle.
+It is usually `undefined` in idle or non-turn contexts such as session events, extension commands, and shortcuts fired while nova is idle.
 
 ```typescript
-pi.on("tool_result", async (event, ctx) => {
+nova.on("tool_result", async (event, ctx) => {
   const response = await fetch("https://example.com/api", {
     method: "POST",
     body: JSON.stringify(event),
@@ -1013,11 +1013,11 @@ pi.on("tool_result", async (event, ctx) => {
 
 ### ctx.isIdle() / ctx.abort() / ctx.hasPendingMessages()
 
-Control flow helpers. `ctx.isIdle()` is false while Pi is processing an agent run, automatic retry, auto-compaction retry, or queued continuation.
+Control flow helpers. `ctx.isIdle()` is false while Nova is processing an agent run, automatic retry, auto-compaction retry, or queued continuation.
 
 ### ctx.shutdown()
 
-Request a graceful shutdown of pi.
+Request a graceful shutdown of nova.
 
 - **Interactive mode:** Deferred until the agent becomes idle (after processing all queued steering and follow-up messages).
 - **RPC mode:** Deferred until the next idle state (after completing the current command response, when waiting for the next command).
@@ -1026,7 +1026,7 @@ Request a graceful shutdown of pi.
 Emits `session_shutdown` event to all extensions before exiting. Available in all contexts (event handlers, tools, commands, shortcuts).
 
 ```typescript
-pi.on("tool_call", (event, ctx) => {
+nova.on("tool_call", (event, ctx) => {
   if (isFatal(event.input)) {
     ctx.shutdown();
   }
@@ -1062,7 +1062,7 @@ ctx.compact({
 
 ### ctx.getSystemPrompt()
 
-Returns Pi's current system prompt string.
+Returns Nova's current system prompt string.
 
 - During `before_agent_start`, this reflects chained system-prompt changes made so far for the current turn.
 - It does not include later `context` message mutations.
@@ -1070,7 +1070,7 @@ Returns Pi's current system prompt string.
 - If later-loaded extensions run after yours, they can still change what is ultimately sent.
 
 ```typescript
-pi.on("before_agent_start", (event, ctx) => {
+nova.on("before_agent_start", (event, ctx) => {
   const prompt = ctx.getSystemPrompt();
   console.log(`System prompt length: ${prompt.length}`);
 });
@@ -1082,7 +1082,7 @@ Command handlers receive `ExtensionCommandContext`, which extends `ExtensionCont
 
 ### ctx.getSystemPromptOptions()
 
-Returns the base inputs Pi currently uses to build the system prompt.
+Returns the base inputs Nova currently uses to build the system prompt.
 
 ```typescript
 const options = ctx.getSystemPromptOptions();
@@ -1098,7 +1098,7 @@ This reports the current base prompt inputs. It does not include per-turn `befor
 Wait for the agent to fully settle, including automatic retries, auto-compaction retries, and queued continuations:
 
 ```typescript
-pi.registerCommand("my-cmd", {
+nova.registerCommand("my-cmd", {
   handler: async (args, ctx) => {
     await ctx.waitForIdle();
     // Agent is now idle, safe to modify session
@@ -1137,7 +1137,7 @@ if (result.cancelled) {
 Options:
 - `parentSession`: parent session file to record in the new session header
 - `setup`: mutate the new session's `SessionManager` before `withSession` runs
-- `withSession`: run post-switch work against a fresh replacement-session context. Do not use captured old `pi` / command `ctx`; see [Session replacement lifecycle and footguns](#session-replacement-lifecycle-and-footguns).
+- `withSession`: run post-switch work against a fresh replacement-session context. Do not use captured old `nova` / command `ctx`; see [Session replacement lifecycle and footguns](#session-replacement-lifecycle-and-footguns).
 
 ### ctx.fork(entryId, options?)
 
@@ -1163,7 +1163,7 @@ if (cloneResult.cancelled) {
 Options:
 - `position`: `"before"` (default) forks before the selected user message, restoring that prompt into the editor
 - `position`: `"at"` duplicates the active path through the selected entry without restoring editor text
-- `withSession`: run post-switch work against a fresh replacement-session context. Do not use captured old `pi` / command `ctx`; see [Session replacement lifecycle and footguns](#session-replacement-lifecycle-and-footguns).
+- `withSession`: run post-switch work against a fresh replacement-session context. Do not use captured old `nova` / command `ctx`; see [Session replacement lifecycle and footguns](#session-replacement-lifecycle-and-footguns).
 
 ### ctx.navigateTree(targetId, options?)
 
@@ -1200,14 +1200,14 @@ if (result.cancelled) {
 ```
 
 Options:
-- `withSession`: run post-switch work against a fresh replacement-session context. Do not use captured old `pi` / command `ctx`; see [Session replacement lifecycle and footguns](#session-replacement-lifecycle-and-footguns).
+- `withSession`: run post-switch work against a fresh replacement-session context. Do not use captured old `nova` / command `ctx`; see [Session replacement lifecycle and footguns](#session-replacement-lifecycle-and-footguns).
 
 To discover available sessions, use the static `SessionManager.list()` or `SessionManager.listAll()` methods:
 
 ```typescript
 import { SessionManager } from "@dongzijie1/nova";
 
-pi.registerCommand("switch", {
+nova.registerCommand("switch", {
   description: "Switch to another session",
   handler: async (args, ctx) => {
     const sessions = await SessionManager.list(ctx.cwd);
@@ -1234,14 +1234,14 @@ pi.registerCommand("switch", {
 Lifecycle and footguns:
 - `withSession` runs only after the old session has emitted `session_shutdown`, the old runtime has been torn down, the replacement session has been rebound, and the new extension instance has already received `session_start`.
 - The callback still executes in the original closure, not inside the new extension instance. That means your old extension instance may already have run its shutdown cleanup before `withSession` starts.
-- Captured old `pi` / old command `ctx` session-bound objects are stale after replacement and will throw if used. Use only the `ctx` passed to `withSession` for session-bound work.
+- Captured old `nova` / old command `ctx` session-bound objects are stale after replacement and will throw if used. Use only the `ctx` passed to `withSession` for session-bound work.
 - Previously extracted raw objects are still your responsibility. For example, if you capture `const sm = ctx.sessionManager` before replacement, `sm` is still the old `SessionManager` object. Do not reuse it after replacement.
 - Code in `withSession` should assume any state invalidated by your `session_shutdown` handler is already gone. Only capture plain data that survives shutdown cleanly, such as strings, ids, and serialized config.
 
 Safe pattern:
 
 ```typescript
-pi.registerCommand("handoff", {
+nova.registerCommand("handoff", {
   handler: async (_args, ctx) => {
     const kickoff = "Continue from the replacement session";
     await ctx.newSession({
@@ -1256,14 +1256,14 @@ pi.registerCommand("handoff", {
 Unsafe pattern:
 
 ```typescript
-pi.registerCommand("handoff", {
+nova.registerCommand("handoff", {
   handler: async (_args, ctx) => {
     const oldSessionManager = ctx.sessionManager;
     await ctx.newSession({
       withSession: async (_ctx) => {
         // stale old objects: do not do this
         oldSessionManager.getSessionFile();
-        pi.sendUserMessage("wrong");
+        nova.sendUserMessage("wrong");
       },
     });
   },
@@ -1275,7 +1275,7 @@ pi.registerCommand("handoff", {
 Run the same reload flow as `/reload`.
 
 ```typescript
-pi.registerCommand("reload-runtime", {
+nova.registerCommand("reload-runtime", {
   description: "Reload extensions, skills, prompts, themes, and context files",
   handler: async (_args, ctx) => {
     await ctx.reload();
@@ -1302,8 +1302,8 @@ Example tool the LLM can call to trigger reload:
 import type { ExtensionAPI } from "@dongzijie1/nova";
 import { Type } from "typebox";
 
-export default function (pi: ExtensionAPI) {
-  pi.registerCommand("reload-runtime", {
+export default function (nova: ExtensionAPI) {
+  nova.registerCommand("reload-runtime", {
     description: "Reload extensions, skills, prompts, themes, and context files",
     handler: async (_args, ctx) => {
       await ctx.reload();
@@ -1311,13 +1311,13 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerTool({
+  nova.registerTool({
     name: "reload_runtime",
     label: "Reload Runtime",
     description: "Reload extensions, skills, prompts, themes, and context files",
     parameters: Type.Object({}),
     async execute() {
-      pi.sendUserMessage("/reload-runtime", { deliverAs: "followUp" });
+      nova.sendUserMessage("/reload-runtime", { deliverAs: "followUp" });
       return {
         content: [{ type: "text", text: "Queued /reload-runtime as a follow-up command." }],
       };
@@ -1328,17 +1328,17 @@ export default function (pi: ExtensionAPI) {
 
 ## ExtensionAPI Methods
 
-### pi.on(event, handler)
+### nova.on(event, handler)
 
 Subscribe to events. See [Events](#events) for event types and return values.
 
-### pi.registerTool(definition)
+### nova.registerTool(definition)
 
 Register a custom tool callable by the LLM. See [Custom Tools](#custom-tools) for full details.
 
-`pi.registerTool()` works both during extension load and after startup. You can call it inside `session_start`, command handlers, or other event handlers. New tools are refreshed immediately in the same session, so they appear in `pi.getAllTools()` and are callable by the LLM without `/reload`.
+`nova.registerTool()` works both during extension load and after startup. You can call it inside `session_start`, command handlers, or other event handlers. New tools are refreshed immediately in the same session, so they appear in `nova.getAllTools()` and are callable by the LLM without `/reload`.
 
-Use `pi.setActiveTools()` to enable or disable tools (including dynamically added tools) at runtime.
+Use `nova.setActiveTools()` to enable or disable tools (including dynamically added tools) at runtime.
 
 Use `promptSnippet` to opt a custom tool into a one-line entry in `Available tools`, and `promptGuidelines` to append tool-specific bullets to the default `Guidelines` section when the tool is active.
 
@@ -1348,9 +1348,9 @@ See [dynamic-tools.ts](../examples/extensions/dynamic-tools.ts) for a full examp
 
 ```typescript
 import { Type } from "typebox";
-import { StringEnum } from "@earendil-works/pi-ai";
+import { StringEnum } from "@dongzijie1/pi-ai";
 
-pi.registerTool({
+nova.registerTool({
   name: "my_tool",
   label: "My Tool",
   description: "What this tool does",
@@ -1383,12 +1383,12 @@ pi.registerTool({
 });
 ```
 
-### pi.sendMessage(message, options?)
+### nova.sendMessage(message, options?)
 
-Inject a custom message into the session. Custom messages participate in LLM context. For durable TUI-only content that should not be sent to the LLM, use [`pi.appendEntry()`](#piappendentrycustomtype-data) with [`pi.registerEntryRenderer()`](#piregisterentryrenderercustomtype-renderer).
+Inject a custom message into the session. Custom messages participate in LLM context. For durable TUI-only content that should not be sent to the LLM, use [`nova.appendEntry()`](#novaappendentrycustomtype-data) with [`nova.registerEntryRenderer()`](#novaregisterentryrenderercustomtype-renderer).
 
 ```typescript
-pi.sendMessage({
+nova.sendMessage({
   customType: "my-extension",
   content: "Message text",
   display: true,
@@ -1406,23 +1406,23 @@ pi.sendMessage({
   - `"nextTurn"` - Queued for next user prompt. Does not interrupt or trigger anything.
 - `triggerTurn: true` - If agent is idle, trigger an LLM response immediately. Only applies to `"steer"` and `"followUp"` modes (ignored for `"nextTurn"`).
 
-### pi.sendUserMessage(content, options?)
+### nova.sendUserMessage(content, options?)
 
 Send a user message to the agent. Unlike `sendMessage()` which sends custom messages, this sends an actual user message that appears as if typed by the user. Always triggers a turn.
 
 ```typescript
 // Simple text message
-pi.sendUserMessage("What is 2+2?");
+nova.sendUserMessage("What is 2+2?");
 
 // With content array (text + images)
-pi.sendUserMessage([
+nova.sendUserMessage([
   { type: "text", text: "Describe this image:" },
   { type: "image", source: { type: "base64", mediaType: "image/png", data: "..." } },
 ]);
 
 // During streaming - must specify delivery mode
-pi.sendUserMessage("Focus on error handling", { deliverAs: "steer" });
-pi.sendUserMessage("And then summarize", { deliverAs: "followUp" });
+nova.sendUserMessage("Focus on error handling", { deliverAs: "steer" });
+nova.sendUserMessage("And then summarize", { deliverAs: "followUp" });
 ```
 
 **Options:**
@@ -1434,16 +1434,16 @@ When not streaming, the message is sent immediately and triggers a new turn. Whe
 
 See [send-user-message.ts](../examples/extensions/send-user-message.ts) for a complete example.
 
-### pi.appendEntry(customType, data?)
+### nova.appendEntry(customType, data?)
 
-Persist extension data. Custom entries do NOT participate in LLM context. In interactive mode, they can also render inside the chat transcript when paired with `pi.registerEntryRenderer()`.
+Persist extension data. Custom entries do NOT participate in LLM context. In interactive mode, they can also render inside the chat transcript when paired with `nova.registerEntryRenderer()`.
 
 ```typescript
-pi.appendEntry("my-state", { count: 42 });
-pi.appendEntry("status-card", { title: "Indexed files", count: 17 });
+nova.appendEntry("my-state", { count: 42 });
+nova.appendEntry("status-card", { title: "Indexed files", count: 17 });
 
 // Restore on reload
-pi.on("session_start", async (_event, ctx) => {
+nova.on("session_start", async (_event, ctx) => {
   for (const entry of ctx.sessionManager.getEntries()) {
     if (entry.type === "custom" && entry.customType === "my-state") {
       // Reconstruct from entry.data
@@ -1452,35 +1452,35 @@ pi.on("session_start", async (_event, ctx) => {
 });
 ```
 
-### pi.setSessionName(name)
+### nova.setSessionName(name)
 
 Set the session display name (shown in session selector instead of first message).
 
 ```typescript
-pi.setSessionName("Refactor auth module");
+nova.setSessionName("Refactor auth module");
 ```
 
-### pi.getSessionName()
+### nova.getSessionName()
 
 Get the current session name, if set.
 
 ```typescript
-const name = pi.getSessionName();
+const name = nova.getSessionName();
 if (name) {
   console.log(`Session: ${name}`);
 }
 ```
 
-### pi.setLabel(entryId, label)
+### nova.setLabel(entryId, label)
 
 Set or clear a label on an entry. Labels are user-defined markers for bookmarking and navigation (shown in `/tree` selector).
 
 ```typescript
 // Set a label
-pi.setLabel(entryId, "checkpoint-before-refactor");
+nova.setLabel(entryId, "checkpoint-before-refactor");
 
 // Clear a label
-pi.setLabel(entryId, undefined);
+nova.setLabel(entryId, undefined);
 
 // Read labels via sessionManager
 const label = ctx.sessionManager.getLabel(entryId);
@@ -1488,14 +1488,14 @@ const label = ctx.sessionManager.getLabel(entryId);
 
 Labels persist in the session and survive restarts. Use them to mark important points (turns, checkpoints) in the conversation tree.
 
-### pi.registerCommand(name, options)
+### nova.registerCommand(name, options)
 
 Register a command.
 
-If multiple extensions register the same command name, pi keeps them all and assigns numeric invocation suffixes in load order, for example `/review:1` and `/review:2`.
+If multiple extensions register the same command name, nova keeps them all and assigns numeric invocation suffixes in load order, for example `/review:1` and `/review:2`.
 
 ```typescript
-pi.registerCommand("stats", {
+nova.registerCommand("stats", {
   description: "Show session statistics",
   handler: async (args, ctx) => {
     const count = ctx.sessionManager.getEntries().length;
@@ -1507,9 +1507,9 @@ pi.registerCommand("stats", {
 Optional: add argument auto-completion for `/command ...`:
 
 ```typescript
-import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import type { AutocompleteItem } from "@dongzijie1/pi-tui";
 
-pi.registerCommand("deploy", {
+nova.registerCommand("deploy", {
   description: "Deploy to an environment",
   getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
     const envs = ["dev", "staging", "prod"];
@@ -1523,13 +1523,13 @@ pi.registerCommand("deploy", {
 });
 ```
 
-### pi.getCommands()
+### nova.getCommands()
 
 Get the slash commands available for invocation via `prompt` in the current session. Includes extension commands, prompt templates, and skill commands.
 The list matches the RPC `get_commands` ordering: extensions first, then templates, then skills.
 
 ```typescript
-const commands = pi.getCommands();
+const commands = nova.getCommands();
 const bySource = commands.filter((command) => command.source === "extension");
 const userScoped = commands.filter((command) => command.sourceInfo.scope === "user");
 ```
@@ -1556,18 +1556,18 @@ Use `sourceInfo` as the canonical provenance field. Do not infer ownership from 
 Built-in interactive commands (like `/model` and `/settings`) are not included here. They are handled only in interactive
 mode and would not execute if sent via `prompt`.
 
-### pi.registerMessageRenderer(customType, renderer)
+### nova.registerMessageRenderer(customType, renderer)
 
-Register a custom TUI renderer for custom messages with your `customType`. Custom messages are created with `pi.sendMessage()` and participate in LLM context. See [Custom UI](#custom-ui).
+Register a custom TUI renderer for custom messages with your `customType`. Custom messages are created with `nova.sendMessage()` and participate in LLM context. See [Custom UI](#custom-ui).
 
-### pi.registerEntryRenderer(customType, renderer)
+### nova.registerEntryRenderer(customType, renderer)
 
-Register a custom TUI renderer for custom entries with your `customType`. Custom entries are created with `pi.appendEntry()` and do not participate in LLM context.
+Register a custom TUI renderer for custom entries with your `customType`. Custom entries are created with `nova.appendEntry()` and do not participate in LLM context.
 
 ```typescript
-import { Box, Text } from "@earendil-works/pi-tui";
+import { Box, Text } from "@dongzijie1/pi-tui";
 
-pi.registerEntryRenderer("status-card", (entry, { expanded }, theme) => {
+nova.registerEntryRenderer("status-card", (entry, { expanded }, theme) => {
   const data = entry.data as { title: string; count: number };
   const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
   box.addChild(new Text(`${theme.bold(data.title)}: ${data.count}`));
@@ -1577,15 +1577,15 @@ pi.registerEntryRenderer("status-card", (entry, { expanded }, theme) => {
   return box;
 });
 
-pi.appendEntry("status-card", { title: "Indexed files", count: 17 });
+nova.appendEntry("status-card", { title: "Indexed files", count: 17 });
 ```
 
-### pi.registerShortcut(shortcut, options)
+### nova.registerShortcut(shortcut, options)
 
 Register a keyboard shortcut. See [keybindings.md](keybindings.md) for the shortcut format and built-in keybindings.
 
 ```typescript
-pi.registerShortcut("ctrl+shift+p", {
+nova.registerShortcut("ctrl+shift+p", {
   description: "Toggle plan mode",
   handler: async (ctx) => {
     ctx.ui.notify("Toggled!");
@@ -1593,39 +1593,39 @@ pi.registerShortcut("ctrl+shift+p", {
 });
 ```
 
-### pi.registerFlag(name, options)
+### nova.registerFlag(name, options)
 
 Register a CLI flag.
 
 ```typescript
-pi.registerFlag("plan", {
+nova.registerFlag("plan", {
   description: "Start in plan mode",
   type: "boolean",
   default: false,
 });
 
 // Check value
-if (pi.getFlag("plan")) {
+if (nova.getFlag("plan")) {
   // Plan mode enabled
 }
 ```
 
-### pi.exec(command, args, options?)
+### nova.exec(command, args, options?)
 
 Execute a shell command.
 
 ```typescript
-const result = await pi.exec("git", ["status"], { signal, timeout: 5000 });
+const result = await nova.exec("git", ["status"], { signal, timeout: 5000 });
 // result.stdout, result.stderr, result.code, result.killed
 ```
 
-### pi.getActiveTools() / pi.getAllTools() / pi.setActiveTools(names)
+### nova.getActiveTools() / nova.getAllTools() / nova.setActiveTools(names)
 
-Manage active tools. This works for both built-in tools and dynamically registered tools. `pi.getActiveTools()` returns the active tool names as `string[]`; `pi.getAllTools()` returns metadata for all configured tools.
+Manage active tools. This works for both built-in tools and dynamically registered tools. `nova.getActiveTools()` returns the active tool names as `string[]`; `nova.getAllTools()` returns metadata for all configured tools.
 
 ```typescript
-const active = pi.getActiveTools(); // ["read", "bash", ...]
-const all = pi.getAllTools();
+const active = nova.getActiveTools(); // ["read", "bash", ...]
+const all = nova.getAllTools();
 // all = [{
 //   name: "read",
 //   description: "Read file contents...",
@@ -1635,61 +1635,61 @@ const all = pi.getAllTools();
 // }, ...]
 const builtinTools = all.filter((t) => t.sourceInfo.source === "builtin");
 const extensionTools = all.filter((t) => t.sourceInfo.source !== "builtin" && t.sourceInfo.source !== "sdk");
-pi.setActiveTools([...new Set([...active, "my_custom_tool"])]); // Keep current tools and enable my_custom_tool
-pi.setActiveTools(["read", "bash"]); // Switch to read-only
+nova.setActiveTools([...new Set([...active, "my_custom_tool"])]); // Keep current tools and enable my_custom_tool
+nova.setActiveTools(["read", "bash"]); // Switch to read-only
 ```
 
-`pi.getAllTools()` returns `name`, `description`, `parameters`, `promptGuidelines`, and `sourceInfo`.
+`nova.getAllTools()` returns `name`, `description`, `parameters`, `promptGuidelines`, and `sourceInfo`.
 
 Typical `sourceInfo.source` values:
 - `builtin` for built-in tools
 - `sdk` for tools passed via `createAgentSession({ customTools })`
 - extension source metadata for tools registered by extensions
 
-### pi.setModel(model)
+### nova.setModel(model)
 
 Set the current model. Returns `false` if no API key is available for the model. See [models.md](models.md) for configuring custom models.
 
 ```typescript
 const model = ctx.modelRegistry.find("anthropic", "claude-sonnet-4-5");
 if (model) {
-  const success = await pi.setModel(model);
+  const success = await nova.setModel(model);
   if (!success) {
     ctx.ui.notify("No API key for this model", "error");
   }
 }
 ```
 
-### pi.getThinkingLevel() / pi.setThinkingLevel(level)
+### nova.getThinkingLevel() / nova.setThinkingLevel(level)
 
 Get or set the thinking level. Level is clamped to model capabilities (non-reasoning models always use "off"). Changes emit `thinking_level_select`.
 
 ```typescript
-const current = pi.getThinkingLevel();  // "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
-pi.setThinkingLevel("high");
+const current = nova.getThinkingLevel();  // "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
+nova.setThinkingLevel("high");
 ```
 
-### pi.events
+### nova.events
 
 Shared event bus for communication between extensions:
 
 ```typescript
-pi.events.on("my:event", (data) => { ... });
-pi.events.emit("my:event", { ... });
+nova.events.on("my:event", (data) => { ... });
+nova.events.emit("my:event", { ... });
 ```
 
-### pi.registerProvider(name, config)
+### nova.registerProvider(name, config)
 
 Register or override a model provider dynamically. Useful for proxies, custom endpoints, or team-wide model configurations.
 
 Calls made during the extension factory function are queued and applied once the runner initialises. Calls made after that — for example from a command handler following a user setup flow — take effect immediately without requiring a `/reload`.
 
-Dynamic providers can implement `refreshModels`. Pi calls it during model refresh, publishes the returned list synchronously through the provider, and passes the canonical credential/store/network/signal context. The extension decides whether to persist the catalog through `context.store`; live servers such as llama.cpp can ignore it.
+Dynamic providers can implement `refreshModels`. Nova calls it during model refresh, publishes the returned list synchronously through the provider, and passes the canonical credential/store/network/signal context. The extension decides whether to persist the catalog through `context.store`; live servers such as llama.cpp can ignore it.
 
-Extensions that need native provider auth, filtering, refresh, or stream behavior can register a complete `Provider` from `@earendil-works/pi-ai`. The provider becomes the composition base and `models.json` overrides still apply above it.
+Extensions that need native provider auth, filtering, refresh, or stream behavior can register a complete `Provider` from `@dongzijie1/pi-ai`. The provider becomes the composition base and `models.json` overrides still apply above it.
 
 ```typescript
-import { createProvider, openAICompletionsApi } from "@earendil-works/pi-ai";
+import { createProvider, openAICompletionsApi } from "@dongzijie1/pi-ai";
 
 const provider = createProvider({
   id: "local-server",
@@ -1715,10 +1715,10 @@ const provider = createProvider({
   api: openAICompletionsApi(),
 });
 
-pi.registerProvider(provider);
+nova.registerProvider(provider);
 
 // Register a new provider with custom models
-pi.registerProvider("my-proxy", {
+nova.registerProvider("my-proxy", {
   name: "My Proxy",
   baseUrl: "https://proxy.example.com",
   apiKey: "$PROXY_API_KEY",  // env var reference
@@ -1737,7 +1737,7 @@ pi.registerProvider("my-proxy", {
 });
 
 // Register a live llama.cpp catalog without persisting discovered models
-pi.registerProvider("llama.cpp", {
+nova.registerProvider("llama.cpp", {
   baseUrl: "http://localhost:8080/v1",
   apiKey: "local",
   api: "openai-completions",
@@ -1757,12 +1757,12 @@ pi.registerProvider("llama.cpp", {
 });
 
 // Override baseUrl for an existing provider (keeps all models)
-pi.registerProvider("anthropic", {
+nova.registerProvider("anthropic", {
   baseUrl: "https://proxy.example.com"
 });
 
 // Register provider with OAuth support for /login
-pi.registerProvider("corporate-ai", {
+nova.registerProvider("corporate-ai", {
   baseUrl: "https://ai.corp.com",
   api: "openai-responses",
   models: [...],
@@ -1801,17 +1801,17 @@ The object form accepts a complete pi-ai `Provider`, including native `auth`, `g
 
 See [custom-provider.md](custom-provider.md) for advanced topics: custom streaming APIs, OAuth details, model definition reference.
 
-### pi.unregisterProvider(name)
+### nova.unregisterProvider(name)
 
 Remove a previously registered provider and its models. Built-in models that were overridden by the provider are restored. Has no effect if the provider was not registered.
 
 Like `registerProvider`, this takes effect immediately when called after the initial load phase, so a `/reload` is not required.
 
 ```typescript
-pi.registerCommand("my-setup-teardown", {
+nova.registerCommand("my-setup-teardown", {
   description: "Remove the custom proxy provider",
   handler: async (_args, _ctx) => {
-    pi.unregisterProvider("my-proxy");
+    nova.unregisterProvider("my-proxy");
   },
 });
 ```
@@ -1821,11 +1821,11 @@ pi.registerCommand("my-setup-teardown", {
 Extensions with state should store it in tool result `details` for proper branching support:
 
 ```typescript
-export default function (pi: ExtensionAPI) {
+export default function (nova: ExtensionAPI) {
   let items: string[] = [];
 
   // Reconstruct state from session
-  pi.on("session_start", async (_event, ctx) => {
+  nova.on("session_start", async (_event, ctx) => {
     items = [];
     for (const entry of ctx.sessionManager.getBranch()) {
       if (entry.type === "message" && entry.message.role === "toolResult") {
@@ -1836,7 +1836,7 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.registerTool({
+  nova.registerTool({
     name: "my_tool",
     // ...
     async execute(toolCallId, params, signal, onUpdate, ctx) {
@@ -1852,11 +1852,11 @@ export default function (pi: ExtensionAPI) {
 
 ## Custom Tools
 
-Register tools the LLM can call via `pi.registerTool()`. Tools appear in the system prompt and can have custom rendering.
+Register tools the LLM can call via `nova.registerTool()`. Tools appear in the system prompt and can have custom rendering.
 
 Use `promptSnippet` for a short one-line entry in the `Available tools` section in the default system prompt. If omitted, custom tools are left out of that section.
 
-Use `promptGuidelines` to add tool-specific bullets to the default system prompt `Guidelines` section. These bullets are included only while the tool is active (for example, after `pi.setActiveTools([...])`).
+Use `promptGuidelines` to add tool-specific bullets to the default system prompt `Guidelines` section. These bullets are included only while the tool is active (for example, after `nova.setActiveTools([...])`).
 
 **Important:** `promptGuidelines` bullets are appended flat to the `Guidelines` section with no tool name prefix or grouping. Each guideline must name the tool it refers to — avoid "Use this tool when..." because the LLM cannot tell which tool "this" means. Write "Use my_tool when..." instead.
 
@@ -1896,10 +1896,10 @@ async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 
 ```typescript
 import { Type } from "typebox";
-import { StringEnum } from "@earendil-works/pi-ai";
-import { Text } from "@earendil-works/pi-tui";
+import { StringEnum } from "@dongzijie1/pi-ai";
+import { Text } from "@dongzijie1/pi-tui";
 
-pi.registerTool({
+nova.registerTool({
   name: "my_tool",
   label: "My Tool",
   description: "What this tool does (shown to LLM)",
@@ -1932,8 +1932,8 @@ pi.registerTool({
       details: { progress: 50 },
     });
 
-    // Run commands via pi.exec (captured from extension closure)
-    const result = await pi.exec("some-command", [], { signal });
+    // Run commands via nova.exec (captured from extension closure)
+    const result = await nova.exec("some-command", [], { signal });
 
     // Return result
     return {
@@ -1952,7 +1952,7 @@ pi.registerTool({
 });
 ```
 
-**Usage accounting:** If a tool makes nested LLM calls, return their combined `Usage` as `usage`. Pi persists it on the tool result and includes it in footer, `/session`, and RPC session totals. `tool_result` handlers can inspect or replace this value.
+**Usage accounting:** If a tool makes nested LLM calls, return their combined `Usage` as `usage`. Nova persists it on the tool result and includes it in footer, `/session`, and RPC session totals. `tool_result` handlers can inspect or replace this value.
 
 **Signaling errors:** To mark a tool execution as failed (sets `isError: true` on the result and reports it to the LLM), throw an error from `execute`. Returning a value never sets the error flag regardless of what properties you include in the return object.
 
@@ -1968,14 +1968,14 @@ async execute(toolCallId, params) {
 }
 ```
 
-**Important:** Use `StringEnum` from `@earendil-works/pi-ai` for string enums. `Type.Union`/`Type.Literal` doesn't work with Google's API.
+**Important:** Use `StringEnum` from `@dongzijie1/pi-ai` for string enums. `Type.Union`/`Type.Literal` doesn't work with Google's API.
 
-**Argument preparation:** `prepareArguments(args)` is optional. If defined, it runs before schema validation and before `execute()`. Use it to mimic an older accepted input shape when pi resumes an older session whose stored tool call arguments no longer match the current schema. Return the object you want validated against `parameters`. Keep the public schema strict. Do not add deprecated compatibility fields to `parameters` just to keep old resumed sessions working.
+**Argument preparation:** `prepareArguments(args)` is optional. If defined, it runs before schema validation and before `execute()`. Use it to mimic an older accepted input shape when nova resumes an older session whose stored tool call arguments no longer match the current schema. Return the object you want validated against `parameters`. Keep the public schema strict. Do not add deprecated compatibility fields to `parameters` just to keep old resumed sessions working.
 
 Example: an older session may contain an `edit` tool call with top-level `oldText` and `newText`, while the current schema only accepts `edits: [{ oldText, newText }]`.
 
 ```typescript
-pi.registerTool({
+nova.registerTool({
   name: "edit",
   label: "Edit",
   description: "Edit a single file using exact text replacement",
@@ -2041,13 +2041,13 @@ See [examples/extensions/tool-override.ts](../examples/extensions/tool-override.
 **Your implementation must match the exact result shape**, including the `details` type. The UI and session logic depend on these shapes for rendering and state tracking.
 
 Built-in tool implementations:
-- [read.ts](https://github.com/earendil-works/pi-mono/blob/main/packages/nova/src/core/tools/read.ts) - `ReadToolDetails`
-- [bash.ts](https://github.com/earendil-works/pi-mono/blob/main/packages/nova/src/core/tools/bash.ts) - `BashToolDetails`
-- [edit.ts](https://github.com/earendil-works/pi-mono/blob/main/packages/nova/src/core/tools/edit.ts)
-- [write.ts](https://github.com/earendil-works/pi-mono/blob/main/packages/nova/src/core/tools/write.ts)
-- [grep.ts](https://github.com/earendil-works/pi-mono/blob/main/packages/nova/src/core/tools/grep.ts) - `GrepToolDetails`
-- [find.ts](https://github.com/earendil-works/pi-mono/blob/main/packages/nova/src/core/tools/find.ts) - `FindToolDetails`
-- [ls.ts](https://github.com/earendil-works/pi-mono/blob/main/packages/nova/src/core/tools/ls.ts) - `LsToolDetails`
+- [read.ts](https://github.com/DongZiJie1/nova-agent/blob/main/packages/nova/src/core/tools/read.ts) - `ReadToolDetails`
+- [bash.ts](https://github.com/DongZiJie1/nova-agent/blob/main/packages/nova/src/core/tools/bash.ts) - `BashToolDetails`
+- [edit.ts](https://github.com/DongZiJie1/nova-agent/blob/main/packages/nova/src/core/tools/edit.ts)
+- [write.ts](https://github.com/DongZiJie1/nova-agent/blob/main/packages/nova/src/core/tools/write.ts)
+- [grep.ts](https://github.com/DongZiJie1/nova-agent/blob/main/packages/nova/src/core/tools/grep.ts) - `GrepToolDetails`
+- [find.ts](https://github.com/DongZiJie1/nova-agent/blob/main/packages/nova/src/core/tools/find.ts) - `FindToolDetails`
+- [ls.ts](https://github.com/DongZiJie1/nova-agent/blob/main/packages/nova/src/core/tools/ls.ts) - `LsToolDetails`
 
 ### Remote Execution
 
@@ -2065,7 +2065,7 @@ const remoteRead = createReadTool(cwd, {
 });
 
 // Register, checking flag at execution time
-pi.registerTool({
+nova.registerTool({
   ...remoteRead,
   async execute(id, params, signal, onUpdate, _ctx) {
     const ssh = getSshConfig();
@@ -2080,7 +2080,7 @@ pi.registerTool({
 
 **Operations interfaces:** `ReadOperations`, `WriteOperations`, `EditOperations`, `BashOperations`, `LsOperations`, `GrepOperations`, `FindOperations`
 
-For `user_bash`, extensions can reuse pi's local shell backend via `createLocalBashOperations()` instead of reimplementing local process spawning, shell resolution, and process-tree termination.
+For `user_bash`, extensions can reuse nova's local shell backend via `createLocalBashOperations()` instead of reimplementing local process spawning, shell resolution, and process-tree termination.
 
 The bash tool also supports a spawn hook to adjust the command, cwd, or env before execution:
 
@@ -2096,7 +2096,7 @@ const bashTool = createBashTool(cwd, {
 });
 ```
 
-`createBashTool()` exposes the current session to commands through `PI_SESSION_ID`, `PI_SESSION_FILE`, `PI_PROVIDER`, `PI_MODEL`, and `PI_REASONING_LEVEL`. Injection happens before `spawnHook`, so hooks receive these values in `env` and preserve them when they spread the existing environment as above. Set `exposeSessionEnvironment: false` to disable them:
+`createBashTool()` exposes the current session to commands through `NOVA_SESSION_ID`, `NOVA_SESSION_FILE`, `NOVA_PROVIDER`, `NOVA_MODEL`, and `NOVA_REASONING_LEVEL`. Injection happens before `spawnHook`, so hooks receive these values in `env` and preserve them when they spread the existing environment as above. Set `exposeSessionEnvironment: false` to disable them:
 
 ```typescript
 const bashTool = createBashTool(cwd, {
@@ -2163,14 +2163,14 @@ See [examples/extensions/truncated-tool.ts](../examples/extensions/truncated-too
 One extension can register multiple tools with shared state:
 
 ```typescript
-export default function (pi: ExtensionAPI) {
+export default function (nova: ExtensionAPI) {
   let connection = null;
 
-  pi.registerTool({ name: "db_connect", ... });
-  pi.registerTool({ name: "db_query", ... });
-  pi.registerTool({ name: "db_close", ... });
+  nova.registerTool({ name: "db_connect", ... });
+  nova.registerTool({ name: "db_query", ... });
+  nova.registerTool({ name: "db_close", ... });
 
-  pi.on("session_shutdown", async () => {
+  nova.on("session_shutdown", async () => {
     connection?.close();
   });
 }
@@ -2178,14 +2178,14 @@ export default function (pi: ExtensionAPI) {
 
 ### Custom Rendering
 
-Tools can provide `renderCall` and `renderResult` for custom TUI display. See [tui.md](tui.md) for the full component API and [tool-execution.ts](https://github.com/earendil-works/pi-mono/blob/main/packages/nova/src/modes/interactive/components/tool-execution.ts) for how tool rows are composed.
+Tools can provide `renderCall` and `renderResult` for custom TUI display. See [tui.md](tui.md) for the full component API and [tool-execution.ts](https://github.com/DongZiJie1/nova-agent/blob/main/packages/nova/src/modes/interactive/components/tool-execution.ts) for how tool rows are composed.
 
 By default, tool output is wrapped in a `Box` that handles padding and background. A defined `renderCall` or `renderResult` must return a `Component`. If a slot renderer is not defined, `tool-execution.ts` uses fallback rendering for that slot.
 
 Set `renderShell: "self"` when the tool should render its own shell instead of using the default `Box`. This is useful for tools that need complete control over framing or background behavior, for example large previews that must stay visually stable after the tool settles.
 
 ```typescript
-pi.registerTool({
+nova.registerTool({
   name: "my_tool",
   label: "My Tool",
   description: "Custom shell example",
@@ -2214,7 +2214,7 @@ Use `context.state` for cross-slot shared state. Keep slot-local caches on the r
 Renders the tool call or header:
 
 ```typescript
-import { Text } from "@earendil-works/pi-tui";
+import { Text } from "@dongzijie1/pi-tui";
 
 renderCall(args, theme, context) {
   const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
@@ -2303,19 +2303,19 @@ If a slot renderer is not defined or throws:
 
 ### Dynamic Tool Loading
 
-Extensions can register many tools while keeping only a small initial set active. A tool can then add more tools with `pi.setActiveTools()` during execution. Pi detects purely additive changes, records the newly available tool names on that tool result, and applies the updated active set before the next model request.
+Extensions can register many tools while keeping only a small initial set active. A tool can then add more tools with `nova.setActiveTools()` during execution. Nova detects purely additive changes, records the newly available tool names on that tool result, and applies the updated active set before the next model request.
 
 This works with every model. Models with native deferred-loading support preserve the stable prompt prefix and load the new definitions at the tool-result position. Other models use the fallback described below.
 
 The lifecycle is:
 
-1. Register every tool with `pi.registerTool()` so it appears in `pi.getAllTools()`.
+1. Register every tool with `nova.registerTool()` so it appears in `nova.getAllTools()`.
 2. Keep loader tools, such as `search_tools`, active and leave searchable tools inactive.
-3. During loader execution, call `pi.setActiveTools([...currentTools, ...matchingTools])`. The change must be additive: do not remove currently active tools in the same call.
-4. Pi records which tools were added on the loader's tool result.
-5. Before the next model response, Pi exposes the added definitions using native deferred loading when supported, or the normal active tool list otherwise.
+3. During loader execution, call `nova.setActiveTools([...currentTools, ...matchingTools])`. The change must be additive: do not remove currently active tools in the same call.
+4. Nova records which tools were added on the loader's tool result.
+5. Before the next model response, Nova exposes the added definitions using native deferred loading when supported, or the normal active tool list otherwise.
 
-You do not need to return provider-specific tool references or mark the loader as a special search tool. The active-tool change is the signal. Names passed to `pi.setActiveTools()` must already be registered; unknown names are ignored.
+You do not need to return provider-specific tool references or mark the loader as a special search tool. The active-tool change is the signal. Names passed to `nova.setActiveTools()` must already be registered; unknown names are ignored.
 
 #### Models with native deferred loading
 
@@ -2324,15 +2324,15 @@ You do not need to return provider-specific tool references or mark the loader a
   - **Native representation:** Deferred definitions use `defer_loading`; the load point uses `tool_reference` content.
 - **OpenAI**
   - **Models:** `gpt-5.4` and newer family
-  - **Native representation:** Pi adds completed client `tool_search_call` and `tool_search_output` items at the load point.
+  - **Native representation:** Nova adds completed client `tool_search_call` and `tool_search_output` items at the load point.
 
 For a verified custom model or proxy, native handling can be enabled with `compat.supportsToolReferences: true` for `anthropic-messages`, or `compat.supportsToolSearch: true` for `openai-responses` and `openai-codex-responses`. Leave these disabled unless the endpoint and model accept the corresponding native protocol.
 
 #### Fallback behavior
 
-For all other models and providers, dynamic activation still works: Pi sends the complete current active tool list normally on the next request. The model can call the newly activated tools, but adding their definitions may invalidate the provider's cached prompt prefix.
+For all other models and providers, dynamic activation still works: Nova sends the complete current active tool list normally on the next request. The model can call the newly activated tools, but adding their definitions may invalidate the provider's cached prompt prefix.
 
-Pi also uses this safe fallback when the active set is not purely additive, such as replacing one group of tools with another. Tool removals therefore work, but they do not use deferred loading.
+Nova also uses this safe fallback when the active set is not purely additive, such as replacing one group of tools with another. Tool removals therefore work, but they do not use deferred loading.
 
 For the best cache behavior, keep the loader tool active for the whole session and add tools instead of replacing the active set. Also note that activating a tool with `promptSnippet` or `promptGuidelines` rebuilds the system prompt; that system-prompt change can invalidate the prefix even when the provider supports deferred schemas. Lazily loaded tools should usually rely on their tool `description` and omit active-only prompt metadata.
 
@@ -2346,8 +2346,8 @@ import { Type } from "typebox";
 
 const SEARCHABLE_TOOL_NAMES = new Set(["lookup_weather", "search_issues"]);
 
-export default function (pi: ExtensionAPI) {
-  pi.registerTool({
+export default function (nova: ExtensionAPI) {
+  nova.registerTool({
     name: "lookup_weather",
     label: "Lookup Weather",
     description: "Look up the current weather for a city",
@@ -2360,7 +2360,7 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerTool({
+  nova.registerTool({
     name: "search_issues",
     label: "Search Issues",
     description: "Search project issues by keyword",
@@ -2373,7 +2373,7 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerTool({
+  nova.registerTool({
     name: "search_tools",
     label: "Search Tools",
     description: "Search for and enable tools relevant to a task",
@@ -2387,7 +2387,7 @@ export default function (pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params) {
       const terms = params.query.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-      const matches = pi.getAllTools()
+      const matches = nova.getAllTools()
         .filter((tool) => SEARCHABLE_TOOL_NAMES.has(tool.name))
         .map((tool) => ({
           tool,
@@ -2409,9 +2409,9 @@ export default function (pi: ExtensionAPI) {
         };
       }
 
-      const active = pi.getActiveTools();
+      const active = nova.getActiveTools();
       const added = matches.filter((name) => !active.includes(name));
-      pi.setActiveTools([...new Set([...active, ...added])]);
+      nova.setActiveTools([...new Set([...active, ...added])]);
 
       return {
         content: [{
@@ -2425,13 +2425,13 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.on("session_start", () => {
+  nova.on("session_start", () => {
     // Keep searchable tools registered but initially inactive. Preserve built-ins
     // and tools owned by other extensions, and keep the loader itself active.
-    const initialTools = pi.getActiveTools().filter(
+    const initialTools = nova.getActiveTools().filter(
       (name) => !SEARCHABLE_TOOL_NAMES.has(name),
     );
-    pi.setActiveTools([...new Set([...initialTools, "search_tools"])]);
+    nova.setActiveTools([...new Set([...initialTools, "search_tools"])]);
   });
 }
 ```
@@ -2564,7 +2564,7 @@ ctx.ui.setFooter((tui, theme) => ({
 ctx.ui.setFooter(undefined);  // Restore built-in footer
 
 // Terminal title
-ctx.ui.setTitle("pi - my-project");
+ctx.ui.setTitle("nova - my-project");
 
 // Editor text
 ctx.ui.setEditorText("Prefill text");
@@ -2634,7 +2634,7 @@ Typical pattern:
 - delegate `applyCompletion(...)` unless you need custom insertion behavior
 
 ```typescript
-pi.on("session_start", (_event, ctx) => {
+nova.on("session_start", (_event, ctx) => {
   ctx.ui.addAutocompleteProvider((current) => ({
     triggerCharacters: ["#"],
     async getSuggestions(lines, cursorLine, cursorCol, options) {
@@ -2672,7 +2672,7 @@ See [github-issue-autocomplete.ts](../examples/extensions/github-issue-autocompl
 For complex UI, use `ctx.ui.custom()`. This temporarily replaces the editor with your component until `done()` is called:
 
 ```typescript
-import { Text, Component } from "@earendil-works/pi-tui";
+import { Text, Component } from "@dongzijie1/pi-tui";
 
 const result = await ctx.ui.custom<boolean>((tui, theme, keybindings, done) => {
   const text = new Text("Press Enter to confirm, Escape to cancel", 1, 1);
@@ -2738,7 +2738,7 @@ Replace the main input editor with a custom implementation (vim mode, emacs mode
 
 ```typescript
 import { CustomEditor, type ExtensionAPI } from "@dongzijie1/nova";
-import { matchesKey } from "@earendil-works/pi-tui";
+import { matchesKey } from "@dongzijie1/pi-tui";
 
 class VimEditor extends CustomEditor {
   private mode: "normal" | "insert" = "insert";
@@ -2756,8 +2756,8 @@ class VimEditor extends CustomEditor {
   }
 }
 
-export default function (pi: ExtensionAPI) {
-  pi.on("session_start", (_event, ctx) => {
+export default function (nova: ExtensionAPI) {
+  nova.on("session_start", (_event, ctx) => {
     ctx.ui.setEditorComponent((tui, theme, keybindings) =>
       new VimEditor(tui, theme, keybindings)
     );
@@ -2788,9 +2788,9 @@ See [tui.md](tui.md) Pattern 7 for a complete example with mode indicator.
 Register a custom renderer for messages with your `customType`. Use message renderers for content that should participate in LLM context:
 
 ```typescript
-import { Text } from "@earendil-works/pi-tui";
+import { Text } from "@dongzijie1/pi-tui";
 
-pi.registerMessageRenderer("my-extension", (message, options, theme) => {
+nova.registerMessageRenderer("my-extension", (message, options, theme) => {
   const { expanded, outputPad } = options;
   let text = theme.fg("accent", `[${message.customType}] `);
   text += message.content;
@@ -2803,10 +2803,10 @@ pi.registerMessageRenderer("my-extension", (message, options, theme) => {
 });
 ```
 
-Messages are sent via `pi.sendMessage()`:
+Messages are sent via `nova.sendMessage()`:
 
 ```typescript
-pi.sendMessage({
+nova.sendMessage({
   customType: "my-extension",  // Matches registerMessageRenderer
   content: "Status update",
   display: true,               // Show in TUI
@@ -2817,11 +2817,11 @@ pi.sendMessage({
 For TUI-only content that should not be sent to the LLM, render custom entries instead:
 
 ```typescript
-pi.registerEntryRenderer("my-card", (entry, options, theme) => {
+nova.registerEntryRenderer("my-card", (entry, options, theme) => {
   return new Text(theme.fg("accent", JSON.stringify(entry.data)));
 });
 
-pi.appendEntry("my-card", { status: "done" });
+nova.appendEntry("my-card", { status: "done" });
 ```
 
 ### Theme Colors
@@ -2951,7 +2951,7 @@ All examples in [examples/extensions/](../examples/extensions/).
 | **Messages & Communication** |||
 | `message-renderer.ts` | Custom message rendering | `registerMessageRenderer`, `sendMessage` |
 | `entry-renderer.ts` | TUI-only custom entry rendering | `registerEntryRenderer`, `appendEntry` |
-| `event-bus.ts` | Inter-extension events | `pi.events` |
+| `event-bus.ts` | Inter-extension events | `nova.events` |
 | **Session Metadata** |||
 | `session-name.ts` | Name sessions for selector | `setSessionName`, `getSessionName` |
 | `bookmark.ts` | Bookmark entries for /tree | `setLabel` |

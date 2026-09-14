@@ -9,7 +9,8 @@
 
 set -e
 
-AGENT_DIR="${PI_AGENT_DIR:-$HOME/.nova/agent}"
+# Primary name is NOVA_AGENT_DIR; the pre-rebrand PI_AGENT_DIR is still accepted.
+AGENT_DIR="${NOVA_AGENT_DIR:-${PI_AGENT_DIR:-$HOME/.nova/agent}}"
 DRY_RUN=false
 
 if [[ "$1" == "--dry-run" ]]; then

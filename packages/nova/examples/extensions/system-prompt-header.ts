@@ -5,13 +5,13 @@
  */
 import type { ExtensionAPI } from "@dongzijie1/nova";
 
-export default function (pi: ExtensionAPI) {
-	pi.on("agent_start", (_event, ctx) => {
+export default function (nova: ExtensionAPI) {
+	nova.on("agent_start", (_event, ctx) => {
 		const prompt = ctx.getSystemPrompt();
 		ctx.ui.setStatus("system-prompt", `System: ${prompt.length} chars`);
 	});
 
-	pi.on("session_shutdown", (_event, ctx) => {
+	nova.on("session_shutdown", (_event, ctx) => {
 		ctx.ui.setStatus("system-prompt", undefined);
 	});
 }

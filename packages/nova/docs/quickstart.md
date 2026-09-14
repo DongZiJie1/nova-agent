@@ -1,20 +1,20 @@
 # Quickstart
 
-This page gets you from install to a useful first pi session.
+This page gets you from install to a useful first nova session.
 
 ## Install
 
-Pi is distributed as an npm package:
+Nova is distributed as an npm package:
 
 ```bash
 npm install -g --ignore-scripts @dongzijie1/nova
 ```
 
-`--ignore-scripts` disables dependency lifecycle scripts during install. Pi does not require install scripts for normal npm installs.
+`--ignore-scripts` disables dependency lifecycle scripts during install. Nova does not require install scripts for normal npm installs.
 
 ### Uninstall
 
-Use the package manager that installed pi. The curl installer uses npm globally, so curl and npm installs are removed with npm:
+Use the package manager that installed nova. The curl installer uses npm globally, so curl and npm installs are removed with npm:
 
 ```bash
 # curl installer or npm install -g
@@ -30,9 +30,9 @@ yarn global remove @dongzijie1/nova
 bun uninstall -g @dongzijie1/nova
 ```
 
-Uninstalling pi leaves settings, credentials, sessions, and installed pi packages in `~/.nova/agent/`.
+Uninstalling nova leaves settings, credentials, sessions, and installed nova packages in `~/.nova/agent/`.
 
-Then start pi in the project directory you want it to work on:
+Then start nova in the project directory you want it to work on:
 
 ```bash
 cd /path/to/project
@@ -83,7 +83,7 @@ By default, nova gives the model four tools:
 
 Additional built-in read-only tools (`grep`, `find`, `ls`) are available through tool options. Nova runs in your current working directory and can modify files there. Use git or another checkpointing workflow if you want easy rollback.
 
-## Give pi project instructions
+## Give nova project instructions
 
 Nova loads context files at startup. Add an `AGENTS.md` file to tell it how to work in a project:
 
@@ -140,7 +140,7 @@ nova --name "my task"    # Set session display name at startup
 nova --session <path|id> # Open a specific session
 ```
 
-Inside pi, use `/resume`, `/new`, `/tree`, `/fork`, and `/clone` to manage sessions.
+Inside nova, use `/resume`, `/new`, `/tree`, `/fork`, and `/clone` to manage sessions.
 
 ### Non-interactive mode
 
@@ -156,10 +156,10 @@ Use `--mode json` for JSON event output or `--mode rpc` for process integration.
 
 ## Next steps
 
-- [Using Pi](usage.md) - interactive mode, slash commands, sessions, context files, and CLI reference.
+- [Using Nova](usage.md) - interactive mode, slash commands, sessions, context files, and CLI reference.
 - [Providers](providers.md) - authentication and model setup.
 - [Settings](settings.md) - global and project configuration.
 - [Keybindings](keybindings.md) - shortcuts and customization.
-- [Pi Packages](packages.md) - install shared extensions, skills, prompts, and themes.
+- [Nova Packages](packages.md) - install shared extensions, skills, prompts, and themes.
 
 Platform notes: [Windows](windows.md), [Termux](termux.md), [tmux](tmux.md), [Terminal setup](terminal-setup.md), [Shell aliases](shell-aliases.md).

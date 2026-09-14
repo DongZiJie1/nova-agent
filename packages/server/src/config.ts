@@ -2,9 +2,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getNovaEnv } from "./env-compat.ts";
 
 const CONFIG_DIR_NAME = ".nova";
-const ENV_SERVER_DIR = "PI_SERVER_DIR";
+const ENV_SERVER_DIR = "SERVER_DIR";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -43,13 +44,13 @@ try {
 export const VERSION: string = pkg.version || "0.0.0";
 
 export function getServerDir(): string {
-	const envDir = process.env[ENV_SERVER_DIR];
+	const envDir = getNovaEnv(ENV_SERVER_DIR);
 	if (envDir) {
 		return envDir;
 	}
 
-	const piDir = process.env.PI_CONFIG_DIR || join(homedir(), CONFIG_DIR_NAME);
-	return join(piDir, "server");
+	const configDir = getNovaEnv("CONFIG_DIR") || join(homedir(), CONFIG_DIR_NAME);
+	return join(configDir, "server");
 }
 
 export function getAuthPath(): string {

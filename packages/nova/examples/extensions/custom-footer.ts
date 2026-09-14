@@ -12,10 +12,10 @@ import type { ExtensionAPI } from "@dongzijie1/nova";
 import type { AssistantMessage } from "@dongzijie1/pi-ai";
 import { truncateToWidth, visibleWidth } from "@dongzijie1/pi-tui";
 
-export default function (pi: ExtensionAPI) {
+export default function (nova: ExtensionAPI) {
 	let enabled = false;
 
-	pi.registerCommand("footer", {
+	nova.registerCommand("footer", {
 		description: "Toggle custom footer",
 		handler: async (_args, ctx) => {
 			enabled = !enabled;

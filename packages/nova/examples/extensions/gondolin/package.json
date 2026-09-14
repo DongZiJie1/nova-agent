@@ -1,5 +1,5 @@
 {
-	"name": "pi-extension-gondolin",
+	"name": "nova-extension-gondolin",
 	"private": true,
 	"version": "0.82.1",
 	"type": "module",
@@ -8,12 +8,12 @@
 		"build": "echo 'nothing to build'",
 		"check": "echo 'nothing to check'"
 	},
-	"pi": {
+	"nova": {
 		"extensions": [
 			"./index.ts"
 		]
 	},
 	"dependencies": {
-		"@dongzijie1/gondolin": "0.12.0"
+		"@earendil-works/gondolin": "0.12.0"
 	}
 }

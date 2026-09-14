@@ -10,7 +10,7 @@
  */
 
 import { createServer, type Server, type ServerResponse } from "node:http";
-import { getProviderEnvValue } from "../../utils/provider-env.ts";
+import { getNovaEnv } from "../../utils/env-compat.ts";
 import type { AuthInteraction, OAuthAuth, OAuthCredential } from "../types.ts";
 import { oauthErrorHtml, oauthSuccessHtml } from "./oauth-page.ts";
 import { generatePKCE } from "./pkce.ts";
@@ -21,7 +21,7 @@ const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 const TOKEN_EXCHANGE_TIMEOUT_MS = 30_000;
 
 function getCallbackHost(): string {
-	return getProviderEnvValue("PI_OAUTH_CALLBACK_HOST") || "127.0.0.1";
+	return getNovaEnv("OAUTH_CALLBACK_HOST") || "127.0.0.1";
 }
 
 type JsonObject = Record<string, unknown>;

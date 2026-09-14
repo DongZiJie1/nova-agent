@@ -1,18 +1,18 @@
 /**
  * Input Transform Example - demonstrates the `input` event for intercepting user input.
  *
- * Start pi with this extension:
- *   pi -e ./examples/extensions/input-transform.ts
+ * Start nova with this extension:
+ *   nova -e ./examples/extensions/input-transform.ts
  *
- * Then type these inside pi:
+ * Then type these inside nova:
  *   ?quick What is TypeScript?  → "Respond briefly: What is TypeScript?"
  *   ping                        → "pong" (instant, no LLM)
  *   time                        → current time (instant, no LLM)
  */
 import type { ExtensionAPI } from "@dongzijie1/nova";
 
-export default function (pi: ExtensionAPI) {
-	pi.on("input", async (event, ctx) => {
+export default function (nova: ExtensionAPI) {
+	nova.on("input", async (event, ctx) => {
 		// Source-based logic: skip processing for extension-injected messages
 		if (event.source === "extension") {
 			return { action: "continue" };
