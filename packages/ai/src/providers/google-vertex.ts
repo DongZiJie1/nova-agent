@@ -1,7 +1,6 @@
 import { googleVertexApi } from "../api/google-vertex.lazy.ts";
 import type { ApiKeyAuth } from "../auth/types.ts";
 import { createProvider, type Provider } from "../models.ts";
-import { GOOGLE_VERTEX_MODELS } from "./google-vertex.models.ts";
 
 const VERTEX_ADC_PATH = "~/.config/gcloud/application_default_credentials.json";
 
@@ -83,11 +82,11 @@ const vertexAuth: ApiKeyAuth = {
 };
 
 export function googleVertexProvider(): Provider<"google-vertex"> {
-	return createProvider({
+	return createProvider<"google-vertex">({
 		id: "google-vertex",
 		name: "Google Vertex AI",
 		auth: { apiKey: vertexAuth },
-		models: Object.values(GOOGLE_VERTEX_MODELS),
+		models: [],
 		api: googleVertexApi(),
 	});
 }

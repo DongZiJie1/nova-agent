@@ -77,7 +77,6 @@ import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/htt
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
 import { createCompactionSummaryMessage } from "../../core/messages.ts";
 import {
-	defaultModelPerProvider,
 	findExactModelReferenceMatch,
 	resolveModelScope,
 	resolveModelScopeWithDiagnostics,
@@ -246,10 +245,6 @@ export function formatResumeCommand(sessionManager: SessionManager): string | un
 	}
 	args.push("--session", sessionManager.getSessionId());
 	return args.join(" ");
-}
-
-function hasDefaultModelProvider(providerId: string): providerId is keyof typeof defaultModelPerProvider {
-	return providerId in defaultModelPerProvider;
 }
 
 const PERMISSION_MODE_DESCRIPTIONS: Record<ToolPermissionMode, string> = {
@@ -5146,23 +5141,18 @@ export class InteractiveMode {
 		if (isUnknownModel(previousModel)) {
 			const availableModels = await this.session.modelRuntime.getAvailable();
 			const providerModels = availableModels.filter((model) => model.provider === providerId);
-			if (!hasDefaultModelProvider(providerId)) {
-				selectionError = `${actionLabel}, but no default model is configured for provider "${providerId}". Use /model to select a model.`;
-			} else if (providerModels.length === 0) {
-				selectionError = `${actionLabel}, but no models are available for that provider. Use /model to select a model.`;
+			// No model list is bundled, so there is no default id to pick: use the
+			// first model the user configured for this provider.
+			selectedModel = providerModels[0];
+			if (!selectedModel) {
+				selectionError = `${actionLabel}, but no models are configured for that provider. Use /model to add one.`;
 			} else {
-				const defaultModelId = defaultModelPerProvider[providerId];
-				selectedModel = providerModels.find((model) => model.id === defaultModelId);
-				if (!selectedModel) {
-					selectionError = `${actionLabel}, but its default model "${defaultModelId}" is not available. Use /model to select a model.`;
-				} else {
-					try {
-						await this.session.setModel(selectedModel);
-					} catch (error: unknown) {
-						selectedModel = undefined;
-						const errorMessage = error instanceof Error ? error.message : String(error);
-						selectionError = `${actionLabel}, but selecting its default model failed: ${errorMessage}. Use /model to select a model.`;
-					}
+				try {
+					await this.session.setModel(selectedModel);
+				} catch (error: unknown) {
+					selectedModel = undefined;
+					const errorMessage = error instanceof Error ? error.message : String(error);
+					selectionError = `${actionLabel}, but selecting its model failed: ${errorMessage}. Use /model to select a model.`;
 				}
 			}
 		}

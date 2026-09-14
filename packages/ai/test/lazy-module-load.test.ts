@@ -109,7 +109,19 @@ describe("lazy provider module loading", () => {
 	it("loads only the Anthropic SDK when dispatching through streamSimple", () => {
 		const result = runProbe(`
 			const compat = await import(${JSON.stringify(compatEntryUrl)});
-			const model = compat.getModel("anthropic", "claude-sonnet-4-6");
+			// The probe runs in a bare child process, so the model is declared here.
+			const model = {
+				id: "claude-sonnet-4-6",
+				name: "Claude Sonnet 4.6",
+				api: "anthropic-messages",
+				provider: "anthropic",
+				baseUrl: "https://api.anthropic.com",
+				reasoning: true,
+				input: ["text"],
+				cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+				contextWindow: 200000,
+				maxTokens: 32000,
+			};
 			const context = { messages: [{ role: "user", content: "hi" }] };
 			await compat.streamSimple(model, context).result();
 		`);

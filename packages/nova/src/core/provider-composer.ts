@@ -19,7 +19,7 @@ import {
 	type SimpleStreamOptions,
 	type StreamOptions,
 } from "@dongzijie1/pi-ai";
-import { getApiProvider } from "@dongzijie1/pi-ai/compat";
+import { getApiProvider, getApiProviders } from "@dongzijie1/pi-ai/compat";
 import type { ModelConfig, ModelsJsonModel, ModelsJsonModelOverride, ModelsJsonProvider } from "./model-config.ts";
 import {
 	clearConfigValueCache,
@@ -121,30 +121,70 @@ function applyModelOverride(model: Model<Api>, override: ModelsJsonModelOverride
 	};
 }
 
+/** A brand-new model must declare these; a definition that replaces an existing model inherits them. */
+const NEW_MODEL_REQUIRED_FIELDS = ["contextWindow", "maxTokens", "input"] as const;
+
+/** Names of the behavior-changing fields `definition` leaves out. */
+function missingNewModelFields(definition: {
+	contextWindow?: number;
+	maxTokens?: number;
+	input?: ("text" | "image")[];
+}): string[] {
+	return NEW_MODEL_REQUIRED_FIELDS.filter((field) => definition[field] === undefined);
+}
+
+function knownApiNames(): string {
+	return getApiProviders()
+		.map((provider) => provider.api)
+		.sort()
+		.join(", ");
+}
+
 function modelFromJson(
 	providerId: string,
 	definition: ModelsJsonModel,
 	providerConfig: ModelsJsonProvider,
-	defaults: Model<Api> | undefined,
+	providerBaseUrl: string | undefined,
 	replaced: Model<Api> | undefined,
 ): Model<Api> {
-	const api = definition.api ?? providerConfig.api ?? replaced?.api ?? defaults?.api;
-	if (!api) {
-		throw new Error(
-			`Provider ${providerId}, model ${definition.id}: no "api" specified. Set at provider or model level.`,
-		);
-	}
-	const baseUrl = definition.baseUrl ?? providerConfig.baseUrl ?? replaced?.baseUrl ?? defaults?.baseUrl;
-	if (!baseUrl) throw new Error(`Provider ${providerId}: "baseUrl" is required when defining custom models.`);
+	const api = definition.api ?? providerConfig.api ?? replaced?.api;
+	const baseUrl = definition.baseUrl ?? providerConfig.baseUrl ?? replaced?.baseUrl ?? providerBaseUrl;
 	if (definition.contextWindow !== undefined && definition.contextWindow <= 0) {
 		throw new Error(`Provider ${providerId}, model ${definition.id}: invalid contextWindow`);
 	}
 	if (definition.maxTokens !== undefined && definition.maxTokens <= 0) {
 		throw new Error(`Provider ${providerId}, model ${definition.id}: invalid maxTokens`);
 	}
-	// Replacing a model keeps the fields the definition omits, so a models.json
-	// entry that only changes one value does not silently reset the rest to the
-	// generic defaults below.
+	if (!api) {
+		throw new Error(
+			`Provider ${providerId}, model ${definition.id}: no "api" specified. Set it on the model or the provider. Known APIs: ${knownApiNames()}.`,
+		);
+	}
+	if (!baseUrl) {
+		throw new Error(
+			`Provider ${providerId}, model ${definition.id}: no "baseUrl" specified. Set it on the model or the provider.`,
+		);
+	}
+	// A definition that replaces an existing entry keeps every field it omits.
+	// A brand-new model has nothing to inherit from, so each omitted field would
+	// fall back to a generic default that is wrong for most real models: a text-only
+	// `input` silently drops attachments, a 128000 `contextWindow` compacts at the
+	// wrong point, and a 16384 `maxTokens` can exceed the model's real limit. Ask
+	// for them explicitly instead of guessing.
+	if (!replaced) {
+		const missing = missingNewModelFields(definition);
+		if (missing.length > 0) {
+			throw new Error(
+				`Provider ${providerId}, model ${definition.id}: missing ${missing
+					.map((field) => `"${field}"`)
+					.join(", ")}. A new model must declare these; to patch an existing model, use "modelOverrides" instead.`,
+			);
+		}
+	}
+	// Guarded above: a new model must declare these, and a replaced model always has them.
+	const input = (definition.input ?? replaced?.input)!;
+	const contextWindow = (definition.contextWindow ?? replaced?.contextWindow)!;
+	const maxTokens = (definition.maxTokens ?? replaced?.maxTokens)!;
 	return {
 		id: definition.id,
 		name: definition.name ?? replaced?.name ?? definition.id,
@@ -153,10 +193,10 @@ function modelFromJson(
 		baseUrl,
 		reasoning: definition.reasoning ?? replaced?.reasoning ?? false,
 		thinkingLevelMap: definition.thinkingLevelMap ?? replaced?.thinkingLevelMap,
-		input: (definition.input ?? replaced?.input ?? ["text"]) as ("text" | "image")[],
+		input,
 		cost: definition.cost ?? replaced?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: definition.contextWindow ?? replaced?.contextWindow ?? 128000,
-		maxTokens: definition.maxTokens ?? replaced?.maxTokens ?? 16384,
+		contextWindow,
+		maxTokens,
 		headers: undefined,
 		compat: mergeCompat(mergeCompat(replaced?.compat, providerConfig.compat), definition.compat),
 	};
@@ -166,6 +206,7 @@ function applyModelsJson(
 	providerId: string,
 	baseModels: readonly Model<Api>[],
 	config: ModelsJsonProvider | undefined,
+	providerBaseUrl: string | undefined,
 ): Model<Api>[] {
 	if (!config) return [...baseModels];
 	if (config.oauth && !config.baseUrl) {
@@ -198,7 +239,7 @@ function applyModelsJson(
 			providerId,
 			definition,
 			config,
-			models[0],
+			providerBaseUrl,
 			existingIndex >= 0 ? models[existingIndex] : undefined,
 		);
 		if (existingIndex >= 0) models[existingIndex] = model;
@@ -217,15 +258,30 @@ function applyExtension(
 		return config.baseUrl ? models.map((model) => ({ ...model, baseUrl: config.baseUrl! })) : [...models];
 	}
 	return config.models.map((definition) => {
-		const defaults = models.find((model) => model.id === definition.id) ?? models[0];
-		const api = definition.api ?? config.api ?? defaults?.api;
+		// Only a same-id entry is a valid base. Falling back to `models[0]` made the
+		// result depend on array order, so reordering a provider silently changed
+		// which api and baseUrl its models used.
+		const sameId = models.find((model) => model.id === definition.id);
+		const api = definition.api ?? config.api ?? sameId?.api;
 		if (!api) {
 			throw new Error(
-				`Provider ${providerId}, model ${definition.id}: no "api" specified. Set at provider or model level.`,
+				`Provider ${providerId}, model ${definition.id}: no "api" specified. Set it on the model or the provider. Known APIs: ${knownApiNames()}.`,
 			);
 		}
-		const baseUrl = definition.baseUrl ?? config.baseUrl ?? defaults?.baseUrl;
-		if (!baseUrl) throw new Error(`Provider ${providerId}: "baseUrl" is required when defining custom models.`);
+		const baseUrl = definition.baseUrl ?? config.baseUrl ?? sameId?.baseUrl;
+		if (!baseUrl) {
+			throw new Error(
+				`Provider ${providerId}, model ${definition.id}: no "baseUrl" specified. Set it on the model or the provider.`,
+			);
+		}
+		const missing = missingNewModelFields(definition);
+		if (missing.length > 0) {
+			throw new Error(
+				`Provider ${providerId}, model ${definition.id}: missing ${missing
+					.map((field) => `"${field}"`)
+					.join(", ")}. Registered models must declare them explicitly.`,
+			);
+		}
 		return {
 			...definition,
 			api,
@@ -414,7 +470,11 @@ export function validateExtensionProvider(
 	if (extension.streamSimple && !extension.api) {
 		throw new Error(`Provider ${providerId}: "api" is required when registering streamSimple.`);
 	}
-	applyExtension(providerId, applyModelsJson(providerId, base?.getModels() ?? [], modelsConfig), extension);
+	applyExtension(
+		providerId,
+		applyModelsJson(providerId, base?.getModels() ?? [], modelsConfig, base?.baseUrl),
+		extension,
+	);
 }
 
 /** Compose built-in, models.json, and extension layers without reading credentials. */
@@ -434,7 +494,7 @@ export function composeModelProvider(
 	const getModels = () => {
 		let models = applyExtension(
 			providerId,
-			applyModelsJson(providerId, base?.getModels() ?? [], config),
+			applyModelsJson(providerId, base?.getModels() ?? [], config, base?.baseUrl),
 			currentExtension(),
 		);
 		if (extensionOAuthCredential && extension?.oauth?.modifyModels) {
@@ -489,10 +549,14 @@ export function composeModelProvider(
 							const refreshed = await extension.refreshModels(context);
 							if (!context.signal?.aborted) {
 								// Validate before publishing the new synchronous list.
-								applyExtension(providerId, applyModelsJson(providerId, base?.getModels() ?? [], config), {
-									...extension,
-									models: refreshed,
-								});
+								applyExtension(
+									providerId,
+									applyModelsJson(providerId, base?.getModels() ?? [], config, base?.baseUrl),
+									{
+										...extension,
+										models: refreshed,
+									},
+								);
 								refreshedExtensionModels = refreshed;
 							}
 						}

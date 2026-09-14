@@ -4,7 +4,6 @@ import { loadAnthropicOAuth } from "../auth/oauth/load.ts";
 import type { ApiKeyAuth } from "../auth/types.ts";
 import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_OAUTH_TOKEN_ENV } from "../env-api-keys.ts";
 import { createProvider, type Provider } from "../models.ts";
-import { ANTHROPIC_MODELS } from "./anthropic.models.ts";
 
 function anthropicApiKeyAuth(): ApiKeyAuth {
 	return {
@@ -36,7 +35,7 @@ function anthropicApiKeyAuth(): ApiKeyAuth {
 }
 
 export function anthropicProvider(): Provider<"anthropic-messages"> {
-	return createProvider({
+	return createProvider<"anthropic-messages">({
 		id: "anthropic",
 		name: "Anthropic",
 		baseUrl: "https://api.anthropic.com",
@@ -44,7 +43,7 @@ export function anthropicProvider(): Provider<"anthropic-messages"> {
 			apiKey: anthropicApiKeyAuth(),
 			oauth: lazyOAuth({ name: "Anthropic (Claude Pro/Max)", load: loadAnthropicOAuth }),
 		},
-		models: Object.values(ANTHROPIC_MODELS),
+		models: [],
 		api: anthropicMessagesApi(),
 	});
 }

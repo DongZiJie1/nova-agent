@@ -45,7 +45,7 @@ vi.mock("@aws-sdk/client-bedrock-runtime", () => {
 });
 
 import type { BedrockOptions } from "../src/api/bedrock-converse-stream.ts";
-import { getModel, stream as streamBedrock } from "../src/compat.ts";
+import { stream as streamBedrock } from "../src/compat.ts";
 import type { Context, Model } from "../src/types.ts";
 
 const context: Context = {
@@ -93,16 +93,32 @@ async function captureClientConfig(
 	return bedrockMock.constructorCalls[0];
 }
 
+function makeBedrockModel(
+	id = "us.anthropic.claude-opus-4-8",
+	overrides: Partial<Model<"bedrock-converse-stream">> = {},
+): Model<"bedrock-converse-stream"> {
+	// Bedrock regional endpoints are per-model configuration, so tests declare
+	// the endpoint a user would have configured for that profile.
+	const region = id.startsWith("eu.") ? "eu-central-1" : id.startsWith("us-gov.") ? "us-gov-west-1" : "us-east-1";
+	return {
+		id,
+		name: id,
+		api: "bedrock-converse-stream",
+		provider: "amazon-bedrock",
+		baseUrl: `https://bedrock-runtime.${region}.amazonaws.com`,
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+		contextWindow: 200000,
+		maxTokens: 32000,
+		...overrides,
+	};
+}
+
 describe("bedrock endpoint resolution", () => {
-	it("assigns eu-central-1 runtime URLs to built-in EU inference profiles", () => {
-		const model = getModel("amazon-bedrock", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0");
-
-		expect(model.baseUrl).toBe("https://bedrock-runtime.eu-central-1.amazonaws.com");
-	});
-
 	it("does not pin standard AWS endpoints when AWS_REGION is configured", async () => {
 		process.env.AWS_REGION = "us-east-2";
-		const model = getModel("amazon-bedrock", "us.anthropic.claude-opus-4-8");
+		const model = makeBedrockModel("us.anthropic.claude-opus-4-8");
 
 		const config = await captureClientConfig(model);
 
@@ -111,7 +127,7 @@ describe("bedrock endpoint resolution", () => {
 	});
 
 	it("derives region from a built-in EU endpoint when no region or profile is configured", async () => {
-		const model = getModel("amazon-bedrock", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0");
+		const model = makeBedrockModel("eu.anthropic.claude-sonnet-4-5-20250929-v1:0");
 
 		const config = await captureClientConfig(model);
 
@@ -120,7 +136,7 @@ describe("bedrock endpoint resolution", () => {
 	});
 
 	it("handles missing regions for explicit, scoped, and ambient profiles", async () => {
-		const model = getModel("amazon-bedrock", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0");
+		const model = makeBedrockModel("eu.anthropic.claude-sonnet-4-5-20250929-v1:0");
 
 		let config = await captureClientConfig(model, { profile: "bedrock-profile" });
 
@@ -144,11 +160,8 @@ describe("bedrock endpoint resolution", () => {
 
 	it("still passes custom Bedrock endpoints through to the SDK client", async () => {
 		process.env.AWS_REGION = "us-west-2";
-		const baseModel = getModel("amazon-bedrock", "us.anthropic.claude-opus-4-8");
-		const model: Model<"bedrock-converse-stream"> = {
-			...baseModel,
-			baseUrl: "https://bedrock-vpc.example.com",
-		};
+		const baseModel = makeBedrockModel("us.anthropic.claude-opus-4-8");
+		const model = makeBedrockModel(baseModel.id, { baseUrl: "https://bedrock-vpc.example.com" });
 
 		const config = await captureClientConfig(model);
 
@@ -158,7 +171,7 @@ describe("bedrock endpoint resolution", () => {
 
 	it("extracts region from inference profile ARN regardless of AWS_REGION", async () => {
 		process.env.AWS_REGION = "us-east-1";
-		const baseModel = getModel("amazon-bedrock", "us.anthropic.claude-opus-4-8");
+		const baseModel = makeBedrockModel("us.anthropic.claude-opus-4-8");
 		const model: Model<"bedrock-converse-stream"> = {
 			...baseModel,
 			id: "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/abc123",
@@ -171,7 +184,7 @@ describe("bedrock endpoint resolution", () => {
 
 	it("extracts region from GovCloud inference profile ARN", async () => {
 		process.env.AWS_REGION = "us-east-1";
-		const baseModel = getModel("amazon-bedrock", "us.anthropic.claude-opus-4-8");
+		const baseModel = makeBedrockModel("us.anthropic.claude-opus-4-8");
 		const model: Model<"bedrock-converse-stream"> = {
 			...baseModel,
 			id: "arn:aws-us-gov:bedrock:us-gov-west-1:123456789012:application-inference-profile/abc123",
@@ -184,7 +197,7 @@ describe("bedrock endpoint resolution", () => {
 
 	it("preserves ambient AWS auth for custom model IDs through compat dispatch", async () => {
 		process.env.AWS_PROFILE = "bedrock-profile";
-		const baseModel = getModel("amazon-bedrock", "us.anthropic.claude-opus-4-8");
+		const baseModel = makeBedrockModel("us.anthropic.claude-opus-4-8");
 		const model: Model<"bedrock-converse-stream"> = {
 			...baseModel,
 			id: "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/example",
@@ -198,7 +211,7 @@ describe("bedrock endpoint resolution", () => {
 	});
 
 	it("uses the generic API key option as a Bedrock bearer token", async () => {
-		const model = getModel("amazon-bedrock", "us.anthropic.claude-opus-4-8");
+		const model = makeBedrockModel("us.anthropic.claude-opus-4-8");
 
 		const config = await captureClientConfig(model, { apiKey: "bedrock-api-key" });
 

@@ -21,11 +21,11 @@ export * from "./api/openai-completions.lazy.ts";
 export * from "./api/openai-responses.lazy.ts";
 export * from "./api/pi-messages.lazy.ts";
 export * from "./env-api-keys.ts";
-export * from "./image-models.ts";
 export * from "./images.ts";
 export * from "./images-api-registry.ts";
 export * from "./index.ts";
 export * from "./legacy-api-aliases.ts";
+export * from "./model-fixtures.ts";
 export * from "./providers/images/register-builtins.ts";
 
 import { anthropicMessagesApi } from "./api/anthropic-messages.lazy.ts";
@@ -39,8 +39,13 @@ import { openAICompletionsApi } from "./api/openai-completions.lazy.ts";
 import { openAIResponsesApi } from "./api/openai-responses.lazy.ts";
 import { piMessagesApi } from "./api/pi-messages.lazy.ts";
 import { getEnvApiKey } from "./env-api-keys.ts";
+import {
+	getFixtureModel,
+	getFixtureModels,
+	getFixtureModelsCollection,
+	getFixtureProviderIds,
+} from "./model-fixtures.ts";
 import type { ModelsApiStreamOptions } from "./models.ts";
-import { builtinModels, getBuiltinModel, getBuiltinModels, getBuiltinProviders } from "./providers/all.ts";
 
 export type { BuiltinProvider } from "./providers/all.ts";
 
@@ -59,14 +64,18 @@ import type {
 	StreamOptions,
 } from "./types.ts";
 
-/** @deprecated Static catalog read. Use `getBuiltinModel` from "@dongzijie1/pi-ai/providers/all" or `Models.getModel()`. */
-export const getModel = getBuiltinModel;
+/**
+ * @deprecated Catalog read. No models are bundled — these read the test fixture
+ * registry ({@link registerFixtureProvider}). Production code should resolve
+ * models through `Models.getModel()` / `ModelRuntime` from user configuration.
+ */
+export const getModel = getFixtureModel;
 
-/** @deprecated Static catalog read. Use `getBuiltinModels` from "@dongzijie1/pi-ai/providers/all" or `Models.getModels()`. */
-export const getModels = getBuiltinModels;
+/** @deprecated See {@link getModel}. */
+export const getModels = getFixtureModels;
 
-/** @deprecated Static catalog read. Use `getBuiltinProviders` from "@dongzijie1/pi-ai/providers/all" or `Models.getProviders()`. */
-export const getProviders = getBuiltinProviders;
+/** @deprecated See {@link getModel}. */
+export const getProviders = getFixtureProviderIds;
 
 export type ApiStreamFunction = (
 	model: Model<Api>,
@@ -212,7 +221,7 @@ export function resetApiProviders(): void {
 
 registerBuiltInApiProviders();
 
-const compatModels = builtinModels();
+const compatModels = getFixtureModelsCollection();
 const AMBIENT_AUTH_MARKER = "<authenticated>";
 
 function hasExplicitApiKey(apiKey: string | undefined): apiKey is string {

@@ -4,10 +4,9 @@ import { openAIResponsesApi } from "../api/openai-responses.lazy.ts";
 import { envApiKeyAuth, lazyOAuth } from "../auth/helpers.ts";
 import { loadGitHubCopilotOAuth } from "../auth/oauth/load.ts";
 import { createProvider, type Provider } from "../models.ts";
-import { GITHUB_COPILOT_MODELS } from "./github-copilot.models.ts";
 
 export function githubCopilotProvider(): Provider<"anthropic-messages" | "openai-completions" | "openai-responses"> {
-	return createProvider({
+	return createProvider<"anthropic-messages" | "openai-completions" | "openai-responses">({
 		id: "github-copilot",
 		name: "GitHub Copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
@@ -15,7 +14,7 @@ export function githubCopilotProvider(): Provider<"anthropic-messages" | "openai
 			apiKey: envApiKeyAuth("GitHub Copilot token", ["COPILOT_GITHUB_TOKEN"]),
 			oauth: lazyOAuth({ name: "GitHub Copilot", load: loadGitHubCopilotOAuth }),
 		},
-		models: Object.values(GITHUB_COPILOT_MODELS),
+		models: [],
 		filterModels: (models, credential) => {
 			if (credential?.type !== "oauth") return models;
 			const availableModelIds = credential.availableModelIds;

@@ -17,7 +17,8 @@ interface MistralToolPayload {
 describe("Mistral tool schema serialization", () => {
 	it("strips TypeBox symbol keys before the SDK validates tool schemas", async () => {
 		const model: Model<"mistral-conversations"> = {
-			...getModel("mistral", "devstral-medium-latest"),
+			// Fixture models are registered dynamically, so pin the api the raw Mistral api expects.
+			...(getModel("mistral", "devstral-medium-latest") as Model<"mistral-conversations">),
 			baseUrl: "http://127.0.0.1:9",
 		};
 		const parameters = Type.Object({

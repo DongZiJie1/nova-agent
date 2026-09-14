@@ -178,7 +178,8 @@ describe("provider error body passthrough (per-tier regression)", () => {
 			$response: { statusCode: 403, body: '{"message":"blocked by gateway WAF"}' },
 		});
 
-		const model = getModel("amazon-bedrock", "us.anthropic.claude-opus-4-8");
+		// Fixture models are registered dynamically, so pin the api the raw Bedrock api expects.
+		const model = getModel("amazon-bedrock", "us.anthropic.claude-opus-4-8") as Model<"bedrock-converse-stream">;
 		const output = await drainResult(streamSimpleBedrock(model, { messages: context.messages }, {}));
 
 		expect(output.stopReason).toBe("error");
@@ -202,7 +203,7 @@ describe("provider error body passthrough (per-tier regression)", () => {
 			},
 		);
 
-		const model = getModel("amazon-bedrock", "global.anthropic.claude-opus-5");
+		const model = getModel("amazon-bedrock", "global.anthropic.claude-opus-5") as Model<"bedrock-converse-stream">;
 		const output = await drainResult(streamSimpleBedrock(model, { messages: context.messages }, {}));
 
 		expect(output.stopReason).toBe("error");

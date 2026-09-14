@@ -3,54 +3,12 @@
  */
 
 import type { ThinkingLevel } from "@dongzijie1/pi-agent-core";
-import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@dongzijie1/pi-ai";
+import { type Api, type Model, modelsAreEqual } from "@dongzijie1/pi-ai";
 import chalk from "chalk";
 import { minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
-
-/** Default model IDs for each known provider */
-export const defaultModelPerProvider: Record<KnownProvider, string> = {
-	"amazon-bedrock": "us.anthropic.claude-opus-4-6-v1",
-	"ant-ling": "Ring-2.6-1T",
-	anthropic: "claude-opus-4-8",
-	openai: "gpt-5.5",
-	"azure-openai-responses": "gpt-5.4",
-	"openai-codex": "gpt-5.5",
-	radius: "auto",
-	nvidia: "nvidia/nemotron-3-super-120b-a12b",
-	deepseek: "deepseek-v4-pro",
-	google: "gemini-3.1-pro-preview",
-	"google-vertex": "gemini-3.1-pro-preview",
-	"github-copilot": "gpt-5.4",
-	openrouter: "moonshotai/kimi-k2.6",
-	"vercel-ai-gateway": "zai/glm-5.1",
-	xai: "grok-4.5",
-	groq: "openai/gpt-oss-120b",
-	cerebras: "zai-glm-4.7",
-	zai: "glm-5.1",
-	"zai-coding-cn": "glm-5.1",
-	mistral: "devstral-medium-latest",
-	minimax: "MiniMax-M2.7",
-	"minimax-cn": "MiniMax-M2.7",
-	moonshotai: "kimi-k2.6",
-	"moonshotai-cn": "kimi-k2.6",
-	huggingface: "moonshotai/Kimi-K2.6",
-	fireworks: "accounts/fireworks/models/kimi-k2p6",
-	together: "moonshotai/Kimi-K2.6",
-	opencode: "kimi-k2.6",
-	"opencode-go": "kimi-k2.6",
-	"kimi-coding": "kimi-for-coding",
-	"cloudflare-workers-ai": "@cf/moonshotai/kimi-k2.6",
-	"cloudflare-ai-gateway": "workers-ai/@cf/moonshotai/kimi-k2.6",
-	"qwen-token-plan": "qwen3.7-max",
-	"qwen-token-plan-cn": "qwen3.7-max",
-	xiaomi: "mimo-v2.5-pro",
-	"xiaomi-token-plan-cn": "mimo-v2.5-pro",
-	"xiaomi-token-plan-ams": "mimo-v2.5-pro",
-	"xiaomi-token-plan-sgp": "mimo-v2.5-pro",
-};
 
 export interface ScopedModel {
 	model: Model<Api>;
@@ -164,13 +122,11 @@ export interface ParsedModelResult {
 }
 
 function buildFallbackModel(provider: string, modelId: string, availableModels: Model<Api>[]): Model<Api> | undefined {
+	// No models are bundled: borrow the shape of another model the user already
+	// configured for this provider so an unlisted id stays usable.
 	const providerModels = availableModels.filter((m) => m.provider === provider);
-	if (providerModels.length === 0) return undefined;
-
-	const defaultId = defaultModelPerProvider[provider as KnownProvider];
-	const baseModel = defaultId
-		? (providerModels.find((m) => m.id === defaultId) ?? providerModels[0])
-		: providerModels[0];
+	const baseModel = providerModels[0];
+	if (!baseModel) return undefined;
 
 	return {
 		...baseModel,
@@ -634,16 +590,8 @@ export async function findInitialModel(options: {
 	const availableModels = [...(await modelRuntime.getAvailable())];
 
 	if (availableModels.length > 0) {
-		// Try to find a default model from known providers
-		for (const provider of Object.keys(defaultModelPerProvider) as KnownProvider[]) {
-			const defaultId = defaultModelPerProvider[provider];
-			const match = availableModels.find((m) => m.provider === provider && m.id === defaultId);
-			if (match) {
-				return { model: match, thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };
-			}
-		}
-
-		// If no default found, use first available
+		// No model is bundled, so there is no default id to prefer: the first
+		// model the user configured with auth wins.
 		return { model: availableModels[0], thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };
 	}
 
@@ -695,21 +643,8 @@ export async function restoreModelFromSession(
 	const availableModels = [...(await modelRuntime.getAvailable())];
 
 	if (availableModels.length > 0) {
-		// Try to find a default model from known providers
-		let fallbackModel: Model<Api> | undefined;
-		for (const provider of Object.keys(defaultModelPerProvider) as KnownProvider[]) {
-			const defaultId = defaultModelPerProvider[provider];
-			const match = availableModels.find((m) => m.provider === provider && m.id === defaultId);
-			if (match) {
-				fallbackModel = match;
-				break;
-			}
-		}
-
-		// If no default found, use first available
-		if (!fallbackModel) {
-			fallbackModel = availableModels[0];
-		}
+		// No model is bundled, so there is no default id to prefer.
+		const fallbackModel = availableModels[0];
 
 		if (shouldPrintMessages) {
 			console.log(chalk.dim(`Falling back to: ${fallbackModel.provider}/${fallbackModel.id}`));

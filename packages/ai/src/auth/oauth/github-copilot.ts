@@ -2,7 +2,6 @@
  * GitHub Copilot OAuth flow
  */
 
-import { GITHUB_COPILOT_MODELS } from "../../providers/github-copilot.models.ts";
 import type { AuthInteraction, OAuthAuth, OAuthCredential } from "../types.ts";
 import { pollOAuthDeviceCodeFlow } from "./device-code.ts";
 
@@ -314,14 +313,17 @@ async function enableGitHubCopilotModel(token: string, modelId: string, enterpri
 }
 
 /**
- * Enable all known GitHub Copilot models that may require policy acceptance.
- * Called after successful login to ensure all models are available.
+ * Enable the account's available GitHub Copilot models that may require policy
+ * acceptance. Called after successful login to ensure they can be used.
  */
-async function enableAllGitHubCopilotModels(token: string, enterpriseDomain?: string): Promise<void> {
-	const models = Object.values(GITHUB_COPILOT_MODELS);
+async function enableAllGitHubCopilotModels(
+	token: string,
+	modelIds: readonly string[],
+	enterpriseDomain?: string,
+): Promise<void> {
 	await Promise.all(
-		models.map(async (model) => {
-			await enableGitHubCopilotModel(token, model.id, enterpriseDomain);
+		modelIds.map(async (modelId) => {
+			await enableGitHubCopilotModel(token, modelId, enterpriseDomain);
 		}),
 	);
 }
@@ -351,11 +353,12 @@ async function loginGitHubCopilot(interaction: AuthInteraction): Promise<OAuthCr
 	const githubAccessToken = await pollForGitHubAccessToken(domain, device, interaction.signal);
 	const credentials = await refreshGitHubCopilotAccessToken(githubAccessToken, enterpriseDomain ?? undefined);
 	interaction.notify({ type: "progress", message: "Enabling models..." });
-	await enableAllGitHubCopilotModels(credentials.access, enterpriseDomain ?? undefined);
-	return {
-		...credentials,
-		availableModelIds: await fetchAvailableGitHubCopilotModelIds(credentials.access, enterpriseDomain ?? undefined),
-	};
+	const availableModelIds = await fetchAvailableGitHubCopilotModelIds(
+		credentials.access,
+		enterpriseDomain ?? undefined,
+	);
+	await enableAllGitHubCopilotModels(credentials.access, availableModelIds, enterpriseDomain ?? undefined);
+	return { ...credentials, availableModelIds };
 }
 
 function copilotEnterpriseDomain(credential: OAuthCredential): string | undefined {

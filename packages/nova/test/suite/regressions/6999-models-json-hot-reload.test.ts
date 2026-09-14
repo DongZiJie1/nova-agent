@@ -21,7 +21,7 @@ function modelsJson(provider: string, model: string): Record<string, unknown> {
 				baseUrl: "https://example.test/v1",
 				api: "openai-completions",
 				apiKey: "test-key",
-				models: [{ id: model }],
+				models: [{ id: model, contextWindow: 128000, maxTokens: 8192, input: ["text"] }],
 			},
 		},
 	};

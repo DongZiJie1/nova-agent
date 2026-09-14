@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { streamSimple as streamSimpleOpenAICodexResponses } from "../src/api/openai-codex-responses.ts";
-import { clampThinkingLevel, getModel, getSupportedThinkingLevels } from "../src/compat.ts";
+import { clampThinkingLevel, getSupportedThinkingLevels } from "../src/compat.ts";
 import type { Context, Model } from "../src/types.ts";
 
 function mockToken(): string {
@@ -9,6 +9,24 @@ function mockToken(): string {
 		"utf8",
 	).toString("base64");
 	return `aaa.${payload}.bbb`;
+}
+
+function makeCodexModel(id: string): Model<"openai-codex-responses"> {
+	// Codex Responses models that expose xhigh/max declare it through
+	// thinkingLevelMap, which the user configures per model.
+	return {
+		id,
+		name: id,
+		api: "openai-codex-responses",
+		provider: "openai-codex",
+		baseUrl: "https://chatgpt.com/backend-api/codex",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
+		contextWindow: 400000,
+		maxTokens: 128000,
+		thinkingLevelMap: { xhigh: "xhigh", max: "max" },
+	};
 }
 
 describe("max thinking level", () => {
@@ -33,9 +51,8 @@ describe("max thinking level", () => {
 	it.each(["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"] as const)(
 		"exposes xhigh and max for openai-codex/%s",
 		(modelId) => {
-			const model = getModel("openai-codex", modelId);
-			expect(model).toBeDefined();
-			expect(model?.thinkingLevelMap).toMatchObject({ xhigh: "xhigh", max: "max" });
+			const model = makeCodexModel(modelId);
+			expect(model.thinkingLevelMap).toMatchObject({ xhigh: "xhigh", max: "max" });
 			expect(getSupportedThinkingLevels(model!)).toEqual([
 				"off",
 				"minimal",
@@ -68,7 +85,7 @@ describe("max thinking level", () => {
 	});
 
 	it("sends max to the Codex Responses API", async () => {
-		const model = getModel("openai-codex", "gpt-5.6-sol")!;
+		const model = makeCodexModel("gpt-5.6-sol");
 		const context: Context = {
 			systemPrompt: "You are a helpful assistant.",
 			messages: [{ role: "user", content: "Hello", timestamp: Date.now() }],

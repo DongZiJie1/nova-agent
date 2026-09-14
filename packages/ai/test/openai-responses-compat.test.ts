@@ -11,6 +11,11 @@ interface CapturedResponsesPayload {
 	session_id?: string;
 }
 
+/** Fixture models are registered dynamically, so pin the api the raw Responses api expects. */
+function openaiResponsesFixture(provider: string, id: string): Model<"openai-responses"> {
+	return getModel(provider, id) as Model<"openai-responses">;
+}
+
 function getHeader(headers: CapturedHeaders, name: string): string | null {
 	if (!headers) return null;
 	if (headers instanceof Headers) return headers.get(name);
@@ -29,7 +34,7 @@ function getHeader(headers: CapturedHeaders, name: string): string | null {
 
 async function captureOpenAIResponseHeaders(
 	options: Parameters<typeof streamOpenAIResponses>[2],
-	model: Model<"openai-responses"> = getModel("openai", "gpt-5.4"),
+	model: Model<"openai-responses"> = openaiResponsesFixture("openai", "gpt-5.4"),
 ): Promise<{
 	sessionId: string | null;
 	clientRequestId: string | null;
@@ -66,13 +71,34 @@ async function captureOpenAIResponseHeaders(
 	return captured;
 }
 
+function makeOpenAIResponsesModel(
+	id: string,
+	overrides: Partial<Model<"openai-responses">> = {},
+): Model<"openai-responses"> {
+	// OpenAI Responses models are user-configured; tests declare the model they
+	// exercise, including reasoning support and provider-specific compat flags.
+	return {
+		id,
+		name: id,
+		api: "openai-responses",
+		provider: "openai",
+		baseUrl: "https://api.openai.com/v1",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
+		contextWindow: 400000,
+		maxTokens: 128000,
+		...overrides,
+	};
+}
+
 describe("openai-responses provider defaults", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 	});
 
 	it("omits reasoning when no reasoning is requested", async () => {
-		const model = getModel("github-copilot", "gpt-5-mini");
+		const model = openaiResponsesFixture("github-copilot", "gpt-5-mini");
 		let capturedPayload: unknown;
 
 		vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -117,7 +143,7 @@ describe("openai-responses provider defaults", () => {
 		);
 
 		const stream = streamOpenAIResponses(
-			getModel("openai", "gpt-5.4"),
+			openaiResponsesFixture("openai", "gpt-5.4"),
 			{
 				messages: [
 					{
@@ -165,7 +191,7 @@ describe("openai-responses provider defaults", () => {
 		"gpt-5.6-terra",
 		"gpt-5.6-luna",
 	] as const)("sends none reasoning effort for OpenAI %s when no reasoning is requested", async (modelId) => {
-		const model = getModel("openai", modelId);
+		const model = makeOpenAIResponsesModel(modelId);
 		let capturedPayload: unknown;
 
 		vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -201,7 +227,8 @@ describe("openai-responses provider defaults", () => {
 	it.each(["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5-pro", "gpt-5.2-pro", "gpt-5.4-pro", "gpt-5.5-pro"] as const)(
 		"omits reasoning effort for OpenAI %s when off is unsupported",
 		async (modelId) => {
-			const model = getModel("openai", modelId);
+			// These models cannot turn reasoning off, so no effort is sent.
+			const model = makeOpenAIResponsesModel(modelId, { thinkingLevelMap: { off: null } });
 			let capturedPayload: unknown;
 
 			vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -253,7 +280,7 @@ describe("openai-responses provider defaults", () => {
 		);
 
 		const stream = streamOpenAIResponses(
-			getModel("openai", "gpt-5.4"),
+			openaiResponsesFixture("openai", "gpt-5.4"),
 			{
 				systemPrompt: "sys",
 				messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
@@ -276,7 +303,7 @@ describe("openai-responses provider defaults", () => {
 
 	it("sets cache-affinity headers for proxy OpenAI Responses requests with a sessionId", async () => {
 		const proxyModel: Model<"openai-responses"> = {
-			...getModel("openai", "gpt-5.4"),
+			...openaiResponsesFixture("openai", "gpt-5.4"),
 			provider: "opencode",
 			baseUrl: "https://proxy.example.com/v1",
 		};
@@ -288,7 +315,7 @@ describe("openai-responses provider defaults", () => {
 
 	it("uses OpenRouter session-affinity header when configured", async () => {
 		const proxyModel: Model<"openai-responses"> = {
-			...getModel("openai", "gpt-5.4"),
+			...openaiResponsesFixture("openai", "gpt-5.4"),
 			provider: "proxy",
 			baseUrl: "https://proxy.example.com/v1",
 			compat: { sessionAffinityFormat: "openrouter" },
@@ -313,7 +340,7 @@ describe("openai-responses provider defaults", () => {
 
 	it("auto-detects OpenRouter session-affinity header for OpenRouter Responses endpoints", async () => {
 		const openRouterModel: Model<"openai-responses"> = {
-			...getModel("openai", "gpt-5.4"),
+			...openaiResponsesFixture("openai", "gpt-5.4"),
 			provider: "openrouter",
 			baseUrl: "https://openrouter.ai/api/v1",
 		};
@@ -337,7 +364,7 @@ describe("openai-responses provider defaults", () => {
 
 	it("uses OpenAI no-session format when configured", async () => {
 		const proxyModel: Model<"openai-responses"> = {
-			...getModel("openai", "gpt-5.4"),
+			...openaiResponsesFixture("openai", "gpt-5.4"),
 			provider: "proxy",
 			baseUrl: "https://proxy.example.com/v1",
 			compat: { sessionAffinityFormat: "openai-nosession" },
@@ -361,7 +388,11 @@ describe("openai-responses provider defaults", () => {
 	});
 
 	it("uses OpenAI no-session format for OpenCode Responses models", async () => {
-		const model = getModel("opencode", "gpt-5.4");
+		const model = makeOpenAIResponsesModel("gpt-5.4", {
+			provider: "opencode",
+			baseUrl: "https://opencode.ai/v1",
+			compat: { sessionAffinityFormat: "openai-nosession" },
+		});
 		let capturedPayload: CapturedResponsesPayload | undefined;
 		const captured = await captureOpenAIResponseHeaders(
 			{
@@ -373,7 +404,6 @@ describe("openai-responses provider defaults", () => {
 			model,
 		);
 
-		expect(model.compat?.sessionAffinityFormat).toBe("openai-nosession");
 		expect(captured.sessionId).toBeNull();
 		expect(captured.clientRequestId).toBe("session-opencode");
 		expect(captured.xSessionId).toBeNull();
@@ -382,7 +412,7 @@ describe("openai-responses provider defaults", () => {
 
 	it("can omit OpenAI session_id header while preserving other affinity data", async () => {
 		const proxyModel: Model<"openai-responses"> = {
-			...getModel("openai", "gpt-5.4"),
+			...openaiResponsesFixture("openai", "gpt-5.4"),
 			provider: "opencode",
 			baseUrl: "https://proxy.example.com/v1",
 			compat: { sessionAffinityFormat: "openai-nosession" },
@@ -428,7 +458,7 @@ describe("openai-responses provider defaults", () => {
 		["gpt-5.5", "priority", 2.5],
 		["gpt-5.5", "flex", 0.5],
 	] as const)("applies %s %s service-tier cost multiplier", async (modelId, serviceTier, multiplier) => {
-		const model = getModel("openai", modelId);
+		const model = makeOpenAIResponsesModel(modelId);
 		const tokenCount = 100_000;
 		const tokenScale = tokenCount / 1_000_000;
 		const sse = `${[

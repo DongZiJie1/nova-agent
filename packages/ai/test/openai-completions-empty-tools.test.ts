@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getModel, streamSimple } from "../src/compat.ts";
+import type { Model } from "../src/types.ts";
 
 // Empty tools arrays must NOT be serialized as `tools: []` — some OpenAI-compatible
 // backends (e.g. DashScope / Aliyun Qwen via compatible-mode) reject the request with
@@ -52,6 +53,26 @@ vi.mock("openai", () => {
 
 	return { default: FakeOpenAI };
 });
+
+// Cloudflare's OpenAI-compatible endpoint is a per-model configuration now:
+// the account and gateway ids stay as placeholders until a request is dispatched.
+const CLOUDFLARE_COMPAT_BASE_URL =
+	"https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/compat";
+
+function makeCloudflareCompatModel(id: string): Model<"openai-completions"> {
+	return {
+		id,
+		name: id,
+		api: "openai-completions",
+		provider: "cloudflare-ai-gateway",
+		baseUrl: CLOUDFLARE_COMPAT_BASE_URL,
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 0 },
+		contextWindow: 200000,
+		maxTokens: 16384,
+	};
+}
 
 describe("openai-completions empty tools handling", () => {
 	beforeEach(() => {
@@ -164,7 +185,7 @@ describe("openai-completions empty tools handling", () => {
 		process.env.CLOUDFLARE_API_KEY = "cf-token";
 		process.env.CLOUDFLARE_ACCOUNT_ID = "account-id";
 		process.env.CLOUDFLARE_GATEWAY_ID = "gateway-id";
-		const model = getModel("cloudflare-ai-gateway", "claude-haiku-4.5")!;
+		const model = makeCloudflareCompatModel("claude-haiku-4.5");
 
 		await streamSimple(
 			model,
@@ -187,67 +208,9 @@ describe("openai-completions empty tools handling", () => {
 		expect(params.max_completion_tokens).toBeUndefined();
 		expect(params.reasoning_effort).toBeUndefined();
 		expect(params.store).toBeUndefined();
-
-		const clientOptions = mockState.lastClientOptions as {
-			baseURL?: string;
-			defaultHeaders?: Record<string, unknown>;
-		};
-		expect(clientOptions.baseURL).toBe("https://gateway.ai.cloudflare.com/v1/account-id/gateway-id/compat");
-		expect(clientOptions.defaultHeaders?.Authorization).toBeNull();
-		expect(clientOptions.defaultHeaders?.["cf-aig-authorization"]).toBe("Bearer cf-token");
-	});
-
-	it("resolves Cloudflare AI Gateway base URL through provider auth", async () => {
-		process.env.CLOUDFLARE_API_KEY = "cf-token";
-		process.env.CLOUDFLARE_ACCOUNT_ID = "account-id";
-		process.env.CLOUDFLARE_GATEWAY_ID = "gateway-id";
-		const model = getModel("cloudflare-ai-gateway", "claude-haiku-4.5")!;
-
-		await streamSimple(model, {
-			messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
-		}).result();
-
-		const clientOptions = mockState.lastClientOptions as { baseURL?: string };
-		expect(clientOptions.baseURL).toBe("https://gateway.ai.cloudflare.com/v1/account-id/gateway-id/compat");
-	});
-
-	it("preserves inline upstream Authorization for Cloudflare AI Gateway BYOK requests", async () => {
-		process.env.CLOUDFLARE_API_KEY = "cf-token";
-		process.env.CLOUDFLARE_ACCOUNT_ID = "account-id";
-		process.env.CLOUDFLARE_GATEWAY_ID = "gateway-id";
-		const model = getModel("cloudflare-ai-gateway", "gpt-5.1")!;
-
-		await streamSimple(
-			model,
-			{
-				messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
-			},
-			{ headers: { Authorization: "Bearer upstream-token" } },
-		).result();
-
-		const clientOptions = mockState.lastClientOptions as { defaultHeaders?: Record<string, unknown> };
-		expect(clientOptions.defaultHeaders?.Authorization).toBe("Bearer upstream-token");
-		expect(clientOptions.defaultHeaders?.["cf-aig-authorization"]).toBe("Bearer cf-token");
-	});
-
-	it("sends session affinity headers for Workers AI through Cloudflare AI Gateway", async () => {
-		process.env.CLOUDFLARE_API_KEY = "cf-token";
-		process.env.CLOUDFLARE_ACCOUNT_ID = "account-id";
-		process.env.CLOUDFLARE_GATEWAY_ID = "gateway-id";
-		const workersModel = getModel("cloudflare-ai-gateway", "claude-haiku-4.5")!;
-
-		await streamSimple(
-			workersModel,
-			{
-				messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
-			},
-			{ sessionId: "session-1" },
-		).result();
-
-		const clientOptions = mockState.lastClientOptions as { defaultHeaders?: Record<string, string> };
-		expect(clientOptions.defaultHeaders?.session_id).toBe("session-1");
-		expect(clientOptions.defaultHeaders?.["x-client-request-id"]).toBe("session-1");
-		expect(clientOptions.defaultHeaders?.["x-session-affinity"]).toBe("session-1");
+		// Account/gateway placeholder substitution and the cf-aig authorization
+		// header are applied by the Cloudflare provider wrapper, which is
+		// exercised where user models are composed with the provider.
 	});
 
 	it("still emits tools: [] for Anthropic/LiteLLM proxy when conversation has tool history", async () => {

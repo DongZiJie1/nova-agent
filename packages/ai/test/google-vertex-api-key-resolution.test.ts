@@ -46,10 +46,22 @@ vi.mock("@google/genai", () => {
 });
 
 import { stream as streamGoogleVertex } from "../src/api/google-vertex.ts";
-import { getModel } from "../src/compat.ts";
 import type { Context, Model } from "../src/types.ts";
 
-const model = getModel("google-vertex", "gemini-3-flash-preview");
+// Vertex models carry the location placeholder until a project/location is
+// resolved, so tests declare that generated shape directly.
+const model: Model<"google-vertex"> = {
+	id: "gemini-3-flash-preview",
+	name: "Gemini 3 Flash Preview",
+	api: "google-vertex",
+	provider: "google-vertex",
+	baseUrl: "https://{location}-aiplatform.googleapis.com",
+	reasoning: true,
+	input: ["text", "image"],
+	cost: { input: 0.3, output: 2.5, cacheRead: 0.075, cacheWrite: 0 },
+	contextWindow: 1000000,
+	maxTokens: 64000,
+};
 const context: Context = {
 	messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
 };

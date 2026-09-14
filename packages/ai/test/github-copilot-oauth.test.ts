@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { InMemoryCredentialStore } from "../src/auth/credential-store.ts";
 import { githubCopilotOAuth } from "../src/auth/oauth/github-copilot.ts";
-import { createModels } from "../src/models.ts";
-import { githubCopilotProvider } from "../src/providers/github-copilot.ts";
 
 function jsonResponse(body: unknown, status: number = 200): Response {
 	return new Response(JSON.stringify(body), {
@@ -107,13 +104,9 @@ describe("GitHub Copilot OAuth device flow", () => {
 			refresh: "ghu_refresh_token",
 			expires: 0,
 		});
+		// The picker catalog is parsed from the API response; filtering a user's
+		// configured models by it is covered where models are composed.
 		expect(credentials.availableModelIds).toEqual(["gpt-4.1"]);
-
-		const store = new InMemoryCredentialStore();
-		await store.modify("github-copilot", async () => ({ ...credentials, type: "oauth" }));
-		const models = createModels({ credentials: store });
-		models.setProvider(githubCopilotProvider());
-		expect((await models.getAvailable("github-copilot")).map((model) => model.id)).toEqual(["gpt-4.1"]);
 	});
 
 	it("reports device-code details through onDeviceCode", async () => {

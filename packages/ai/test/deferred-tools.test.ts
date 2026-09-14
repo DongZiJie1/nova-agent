@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import { convertMessages } from "../src/api/openai-completions.ts";
-import { getModel, streamSimple } from "../src/compat.ts";
+import { streamSimple } from "../src/compat.ts";
 import type { Api, AssistantMessage, Context, Model, Tool, ToolResultMessage, UserMessage } from "../src/types.ts";
 import { estimateContextTokens } from "../src/utils/estimate.ts";
 
@@ -71,6 +71,171 @@ interface KimiPayload {
 }
 
 class PayloadCaptured extends Error {}
+
+/**
+ * Model fixtures. Provider quirks live in per-model `compat`, which a user
+ * configures per model in models.json; values here mirror what the providers
+ * require for deferred tool loading.
+ */
+const FIXTURES: Record<string, Model<Api>> = {
+	"anthropic/claude-opus-4-6": {
+		id: "claude-opus-4-6",
+		name: "Claude Opus 4.6",
+		api: "anthropic-messages",
+		provider: "anthropic",
+		baseUrl: "https://api.anthropic.com",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+		contextWindow: 1000000,
+		maxTokens: 128000,
+		compat: { forceAdaptiveThinking: true, supportsStrictTools: true },
+	},
+	"anthropic/claude-opus-4-8": {
+		id: "claude-opus-4-8",
+		name: "Claude Opus 4.8",
+		api: "anthropic-messages",
+		provider: "anthropic",
+		baseUrl: "https://api.anthropic.com",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+		contextWindow: 1000000,
+		maxTokens: 128000,
+		compat: { forceAdaptiveThinking: true, supportsTemperature: false, supportsStrictTools: true },
+	},
+	"anthropic/claude-haiku-4-5": {
+		id: "claude-haiku-4-5",
+		name: "Claude Haiku 4.5",
+		api: "anthropic-messages",
+		provider: "anthropic",
+		baseUrl: "https://api.anthropic.com",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+		contextWindow: 200000,
+		maxTokens: 64000,
+		compat: { supportsStrictTools: true },
+	},
+	"openai/gpt-5.4": {
+		id: "gpt-5.4",
+		name: "GPT-5.4",
+		api: "openai-responses",
+		provider: "openai",
+		baseUrl: "https://api.openai.com/v1",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0 },
+		contextWindow: 1000000,
+		maxTokens: 128000,
+		compat: { supportsStrictMode: true, supportsOpenAIGrammarTools: true, supportsToolSearch: true },
+	},
+	"openai-codex/gpt-5.4": {
+		id: "gpt-5.4",
+		name: "GPT-5.4",
+		api: "openai-codex-responses",
+		provider: "openai-codex",
+		baseUrl: "https://chatgpt.com/backend-api",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0 },
+		contextWindow: 1000000,
+		maxTokens: 128000,
+		compat: { supportsOpenAIGrammarTools: true, supportsToolSearch: true },
+	},
+	"openai-codex/gpt-5.5": {
+		id: "gpt-5.5",
+		name: "GPT-5.5",
+		api: "openai-codex-responses",
+		provider: "openai-codex",
+		baseUrl: "https://chatgpt.com/backend-api",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 5, output: 30, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 1000000,
+		maxTokens: 128000,
+		compat: { supportsOpenAIGrammarTools: true, supportsToolSearch: true },
+	},
+	"openai-codex/gpt-5.3-codex-spark": {
+		id: "gpt-5.3-codex-spark",
+		name: "GPT-5.3 Codex Spark",
+		api: "openai-codex-responses",
+		provider: "openai-codex",
+		baseUrl: "https://chatgpt.com/backend-api",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 },
+		contextWindow: 400000,
+		maxTokens: 128000,
+		compat: { supportsOpenAIGrammarTools: true },
+	},
+	"openai/gpt-5.2": {
+		id: "gpt-5.2",
+		name: "gpt-5.2",
+		api: "openai-responses",
+		provider: "openai",
+		baseUrl: "https://api.openai.com/v1",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
+		contextWindow: 400000,
+		maxTokens: 128000,
+		compat: { supportsStrictMode: true, supportsOpenAIGrammarTools: true },
+	},
+	"openai/gpt-5.4-nano": {
+		id: "gpt-5.4-nano",
+		name: "gpt-5.4-nano",
+		api: "openai-responses",
+		provider: "openai",
+		baseUrl: "https://api.openai.com/v1",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
+		contextWindow: 400000,
+		maxTokens: 128000,
+		compat: { supportsStrictMode: true, supportsOpenAIGrammarTools: true },
+	},
+	"openai/gpt-5.5-pro": {
+		id: "gpt-5.5-pro",
+		name: "gpt-5.5-pro",
+		api: "openai-responses",
+		provider: "openai",
+		baseUrl: "https://api.openai.com/v1",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
+		contextWindow: 1050000,
+		maxTokens: 128000,
+		compat: { supportsStrictMode: true, supportsOpenAIGrammarTools: true },
+	},
+	"groq/llama-3.3-70b-versatile": {
+		id: "llama-3.3-70b-versatile",
+		name: "Llama 3.3 70B Versatile",
+		api: "openai-completions",
+		provider: "groq",
+		baseUrl: "https://api.groq.com/openai/v1",
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0.59, output: 0.79, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 131072,
+		maxTokens: 32768,
+	},
+};
+
+function fixture(provider: string, id: string): Model<Api> {
+	const model = FIXTURES[`${provider}/${id}`];
+	if (!model) throw new Error(`No fixture for ${provider}/${id}`);
+	return model;
+}
+
+/** Fixtures declare the api per model; pin the literal the raw api functions expect. */
+function anthropicFixture(provider: string, id: string): Model<"anthropic-messages"> {
+	return fixture(provider, id) as Model<"anthropic-messages">;
+}
+
+function openaiResponsesFixture(provider: string, id: string): Model<"openai-responses"> {
+	return fixture(provider, id) as Model<"openai-responses">;
+}
 
 function makeTool(name: string): Tool {
 	return {
@@ -179,7 +344,7 @@ function makeCodexToken(): string {
 describe("deferred tools", () => {
 	it("loads an Anthropic tool at its tool-result marker", async () => {
 		const context = makeContext([makeTool("base_tool"), makeTool("late_tool")]);
-		const payload = await capturePayload<AnthropicPayload>(getModel("anthropic", "claude-opus-4-6"), context);
+		const payload = await capturePayload<AnthropicPayload>(fixture("anthropic", "claude-opus-4-6"), context);
 
 		expect(payload.tools).toMatchObject([{ name: "base_tool" }, { name: "late_tool", defer_loading: true }]);
 		expect(findAnthropicToolResult(payload).content).toEqual([{ type: "tool_reference", tool_name: "late_tool" }]);
@@ -203,7 +368,7 @@ describe("deferred tools", () => {
 			content: [{ type: "text", text: "second result" }],
 		});
 
-		const payload = await capturePayload<AnthropicPayload>(getModel("anthropic", "claude-opus-4-6"), context);
+		const payload = await capturePayload<AnthropicPayload>(fixture("anthropic", "claude-opus-4-6"), context);
 
 		expect(findAnthropicToolResultContent(payload)).toMatchObject([
 			{
@@ -227,7 +392,7 @@ describe("deferred tools", () => {
 		assistant.provider = "openai";
 		assistant.model = "gpt-5.4";
 
-		const payload = await capturePayload<AnthropicPayload>(getModel("anthropic", "claude-opus-4-8"), context);
+		const payload = await capturePayload<AnthropicPayload>(fixture("anthropic", "claude-opus-4-8"), context);
 
 		expect(payload.tools).toMatchObject([{ name: "base_tool" }, { name: "late_tool", defer_loading: true }]);
 		expect(findAnthropicToolResult(payload).content).toEqual([{ type: "tool_reference", tool_name: "late_tool" }]);
@@ -235,7 +400,7 @@ describe("deferred tools", () => {
 
 	it("does not resurrect a marked tool missing from Context.tools", async () => {
 		const context = makeContext([makeTool("base_tool")]);
-		const payload = await capturePayload<AnthropicPayload>(getModel("anthropic", "claude-opus-4-6"), context);
+		const payload = await capturePayload<AnthropicPayload>(fixture("anthropic", "claude-opus-4-6"), context);
 
 		expect(payload.tools?.map((tool) => tool.name)).toEqual(["base_tool"]);
 		const content = findAnthropicToolResult(payload).content;
@@ -246,7 +411,7 @@ describe("deferred tools", () => {
 		const context = makeContext([makeTool("base_tool"), makeTool("late_tool")]);
 		const assistant = context.messages[1] as AssistantMessage;
 		assistant.content = [{ type: "toolCall", id: "call_1", name: "late_tool", arguments: {} }];
-		const payload = await capturePayload<AnthropicPayload>(getModel("anthropic", "claude-opus-4-6"), context);
+		const payload = await capturePayload<AnthropicPayload>(fixture("anthropic", "claude-opus-4-6"), context);
 
 		expect(payload.tools?.map((tool) => tool.name)).toEqual(["base_tool", "late_tool"]);
 		expect(payload.tools?.every((tool) => !tool.defer_loading)).toBe(true);
@@ -257,7 +422,7 @@ describe("deferred tools", () => {
 		const assistant = context.messages[1] as AssistantMessage;
 		assistant.content = [{ type: "toolCall", id: "call_1", name: "Read", arguments: {} }];
 		const payload = await capturePayload<AnthropicPayload>(
-			getModel("anthropic", "claude-opus-4-6"),
+			fixture("anthropic", "claude-opus-4-6"),
 			context,
 			"sk-ant-oat-fake",
 		);
@@ -271,7 +436,7 @@ describe("deferred tools", () => {
 	it("matches OAuth-canonicalized markers to active tools", async () => {
 		const context = makeContext([makeTool("base_tool"), makeTool("read")], ["Read"]);
 		const payload = await capturePayload<AnthropicPayload>(
-			getModel("anthropic", "claude-opus-4-6"),
+			fixture("anthropic", "claude-opus-4-6"),
 			context,
 			"sk-ant-oat-fake",
 		);
@@ -290,7 +455,7 @@ describe("deferred tools", () => {
 			tools: [makeTool("read"), { ...makeTool("Read"), description: "Canonical definition" }],
 		};
 		const payload = await capturePayload<AnthropicPayload>(
-			getModel("anthropic", "claude-opus-4-6"),
+			fixture("anthropic", "claude-opus-4-6"),
 			context,
 			"sk-ant-oat-fake",
 		);
@@ -301,8 +466,8 @@ describe("deferred tools", () => {
 	it("uses the normal tool list when Anthropic tool references are unsupported", async () => {
 		const context = makeContext([makeTool("base_tool"), makeTool("late_tool")]);
 		const models: Model<"anthropic-messages">[] = [
-			getModel("anthropic", "claude-haiku-4-5"),
-			{ ...getModel("anthropic", "claude-opus-4-6"), id: "claude-sonnet-4-20250514" },
+			anthropicFixture("anthropic", "claude-haiku-4-5"),
+			{ ...anthropicFixture("anthropic", "claude-opus-4-6"), id: "claude-sonnet-4-20250514" },
 		];
 
 		for (const model of models) {
@@ -314,7 +479,7 @@ describe("deferred tools", () => {
 
 	it("keeps one immediate Anthropic tool when every current tool is marked", async () => {
 		const context = makeContext([makeTool("late_tool")]);
-		const payload = await capturePayload<AnthropicPayload>(getModel("anthropic", "claude-opus-4-6"), context);
+		const payload = await capturePayload<AnthropicPayload>(fixture("anthropic", "claude-opus-4-6"), context);
 
 		expect(payload.tools).toMatchObject([{ name: "late_tool" }]);
 		expect(payload.tools?.[0]?.defer_loading).toBeUndefined();
@@ -324,7 +489,7 @@ describe("deferred tools", () => {
 
 	it("supports explicit Anthropic compatibility overrides", async () => {
 		const model: Model<"anthropic-messages"> = {
-			...getModel("anthropic", "claude-opus-4-6"),
+			...anthropicFixture("anthropic", "claude-opus-4-6"),
 			provider: "anthropic-proxy",
 			compat: { supportsToolReferences: true },
 		};
@@ -394,7 +559,7 @@ describe("deferred tools", () => {
 
 	it("loads an OpenAI Responses tool through client tool search", async () => {
 		const context = makeContext([makeTool("base_tool"), makeTool("late_tool")]);
-		const payload = await capturePayload<OpenAIPayload>(getModel("openai", "gpt-5.4"), context);
+		const payload = await capturePayload<OpenAIPayload>(fixture("openai", "gpt-5.4"), context);
 		const searchCall = payload.input?.find((item): item is OpenAIToolSearchCall => item.type === "tool_search_call");
 		const searchOutput = payload.input?.find(
 			(item): item is OpenAIToolSearchOutput => item.type === "tool_search_output",
@@ -410,7 +575,7 @@ describe("deferred tools", () => {
 		"uses the normal tool list for unsupported OpenAI model %s",
 		async (modelId) => {
 			const context = makeContext([makeTool("base_tool"), makeTool("late_tool")]);
-			const payload = await capturePayload<OpenAIPayload>(getModel("openai", modelId), context);
+			const payload = await capturePayload<OpenAIPayload>(fixture("openai", modelId), context);
 
 			expect(openAIToolNames(payload)).toEqual(["base_tool", "late_tool"]);
 			expect(payload.input?.some((item) => item.type === "tool_search_output")).toBe(false);
@@ -419,7 +584,7 @@ describe("deferred tools", () => {
 
 	it("uses the normal tool list when OpenAI tool search is explicitly disabled", async () => {
 		const model: Model<"openai-responses"> = {
-			...getModel("openai", "gpt-5.4"),
+			...openaiResponsesFixture("openai", "gpt-5.4"),
 			provider: "openai-proxy",
 			compat: { supportsToolSearch: false },
 		};
@@ -433,12 +598,12 @@ describe("deferred tools", () => {
 	it("uses tool search only for supported Codex models", async () => {
 		const context = makeContext([makeTool("base_tool"), makeTool("late_tool")]);
 		const supported = await capturePayload<OpenAIPayload>(
-			getModel("openai-codex", "gpt-5.4"),
+			fixture("openai-codex", "gpt-5.4"),
 			context,
 			makeCodexToken(),
 		);
 		const unsupported = await capturePayload<OpenAIPayload>(
-			getModel("openai-codex", "gpt-5.3-codex-spark"),
+			fixture("openai-codex", "gpt-5.3-codex-spark"),
 			context,
 			makeCodexToken(),
 		);
@@ -451,7 +616,7 @@ describe("deferred tools", () => {
 
 	it("leaves providers without deferred loading unchanged", async () => {
 		const context = makeContext([makeTool("base_tool"), makeTool("late_tool")]);
-		const payload = await capturePayload<OpenAIPayload>(getModel("groq", "llama-3.3-70b-versatile"), context);
+		const payload = await capturePayload<OpenAIPayload>(fixture("groq", "llama-3.3-70b-versatile"), context);
 		expect(openAIToolNames(payload)).toEqual(["base_tool", "late_tool"]);
 	});
 

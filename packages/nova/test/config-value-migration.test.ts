@@ -112,6 +112,9 @@ describe("config value env var syntax migration", () => {
 								models: [
 									{
 										id: "model-a",
+										contextWindow: 128000,
+										maxTokens: 8192,
+										input: ["text"],
 										headers: { "x-model-key": "MODEL_API_KEY" },
 									},
 								],

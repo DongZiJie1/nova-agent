@@ -63,7 +63,8 @@ const context: Context = {
 const MIDDLEWARE_NAME = "pi-ai-custom-headers";
 
 function getModelFixture(): Model<"bedrock-converse-stream"> {
-	return getModel("amazon-bedrock", "us.anthropic.claude-opus-4-8");
+	// Fixture models are registered dynamically, so pin the api the raw Bedrock api expects.
+	return getModel("amazon-bedrock", "us.anthropic.claude-opus-4-8") as Model<"bedrock-converse-stream">;
 }
 
 /**

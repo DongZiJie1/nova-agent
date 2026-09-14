@@ -70,7 +70,7 @@ describe("ModelRuntime.getModelCatalog", () => {
 				api: "openai-completions",
 				baseUrl: "https://api.deepseek.com",
 				apiKey: "test-key",
-				models: [{ id: "deepseek-flash" }],
+				models: [{ id: "deepseek-flash", contextWindow: 1_048_576, maxTokens: 384_000, input: ["text"] }],
 			},
 		});
 
@@ -94,21 +94,36 @@ describe("ModelRuntime.getModelCatalog", () => {
 		expect(catalog.providers[0]).toMatchObject({ provider: "my-proxy", models: [] });
 	});
 
-	test("a models.json entry replacing a built-in model keeps the fields it omits", async () => {
-		const builtinRuntime = await createRuntime(null);
-		const builtin = builtinRuntime.getModels("anthropic")[0];
-		expect(builtin).toBeDefined();
-
-		writeModelsJson({ anthropic: { models: [{ id: builtin.id }] } });
+	test("a models.json entry redefining an earlier entry keeps the fields it omits", async () => {
+		writeModelsJson({
+			anthropic: {
+				api: "anthropic-messages",
+				baseUrl: "https://api.anthropic.com",
+				apiKey: "test-key",
+				models: [
+					{
+						id: "claude-sonnet-4-5",
+						name: "Claude Sonnet 4.5",
+						reasoning: true,
+						input: ["text", "image"],
+						contextWindow: 200_000,
+						maxTokens: 64_000,
+					},
+					// Same id: only the context window changes, everything else is inherited.
+					{ id: "claude-sonnet-4-5", contextWindow: 1_000_000 },
+				],
+			},
+		});
 
 		const runtime = await createRuntime(modelsJsonPath);
-		const replaced = runtime.getModels("anthropic").find((model) => model.id === builtin.id);
+		const models = runtime.getModels("anthropic");
+		const merged = models.filter((model) => model.id === "claude-sonnet-4-5");
 
-		expect(replaced).toBeDefined();
-		expect(replaced?.contextWindow).toBe(builtin.contextWindow);
-		expect(replaced?.maxTokens).toBe(builtin.maxTokens);
-		expect(replaced?.name).toBe(builtin.name);
-		expect(replaced?.input).toEqual(builtin.input);
+		expect(merged).toHaveLength(1);
+		expect(merged[0].contextWindow).toBe(1_000_000);
+		expect(merged[0].maxTokens).toBe(64_000);
+		expect(merged[0].name).toBe("Claude Sonnet 4.5");
+		expect(merged[0].input).toEqual(["text", "image"]);
 	});
 });
 
@@ -125,7 +140,7 @@ describe("listModels --json", () => {
 						api: "openai-completions",
 						baseUrl: "https://api.deepseek.com",
 						apiKey: "test-key",
-						models: [{ id: "deepseek-flash", contextWindow: 1_048_576, maxTokens: 384_000 }],
+						models: [{ id: "deepseek-flash", contextWindow: 1_048_576, maxTokens: 384_000, input: ["text"] }],
 					},
 				},
 			}),
