@@ -8,8 +8,8 @@ describeEval("general knowledge", { harness: piCodingAgentHarness }, (it) => {
 
 		expect(result.output.trim()).toBe("Paris");
 		expect(result.errors).toEqual([]);
-		expect(result.usage.provider).toBe(process.env.PI_PROVIDER);
-		expect(result.usage.model).toBe(process.env.PI_MODEL);
+		expect(result.usage.provider).toBe(process.env.NOVA_PROVIDER ?? process.env.PI_PROVIDER);
+		expect(result.usage.model).toBe(process.env.NOVA_MODEL ?? process.env.PI_MODEL);
 		expect(result.usage.totalTokens).toBeGreaterThan(0);
 	});
 });

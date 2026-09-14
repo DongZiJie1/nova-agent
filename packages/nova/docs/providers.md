@@ -1,6 +1,6 @@
 # Providers
 
-Pi supports subscription-based providers via OAuth and API key providers via environment variables or auth file. Built-in catalogs ship with pi; configured providers may refresh newer catalogs and cache them in `~/.nova/agent/models-store.json` for offline use.
+Nova supports subscription-based providers via OAuth and API key providers via environment variables or auth file. Built-in catalogs ship with nova; configured providers may refresh newer catalogs and cache them in `~/.nova/agent/models-store.json` for offline use.
 
 ## Table of Contents
 
@@ -101,7 +101,7 @@ nova
 | Xiaomi MiMo Token Plan (Amsterdam) | `XIAOMI_TOKEN_PLAN_AMS_API_KEY` | `xiaomi-token-plan-ams` |
 | Xiaomi MiMo Token Plan (Singapore) | `XIAOMI_TOKEN_PLAN_SGP_API_KEY` | `xiaomi-token-plan-sgp` |
 
-Reference for environment variables and `auth.json` keys: [`const envMap`](https://github.com/earendil-works/pi-mono/blob/main/packages/ai/src/env-api-keys.ts) in [`packages/ai/src/env-api-keys.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/ai/src/env-api-keys.ts).
+Reference for environment variables and `auth.json` keys: [`const envMap`](https://github.com/DongZiJie1/nova-agent/blob/main/packages/ai/src/env-api-keys.ts) in [`packages/ai/src/env-api-keys.ts`](https://github.com/DongZiJie1/nova-agent/blob/main/packages/ai/src/env-api-keys.ts).
 
 #### Auth File
 
@@ -129,7 +129,7 @@ Store credentials in `~/.nova/agent/auth.json`:
 
 The file is created with `0600` permissions (user read/write only). Auth file credentials take priority over environment variables.
 
-API key credentials can also include provider-scoped environment values. These values are used before process environment variables when resolving the credential key, provider/model headers, and provider configuration such as Cloudflare account IDs, Azure OpenAI settings, Vertex project/location, Bedrock settings, `PI_CACHE_RETENTION`, and `HTTP_PROXY`/`HTTPS_PROXY`.
+API key credentials can also include provider-scoped environment values. These values are used before process environment variables when resolving the credential key, provider/model headers, and provider configuration such as Cloudflare account IDs, Azure OpenAI settings, Vertex project/location, Bedrock settings, `NOVA_CACHE_RETENTION`, and `HTTP_PROXY`/`HTTPS_PROXY`.
 
 ```json
 {
@@ -145,7 +145,7 @@ API key credentials can also include provider-scoped environment values. These v
 }
 ```
 
-Use this when pi should use different provider settings than the project shell environment.
+Use this when nova should use different provider settings than the project shell environment.
 
 ### Key Resolution
 
@@ -260,7 +260,7 @@ AI Gateway authentication uses `CLOUDFLARE_API_KEY` as `cf-aig-authorization`. U
 | Stored BYOK | Cloudflare token only | Cloudflare injects provider keys stored in the AI Gateway dashboard |
 | Inline BYOK | Cloudflare token plus upstream `Authorization` header | The request supplies the upstream provider key |
 
-For normal pi usage, prefer unified billing or stored BYOK. Inline BYOK requires configuring an additional upstream `Authorization` header for the Cloudflare AI Gateway provider, for example via a `models.json` provider/model override.
+For normal nova usage, prefer unified billing or stored BYOK. Inline BYOK requires configuring an additional upstream `Authorization` header for the Cloudflare AI Gateway provider, for example via a `models.json` provider/model override.
 
 ### Cloudflare Workers AI
 
@@ -272,7 +272,7 @@ export CLOUDFLARE_ACCOUNT_ID=...
 nova --provider cloudflare-workers-ai --model "@cf/moonshotai/kimi-k2.6"
 ```
 
-Pi automatically sets `x-session-affinity` for [prefix caching](https://developers.cloudflare.com/workers-ai/features/prompt-caching/) discounts.
+Nova automatically sets `x-session-affinity` for [prefix caching](https://developers.cloudflare.com/workers-ai/features/prompt-caching/) discounts.
 
 ### Google Vertex AI
 
@@ -288,7 +288,7 @@ Or set `GOOGLE_APPLICATION_CREDENTIALS` to a service account key file.
 
 ## llama.cpp
 
-Pi supports the llama.cpp router server. Configure it with `/login llama.cpp`, manage loaded models with `/llama`, and select a loaded model with `/model`.
+Nova supports the llama.cpp router server. Configure it with `/login llama.cpp`, manage loaded models with `/llama`, and select a loaded model with `/model`.
 
 See [llama.cpp](llama-cpp.md) for server setup, model directory layout, environment variables, and command usage.
 

@@ -2,7 +2,7 @@
  * Custom Header Extension
  *
  * Demonstrates ctx.ui.setHeader() for replacing the built-in header
- * (logo + keybinding hints) with a custom component showing the pi mascot.
+ * (logo + keybinding hints) with a custom component showing the nova mascot.
  */
 
 import type { ExtensionAPI, Theme } from "@dongzijie1/nova";
@@ -44,9 +44,9 @@ function getPiMascot(theme: Theme): string[] {
 	return ["", lineEyes, lineBar, lineLeg, lineLeg, lineLeg, lineLeg, ""];
 }
 
-export default function (pi: ExtensionAPI) {
+export default function (nova: ExtensionAPI) {
 	// Set custom header immediately on load (if UI is available)
-	pi.on("session_start", async (_event, ctx) => {
+	nova.on("session_start", async (_event, ctx) => {
 		if (ctx.mode === "tui") {
 			ctx.ui.setHeader((_tui, theme) => {
 				return {
@@ -63,7 +63,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Command to restore built-in header
-	pi.registerCommand("builtin-header", {
+	nova.registerCommand("builtin-header", {
 		description: "Restore built-in header with keybinding hints",
 		handler: async (_args, ctx) => {
 			ctx.ui.setHeader(undefined);

@@ -4,8 +4,8 @@ import type { ExtensionAPI } from "@dongzijie1/nova";
 
 const baseDir = dirname(fileURLToPath(import.meta.url));
 
-export default function (pi: ExtensionAPI) {
-	pi.on("resources_discover", () => {
+export default function (nova: ExtensionAPI) {
+	nova.on("resources_discover", () => {
 		return {
 			skillPaths: [join(baseDir, "SKILL.md")],
 			promptPaths: [join(baseDir, "dynamic.md")],

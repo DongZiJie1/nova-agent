@@ -10,7 +10,7 @@
  * which can be cheaper/faster than the main conversation model.
  *
  * Usage:
- *   pi --extension examples/extensions/custom-compaction.ts
+ *   nova --extension examples/extensions/custom-compaction.ts
  */
 
 import type { ExtensionAPI } from "@dongzijie1/nova";
@@ -18,8 +18,8 @@ import { convertToLlm, serializeConversation } from "@dongzijie1/nova";
 import { uuidv7 } from "@dongzijie1/pi-ai";
 import { complete } from "@dongzijie1/pi-ai/compat";
 
-export default function (pi: ExtensionAPI) {
-	pi.on("session_before_compact", async (event, ctx) => {
+export default function (nova: ExtensionAPI) {
+	nova.on("session_before_compact", async (event, ctx) => {
 		ctx.ui.notify("Custom compaction extension triggered", "info");
 
 		const { preparation, branchEntries: _, signal } = event;

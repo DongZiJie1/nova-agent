@@ -1,8 +1,8 @@
 import type { Api, Model, ModelsStoreEntry, Provider } from "@dongzijie1/pi-ai";
 import { VERSION } from "../config.ts";
-import { getPiUserAgent } from "../utils/pi-user-agent.ts";
+import { getNovaEnv } from "../utils/env-compat.ts";
+import { getNovaUserAgent } from "../utils/nova-user-agent.ts";
 
-const DEFAULT_CATALOG_BASE_URL = "https://pi.dev";
 export const REMOTE_CATALOG_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 function mergeModels(baseline: readonly Model<Api>[], dynamic: readonly Model<Api>[]): Model<Api>[] {
@@ -40,10 +40,15 @@ function remoteModels(
 	return entry.models;
 }
 
-/** Add a persisted pi.dev catalog overlay to a static built-in provider. */
+/**
+ * Add a persisted remote catalog overlay to a static built-in provider.
+ *
+ * The catalog host comes from `NOVA_CATALOG_BASE_URL`; without one the overlay is
+ * served from the local store only and no network request is made.
+ */
 export function withRemoteCatalog(
 	provider: Provider,
-	catalogBaseUrl: string = DEFAULT_CATALOG_BASE_URL,
+	catalogBaseUrl: string | undefined = getNovaEnv("CATALOG_BASE_URL"),
 	localGeneratedAt?: number,
 ): Provider {
 	let dynamicModels: readonly Model<Api>[] = [];
@@ -57,7 +62,7 @@ export function withRemoteCatalog(
 				try {
 					const stored = await context.store.read();
 					dynamicModels = remoteModels(stored, localGeneratedAt).filter((model) => model.provider === provider.id);
-					if (!context.allowNetwork || context.signal?.aborted) return;
+					if (!catalogBaseUrl || !context.allowNetwork || context.signal?.aborted) return;
 					if (
 						!context.force &&
 						stored?.checkedAt !== undefined &&
@@ -70,11 +75,12 @@ export function withRemoteCatalog(
 					// Only revalidate when a cached body backs the validator, so a 304 can never
 					// leave the overlay empty.
 					const validator = stored?.models.length ? stored.etag : undefined;
-					const url = new URL(`/api/models/providers/${encodeURIComponent(provider.id)}`, catalogBaseUrl);
+					const baseUrl = catalogBaseUrl.endsWith("/") ? catalogBaseUrl : `${catalogBaseUrl}/`;
+					const url = new URL(`api/models/providers/${encodeURIComponent(provider.id)}`, baseUrl);
 					const response = await fetch(url, {
 						headers: {
 							accept: "application/json",
-							"User-Agent": getPiUserAgent(VERSION),
+							"User-Agent": getNovaUserAgent(VERSION),
 							...(validator ? { "if-none-match": validator } : {}),
 						},
 						signal: context.signal,

@@ -261,9 +261,9 @@ describe("NodeExecutionEnv", () => {
 
 	it("can replace rather than inherit the default shell environment", async () => {
 		const root = createTempDir();
-		const inheritedKey = "PI_NODE_ENV_INHERITED_TEST";
-		const configuredKey = "PI_NODE_ENV_CONFIGURED_TEST";
-		const explicitKey = "PI_NODE_ENV_EXPLICIT_TEST";
+		const inheritedKey = "NOVA_NODE_ENV_INHERITED_TEST";
+		const configuredKey = "NOVA_NODE_ENV_CONFIGURED_TEST";
+		const explicitKey = "NOVA_NODE_ENV_EXPLICIT_TEST";
 		const previousInherited = process.env[inheritedKey];
 		process.env[inheritedKey] = "host";
 		try {

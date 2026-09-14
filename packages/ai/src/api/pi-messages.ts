@@ -23,10 +23,10 @@ import type {
 	ToolCall,
 } from "../types.ts";
 import { appendAssistantMessageDiagnostic, createAssistantMessageDiagnostic } from "../utils/diagnostics.ts";
+import { getNovaEnv } from "../utils/env-compat.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord, providerHeadersToRecord } from "../utils/headers.ts";
 import { parseStreamingJson } from "../utils/json-parse.ts";
-import { getProviderEnvValue } from "../utils/provider-env.ts";
 
 export interface PiMessagesOptions extends StreamOptions {
 	reasoning?: ThinkingLevel;
@@ -339,7 +339,7 @@ function resolveCacheRetention(cacheRetention?: CacheRetention, env?: ProviderEn
 		return cacheRetention;
 	}
 	// Backend defaults apply when unset; only the legacy env opt-in is mapped.
-	return getProviderEnvValue("PI_CACHE_RETENTION", env) === "long" ? "long" : undefined;
+	return getNovaEnv("CACHE_RETENTION", env) === "long" ? "long" : undefined;
 }
 
 export const stream: StreamFunction<"pi-messages", PiMessagesOptions> = (

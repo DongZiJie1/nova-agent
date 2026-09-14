@@ -3,7 +3,7 @@
 </p>
 <p align="center">
   <a href="https://www.npmjs.com/package/@dongzijie1/nova"><img alt="npm" src="https://img.shields.io/npm/v/@dongzijie1/nova?style=flat-square" /></a>
-  <a href="https://github.com/DongZiJie1/pi-mutant/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
+  <a href="https://github.com/DongZiJie1/nova-agent/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
 </p>
 
 <p align="center">
@@ -65,7 +65,7 @@ npm install --ignore-scripts
 npm run build
 npm run check
 ./test.sh
-./pi-test.sh         # Run from source
+./nova-test.sh         # Run from source
 ```
 
 ## Roadmap

@@ -39,7 +39,7 @@ function testProvider(localGeneratedAt?: number) {
 				},
 			},
 		}),
-		"https://pi.dev",
+		"https://catalog.example.test",
 		localGeneratedAt,
 	);
 }
@@ -74,7 +74,7 @@ describe("remote catalog provider", () => {
 		expect((await store.read(provider.id))?.models.map((entry) => entry.id)).toEqual(["dynamic"]);
 		expect(fetchSpy).toHaveBeenCalledTimes(2);
 		expect(fetchSpy.mock.calls[0]?.[1]?.headers).toMatchObject({
-			"User-Agent": expect.stringContaining(`pi/${VERSION}`),
+			"User-Agent": expect.stringContaining(`nova/${VERSION}`),
 		});
 	});
 
@@ -172,7 +172,7 @@ describe("remote catalog provider", () => {
 		expect(provider.getModels().map((entry) => entry.id)).toEqual(["static", "dynamic"]);
 	});
 
-	it("treats unimplemented pi.dev catalog routes as an unavailable overlay", async () => {
+	it("treats unimplemented catalog routes as an unavailable overlay", async () => {
 		vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("not implemented", { status: 501 }));
 		const provider = testProvider();
 		const store = new InMemoryModelsStore();

@@ -1,4 +1,4 @@
-> pi can create prompt templates. Ask it to build one for your workflow.
+> nova can create prompt templates. Ask it to build one for your workflow.
 
 # Prompt Templates
 
@@ -6,11 +6,11 @@ Prompt templates are Markdown snippets that expand into full prompts. Type `/nam
 
 ## Locations
 
-Pi loads prompt templates from:
+Nova loads prompt templates from:
 
 - Global: `~/.nova/agent/prompts/*.md`
 - Project: `.nova/prompts/*.md` (only after the project is trusted)
-- Packages: `prompts/` directories or `pi.prompts` entries in `package.json`
+- Packages: `prompts/` directories or `nova.prompts` entries in `package.json`
 - Settings: `prompts` array with files or directories
 - CLI: `--prompt-template <path>` (repeatable)
 

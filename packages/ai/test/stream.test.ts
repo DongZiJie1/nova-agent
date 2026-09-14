@@ -9,6 +9,7 @@ import type { Api, Context, ImageContent, Model, StreamOptions, Tool, ToolResult
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
+import { getNovaEnv } from "../src/utils/env-compat.ts";
 import { StringEnum } from "../src/utils/typebox-helpers.ts";
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.ts";
 import { hasBedrockCredentials } from "./bedrock-utils.ts";
@@ -1537,7 +1538,7 @@ describe("Generate E2E Tests", () => {
 		it("should pass requestMetadata to the SDK payload", { retry: 3 }, async () => {
 			const llmSonnet = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
 			let capturedPayload: unknown;
-			const metadata = { app: "pi-test", env: "ci" };
+			const metadata = { app: "nova-test", env: "ci" };
 			const response = await complete(
 				llmSonnet,
 				{
@@ -1591,7 +1592,7 @@ describe("Generate E2E Tests", () => {
 
 	// Check if ollama is installed and local LLM tests are enabled
 	let ollamaInstalled = false;
-	if (!process.env.PI_NO_LOCAL_LLM) {
+	if (!getNovaEnv("NO_LOCAL_LLM")) {
 		try {
 			execSync("which ollama", { stdio: "ignore" });
 			ollamaInstalled = true;

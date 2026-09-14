@@ -17,7 +17,7 @@ describe("Cloudflare AI Gateway model materialization", () => {
 	let modelsJsonPath: string;
 
 	beforeEach(() => {
-		tempDir = join(tmpdir(), `pi-test-cloudflare-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		tempDir = join(tmpdir(), `nova-test-cloudflare-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 		modelsJsonPath = join(tempDir, "models.json");
 		// cloudflare-ai-gateway ships no model list of its own, so the gateway model

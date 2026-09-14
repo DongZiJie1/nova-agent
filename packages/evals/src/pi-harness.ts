@@ -35,10 +35,10 @@ async function cleanupEvalResources(session: EvalSession | undefined, removeRoot
 }
 
 function getRequiredModelSelection(): { provider: string; model: string } {
-	const provider = process.env.PI_PROVIDER?.trim();
-	const model = process.env.PI_MODEL?.trim();
+	const provider = (process.env.NOVA_PROVIDER ?? process.env.PI_PROVIDER)?.trim();
+	const model = (process.env.NOVA_MODEL ?? process.env.PI_MODEL)?.trim();
 	if (!provider || !model) {
-		throw new Error("PI_PROVIDER and PI_MODEL must both be set for eval runs.");
+		throw new Error("NOVA_PROVIDER and NOVA_MODEL (or legacy PI_PROVIDER/PI_MODEL) must both be set for eval runs.");
 	}
 	return { provider, model };
 }

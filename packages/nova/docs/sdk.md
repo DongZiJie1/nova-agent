@@ -1,8 +1,8 @@
-> pi can help you use the SDK. Ask it to build an integration for your use case.
+> nova can help you use the SDK. Ask it to build an integration for your use case.
 
 # SDK
 
-The SDK provides programmatic access to pi's agent capabilities. Use it to embed pi in other applications, build custom interfaces, or integrate with automated workflows.
+The SDK provides programmatic access to nova's agent capabilities. Use it to embed nova in other applications, build custom interfaces, or integrate with automated workflows.
 
 **Example use cases:**
 - Build a custom UI (web, desktop, mobile)
@@ -215,7 +215,7 @@ await session.prompt("After you're done, also check X", { streamingBehavior: "fo
 ```
 
 **Behavior:**
-- **Extension commands** (e.g., `/mycommand`): Execute immediately, even during streaming. They manage their own LLM interaction via `pi.sendMessage()`.
+- **Extension commands** (e.g., `/mycommand`): Execute immediately, even during streaming. They manage their own LLM interaction via `nova.sendMessage()`.
 - **File-based prompt templates** (from `.md` files): Expanded to their content before sending or queueing.
 - **During streaming without `streamingBehavior`**: Throws an error. Use `steer()` or `followUp()` directly, or specify the option.
 - **`preflightResult(true)`**: Means the prompt was accepted, queued, or handled immediately.
@@ -235,7 +235,7 @@ Both `steer()` and `followUp()` expand file-based prompt templates but error on 
 
 ### Agent and AgentState
 
-The `Agent` class (from `@earendil-works/pi-agent-core`) handles the core LLM interaction. Access it via `session.agent`.
+The `Agent` class (from `@dongzijie1/pi-agent-core`) handles the core LLM interaction. Access it via `session.agent`.
 
 ```typescript
 // Access current state
@@ -367,7 +367,7 @@ When you pass a custom `ResourceLoader`, `cwd` and `agentDir` no longer control 
 ### Model
 
 ```typescript
-import { getModel } from "@earendil-works/pi-ai";
+import { getModel } from "@dongzijie1/pi-ai";
 import { ModelRuntime } from "@dongzijie1/nova";
 
 const modelRuntime = await ModelRuntime.create();
@@ -439,7 +439,7 @@ Authentication resolution priority (handled by `ModelRuntime`):
 4. Fallback resolver (for custom provider keys from `models.json`)
 
 ```typescript
-import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import { InMemoryCredentialStore } from "@dongzijie1/pi-ai";
 import { createAgentSession, ModelRuntime } from "@dongzijie1/nova";
 
 // Default: uses ~/.nova/agent/auth.json and ~/.nova/agent/models.json
@@ -498,7 +498,7 @@ Specify which built-in tools to enable:
 - `noTools: "builtin"` disables default built-ins while keeping extension and custom tools enabled
 - `excludeTools` disables specific built-in, extension, or custom tool names after any `tools` allowlist is applied
 
-The `edit` tool returns `details.diff` for Pi's TUI display and `details.patch` as a standard unified patch for SDK consumers.
+The `edit` tool returns `details.diff` for Nova's TUI display and `details.patch` as a standard unified patch for SDK consumers.
 
 ```typescript
 import { createAgentSession } from "@dongzijie1/nova";
@@ -570,9 +570,9 @@ const { session } = await createAgentSession({
 });
 ```
 
-Use `defineTool()` for standalone definitions and arrays like `customTools: [myTool]`. Inline `pi.registerTool({ ... })` already infers parameter types correctly.
+Use `defineTool()` for standalone definitions and arrays like `customTools: [myTool]`. Inline `nova.registerTool({ ... })` already infers parameter types correctly.
 
-Custom tools passed via `customTools` are combined with extension-registered tools. Extensions loaded by the ResourceLoader can also register tools via `pi.registerTool()`.
+Custom tools passed via `customTools` are combined with extension-registered tools. Extensions loaded by the ResourceLoader can also register tools via `nova.registerTool()`.
 
 If you pass `tools`, include each custom or extension tool name you want enabled, for example `tools: ["read", "bash", "my_tool"]`.
 
@@ -588,8 +588,8 @@ import { createAgentSession, DefaultResourceLoader } from "@dongzijie1/nova";
 const loader = new DefaultResourceLoader({
   additionalExtensionPaths: ["/path/to/my-extension.ts"],
   extensionFactories: [
-    (pi) => {
-      pi.on("agent_start", () => {
+    (nova) => {
+      nova.on("agent_start", () => {
         console.log("[Inline Extension] Agent starting");
       });
     },
@@ -609,8 +609,8 @@ import type { InlineExtension } from "@dongzijie1/nova";
 
 const myProvider: InlineExtension = {
   name: "my-provider",
-  factory: (pi) => {
-    pi.on("agent_start", () => {
+  factory: (nova) => {
+    nova.on("agent_start", () => {
       console.log("[my-provider] Agent starting");
     });
   },
@@ -623,7 +623,7 @@ const loader = new DefaultResourceLoader({
 
 This displays as `<inline:my-provider>` instead of `<inline:1>`. Bare factory functions are still accepted for backward compatibility.
 
-**Event Bus:** Extensions can communicate via `pi.events`. Pass a shared `eventBus` to `DefaultResourceLoader` if you need to emit or listen from outside:
+**Event Bus:** Extensions can communicate via `nova.events`. Pass a shared `eventBus` to `DefaultResourceLoader` if you need to emit or listen from outside:
 
 ```typescript
 import { createEventBus, DefaultResourceLoader } from "@dongzijie1/nova";
@@ -922,7 +922,7 @@ interface LoadExtensionsResult {
 ## Complete Example
 
 ```typescript
-import { getModel } from "@earendil-works/pi-ai";
+import { getModel } from "@dongzijie1/pi-ai";
 import { Type } from "typebox";
 import {
   createAgentSession,

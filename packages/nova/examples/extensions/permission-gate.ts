@@ -7,10 +7,10 @@
 
 import type { ExtensionAPI } from "@dongzijie1/nova";
 
-export default function (pi: ExtensionAPI) {
+export default function (nova: ExtensionAPI) {
 	const dangerousPatterns = [/\brm\s+(-rf?|--recursive)/i, /\bsudo\b/i, /\b(chmod|chown)\b.*777/i];
 
-	pi.on("tool_call", async (event, ctx) => {
+	nova.on("tool_call", async (event, ctx) => {
 		if (event.toolName !== "bash") return undefined;
 
 		const command = event.input.command as string;

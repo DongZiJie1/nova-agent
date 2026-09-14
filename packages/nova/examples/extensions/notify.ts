@@ -1,7 +1,7 @@
 /**
- * Pi Notify Extension
+ * Nova Notify Extension
  *
- * Sends a native terminal notification when Pi agent is done and waiting for input.
+ * Sends a native terminal notification when Nova agent is done and waiting for input.
  * Supports multiple terminal protocols:
  * - OSC 777: Ghostty, iTerm2, WezTerm, rxvt-unicode
  * - OSC 99: Kitty
@@ -48,8 +48,8 @@ function notify(title: string, body: string): void {
 	}
 }
 
-export default function (pi: ExtensionAPI) {
-	pi.on("agent_end", async () => {
-		notify("Pi", "Ready for input");
+export default function (nova: ExtensionAPI) {
+	nova.on("agent_end", async () => {
+		notify("Nova", "Ready for input");
 	});
 }

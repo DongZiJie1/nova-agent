@@ -75,23 +75,23 @@ describe("AgentSession dynamic tool registration", () => {
 		const bashTool = session.agent.state.tools.find((tool) => tool.name === "bash")!;
 		// Tool snippets/guidelines are intentionally NOT in the system prompt
 		// (they are passed via the API `tools` parameter instead).
-		expect(session.systemPrompt).not.toContain("PI_* variables");
+		expect(session.systemPrompt).not.toContain("NOVA_* variables");
 		await bashTool.execute("bash-env", { command: "printf ok" });
 		expect(sessionEnv).toMatchObject({
-			PI_SESSION_ID: session.sessionId,
-			PI_SESSION_FILE: session.sessionFile,
-			PI_PROVIDER: model.provider,
-			PI_MODEL: model.id,
-			PI_REASONING_LEVEL: session.thinkingLevel,
+			NOVA_SESSION_ID: session.sessionId,
+			NOVA_SESSION_FILE: session.sessionFile,
+			NOVA_PROVIDER: model.provider,
+			NOVA_MODEL: model.id,
+			NOVA_REASONING_LEVEL: session.thinkingLevel,
 		});
 
 		const optedOutBashTool = session.agent.state.tools.find((tool) => tool.name === "bash_without_session_env")!;
 		await optedOutBashTool.execute("bash-no-env", { command: "printf ok" });
-		expect(optedOutEnv).not.toHaveProperty("PI_SESSION_ID");
-		expect(optedOutEnv).not.toHaveProperty("PI_SESSION_FILE");
-		expect(optedOutEnv).not.toHaveProperty("PI_PROVIDER");
-		expect(optedOutEnv).not.toHaveProperty("PI_MODEL");
-		expect(optedOutEnv).not.toHaveProperty("PI_REASONING_LEVEL");
+		expect(optedOutEnv).not.toHaveProperty("NOVA_SESSION_ID");
+		expect(optedOutEnv).not.toHaveProperty("NOVA_SESSION_FILE");
+		expect(optedOutEnv).not.toHaveProperty("NOVA_PROVIDER");
+		expect(optedOutEnv).not.toHaveProperty("NOVA_MODEL");
+		expect(optedOutEnv).not.toHaveProperty("NOVA_REASONING_LEVEL");
 
 		session.dispose();
 	});

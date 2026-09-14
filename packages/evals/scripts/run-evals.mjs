@@ -42,12 +42,12 @@ if (hasCliModelSelection && (!provider || !model)) {
 	process.exit(1);
 }
 
-provider ??= process.env.PI_PROVIDER;
-model ??= process.env.PI_MODEL;
+provider ??= process.env.NOVA_PROVIDER ?? process.env.PI_PROVIDER;
+model ??= process.env.NOVA_MODEL ?? process.env.PI_MODEL;
 
 if (!provider || !model) {
 	console.error(
-		"No eval model selected. Pass --provider and --model, or set PI_PROVIDER and PI_MODEL.",
+		"No eval model selected. Pass --provider and --model, or set NOVA_PROVIDER and NOVA_MODEL.",
 	);
 	process.exit(1);
 }
@@ -65,6 +65,9 @@ const result = spawnSync(
 		stdio: "inherit",
 		env: {
 			...process.env,
+			NOVA_PROVIDER: provider,
+			NOVA_MODEL: model,
+			// Legacy aliases so older agent builds that still read PI_* keep working.
 			PI_PROVIDER: provider,
 			PI_MODEL: model,
 		},

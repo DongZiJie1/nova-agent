@@ -1,6 +1,6 @@
 # Sessions
 
-Pi saves conversations as sessions so you can continue work, branch from earlier turns, and revisit previous paths.
+Nova saves conversations as sessions so you can continue work, branch from earlier turns, and revisit previous paths.
 
 ## Session Storage
 
@@ -47,7 +47,7 @@ In the picker you can:
 - rename with Ctrl+R
 - delete with Ctrl+D, then confirm
 
-When available, pi uses the `trash` CLI for deletion instead of permanently removing files.
+When available, nova uses the `trash` CLI for deletion instead of permanently removing files.
 
 ## Naming Sessions
 
@@ -128,7 +128,7 @@ Use `/tree` when you want to keep alternatives together. Use `/fork` or `/clone`
 
 ## Branch Summaries
 
-When `/tree` switches away from one branch to another, pi can summarize the abandoned branch and attach that summary at the new position. This preserves important context from the path you left without replaying the whole branch.
+When `/tree` switches away from one branch to another, nova can summarize the abandoned branch and attach that summary at the new position. This preserves important context from the path you left without replaying the whole branch.
 
 When prompted, choose one of:
 

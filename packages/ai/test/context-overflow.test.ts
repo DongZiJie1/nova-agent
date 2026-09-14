@@ -16,6 +16,7 @@ import { execSync, spawn } from "child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { complete, getModel, getModels } from "../src/compat.ts";
 import type { AssistantMessage, Context, Model, Usage } from "../src/types.ts";
+import { getNovaEnv } from "../src/utils/env-compat.ts";
 import { isContextOverflow } from "../src/utils/overflow.ts";
 import { hasAzureOpenAICredentials } from "./azure-utils.ts";
 import { hasBedrockCredentials } from "./bedrock-utils.ts";
@@ -588,7 +589,7 @@ describe("Context overflow error handling", () => {
 
 	// Check if ollama is installed and local LLM tests are enabled
 	let ollamaInstalled = false;
-	if (!process.env.PI_NO_LOCAL_LLM) {
+	if (!getNovaEnv("NO_LOCAL_LLM")) {
 		try {
 			execSync("which ollama", { stdio: "ignore" });
 			ollamaInstalled = true;
@@ -682,7 +683,7 @@ describe("Context overflow error handling", () => {
 	// =============================================================================
 
 	let lmStudioRunning = false;
-	if (!process.env.PI_NO_LOCAL_LLM) {
+	if (!getNovaEnv("NO_LOCAL_LLM")) {
 		try {
 			execSync("curl -s --max-time 1 http://localhost:1234/v1/models > /dev/null", { stdio: "ignore" });
 			lmStudioRunning = true;
@@ -719,7 +720,7 @@ describe("Context overflow error handling", () => {
 	// =============================================================================
 
 	let llamaCppRunning = false;
-	if (!process.env.PI_NO_LOCAL_LLM) {
+	if (!getNovaEnv("NO_LOCAL_LLM")) {
 		try {
 			execSync("curl -s --max-time 1 http://localhost:8081/health > /dev/null", { stdio: "ignore" });
 			const probeStatus = execSync(

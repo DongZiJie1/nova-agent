@@ -111,8 +111,8 @@ export function hasAuthForProvider(provider: string): boolean {
 	return provider in storage;
 }
 
-/** Path to the real pi agent config directory */
-export const PI_AGENT_DIR = join(homedir(), ".nova", "agent");
+/** Path to the real nova agent config directory */
+export const NOVA_AGENT_DIR = join(homedir(), ".nova", "agent");
 
 /**
  * Get an AuthStorage instance backed by ~/.nova/agent/auth.json
@@ -235,7 +235,7 @@ export function createTestResourceLoader(options: CreateTestResourceLoaderOption
  * Use this for e2e tests that need real LLM calls.
  */
 export async function createTestSession(options: TestSessionOptions = {}): Promise<TestSessionContext> {
-	const tempDir = join(tmpdir(), `pi-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+	const tempDir = join(tmpdir(), `nova-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 	mkdirSync(tempDir, { recursive: true });
 
 	const model = getModel("anthropic", "claude-sonnet-4-5")!;

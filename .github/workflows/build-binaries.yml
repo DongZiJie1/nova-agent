@@ -58,7 +58,7 @@ jobs:
           ./scripts/create-source-archive.sh \
             --version "${VERSION}" \
             --ref HEAD \
-            --out "release-assets/pi-${VERSION}-source.tar.gz"
+            --out "release-assets/nova-${VERSION}-source.tar.gz"
 
       - name: Build binaries from source archive
         run: |
@@ -67,8 +67,8 @@ jobs:
           VERSION="${RELEASE_TAG#v}"
           build_root="$(mktemp -d)"
           trap 'rm -rf "${build_root}"' EXIT
-          tar -xzf "release-assets/pi-${VERSION}-source.tar.gz" -C "${build_root}"
-          "${build_root}/pi-${VERSION}/scripts/build-binaries.sh" \
+          tar -xzf "release-assets/nova-${VERSION}-source.tar.gz" -C "${build_root}"
+          "${build_root}/nova-${VERSION}/scripts/build-binaries.sh" \
             --offline-model-data \
             --out "${GITHUB_WORKSPACE}/packages/nova/binaries"
 
@@ -88,12 +88,12 @@ jobs:
           cd packages/nova/binaries
 
           binary_assets=(
-            pi-darwin-arm64.tar.gz
-            pi-darwin-x64.tar.gz
-            pi-linux-x64.tar.gz
-            pi-linux-arm64.tar.gz
-            pi-windows-x64.zip
-            pi-windows-arm64.zip
+            nova-darwin-arm64.tar.gz
+            nova-darwin-x64.tar.gz
+            nova-linux-x64.tar.gz
+            nova-linux-arm64.tar.gz
+            nova-windows-x64.zip
+            nova-windows-arm64.zip
           )
 
           for asset in "${binary_assets[@]}"; do
@@ -103,15 +103,15 @@ jobs:
           cp "${binary_assets[@]}" "${GITHUB_WORKSPACE}/release-assets/"
 
           cd "${GITHUB_WORKSPACE}/release-assets"
-          source_asset="pi-${VERSION}-source.tar.gz"
+          source_asset="nova-${VERSION}-source.tar.gz"
           release_assets=(
             "${source_asset}"
-            pi-darwin-arm64.tar.gz
-            pi-darwin-x64.tar.gz
-            pi-linux-x64.tar.gz
-            pi-linux-arm64.tar.gz
-            pi-windows-x64.zip
-            pi-windows-arm64.zip
+            nova-darwin-arm64.tar.gz
+            nova-darwin-x64.tar.gz
+            nova-linux-x64.tar.gz
+            nova-linux-arm64.tar.gz
+            nova-windows-x64.zip
+            nova-windows-arm64.zip
             nova-install-package.json
             nova-install-package-lock.json
           )
@@ -148,15 +148,15 @@ jobs:
           cd release-assets
 
           VERSION="${RELEASE_TAG#v}"
-          source_asset="pi-${VERSION}-source.tar.gz"
+          source_asset="nova-${VERSION}-source.tar.gz"
           expected_assets=(
             "${source_asset}"
-            pi-darwin-arm64.tar.gz
-            pi-darwin-x64.tar.gz
-            pi-linux-x64.tar.gz
-            pi-linux-arm64.tar.gz
-            pi-windows-x64.zip
-            pi-windows-arm64.zip
+            nova-darwin-arm64.tar.gz
+            nova-darwin-x64.tar.gz
+            nova-linux-x64.tar.gz
+            nova-linux-arm64.tar.gz
+            nova-windows-x64.zip
+            nova-windows-arm64.zip
             nova-install-package.json
             nova-install-package-lock.json
             SHA256SUMS
@@ -178,15 +178,15 @@ jobs:
           cd release-assets
 
           VERSION="${RELEASE_TAG#v}"
-          source_asset="pi-${VERSION}-source.tar.gz"
+          source_asset="nova-${VERSION}-source.tar.gz"
           release_assets=(
             "${source_asset}"
-            pi-darwin-arm64.tar.gz
-            pi-darwin-x64.tar.gz
-            pi-linux-x64.tar.gz
-            pi-linux-arm64.tar.gz
-            pi-windows-x64.zip
-            pi-windows-arm64.zip
+            nova-darwin-arm64.tar.gz
+            nova-darwin-x64.tar.gz
+            nova-linux-x64.tar.gz
+            nova-linux-arm64.tar.gz
+            nova-windows-x64.zip
+            nova-windows-arm64.zip
             nova-install-package.json
             nova-install-package-lock.json
             SHA256SUMS

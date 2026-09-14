@@ -2,26 +2,26 @@
  * Shutdown Command Extension
  *
  * Adds a /quit command that allows extensions to trigger clean shutdown.
- * Demonstrates how extensions can use ctx.shutdown() to exit pi cleanly.
+ * Demonstrates how extensions can use ctx.shutdown() to exit nova cleanly.
  */
 
 import type { ExtensionAPI } from "@dongzijie1/nova";
 import { Type } from "typebox";
 
-export default function (pi: ExtensionAPI) {
-	// Register a /quit command that cleanly exits pi
-	pi.registerCommand("quit", {
-		description: "Exit pi cleanly",
+export default function (nova: ExtensionAPI) {
+	// Register a /quit command that cleanly exits nova
+	nova.registerCommand("quit", {
+		description: "Exit nova cleanly",
 		handler: async (_args, ctx) => {
 			ctx.shutdown();
 		},
 	});
 
 	// You can also create a tool that shuts down after completing work
-	pi.registerTool({
+	nova.registerTool({
 		name: "finish_and_exit",
 		label: "Finish and Exit",
-		description: "Complete a task and exit pi",
+		description: "Complete a task and exit nova",
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			// Do any final work here...
@@ -37,10 +37,10 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// You could also create a more complex tool with parameters
-	pi.registerTool({
+	nova.registerTool({
 		name: "deploy_and_exit",
 		label: "Deploy and Exit",
-		description: "Deploy the application and exit pi",
+		description: "Deploy the application and exit nova",
 		parameters: Type.Object({
 			environment: Type.String({ description: "Target environment (e.g., production, staging)" }),
 		}),
@@ -48,7 +48,7 @@ export default function (pi: ExtensionAPI) {
 			onUpdate?.({ content: [{ type: "text", text: `Deploying to ${params.environment}...` }], details: {} });
 
 			// Example deployment logic
-			// const result = await pi.exec("npm", ["run", "deploy", params.environment], { signal });
+			// const result = await nova.exec("npm", ["run", "deploy", params.environment], { signal });
 
 			// On success, request graceful shutdown
 			onUpdate?.({ content: [{ type: "text", text: "Deployment complete, exiting..." }], details: {} });

@@ -4,7 +4,6 @@
   </a>
 </p>
 <p align="center">
-  <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
   <a href="https://www.npmjs.com/package/@dongzijie1/nova"><img alt="npm" src="https://img.shields.io/npm/v/@dongzijie1/nova?style=flat-square" /></a>
 </p>
 
@@ -15,22 +14,6 @@
 Nova is an AI-powered coding agent that adapts to your workflows. Extend it with TypeScript [Extensions](#extensions), [Skills](#skills), [Prompt Templates](#prompt-templates), and [Themes](#themes). Put your extensions, skills, prompt templates, and themes in [Nova Packages](#nova-packages) and share them with others via npm or git.
 
 Nova ships with powerful defaults and supports multi-model providers (OpenAI, Anthropic, Google, DeepSeek, etc.). It runs in four modes: interactive, print or JSON, RPC for process integration, and an SDK for embedding in your own apps.
-
-## Share your OSS coding agent sessions
-
-If you use Nova for open source work, please share your coding agent sessions.
-
-Public OSS session data helps improve models, prompts, tools, and evaluations using real development workflows.
-
-For the full explanation, see [this post on X](https://x.com/badlogicgames/status/2037811643774652911).
-
-To publish sessions, use [`badlogic/nova-share-hf`](https://github.com/badlogic/nova-share-hf). Read its README.md for setup instructions. All you need is a Hugging Face account, the Hugging Face CLI, and `nova-share-hf`.
-
-You can also watch [this video](https://x.com/badlogicgames/status/2041151967695634619), where I show how I publish my `nova-agent` work sessions.
-
-I regularly publish my own `nova-agent` work sessions here:
-
-- [badlogicgames/nova-agent on Hugging Face](https://huggingface.co/datasets/badlogicgames/nova-agent)
 
 ## Table of Contents
 
@@ -51,7 +34,7 @@ I regularly publish my own `nova-agent` work sessions here:
   - [Skills](#skills)
   - [Extensions](#extensions)
   - [Themes](#themes)
-  - [Nova Packages](#pi-packages)
+  - [Nova Packages](#nova-packages)
 - [Programmatic Usage](#programmatic-usage)
 - [Philosophy](#philosophy)
 - [CLI Reference](#cli-reference)
@@ -66,11 +49,9 @@ npm install -g --ignore-scripts @dongzijie1/nova
 
 `--ignore-scripts` disables dependency lifecycle scripts during install. Nova does not require install scripts for normal npm installs.
 
-Installer alternative:
-
-```bash
-curl -fsSL https://pi.dev/install.sh | sh
-```
+Standalone binary: download `nova-<platform>.tar.gz` (or `.zip` on Windows) from
+[GitHub Releases](https://github.com/DongZiJie1/nova-agent/releases), unpack it, and run the `nova`
+executable inside.
 
 Authenticate with an API key:
 
@@ -86,7 +67,7 @@ nova
 /login  # Then select provider
 ```
 
-Then just talk to Nova. By default, Nova gives the model four tools: `read`, `write`, `edit`, and `bash`. The model uses these to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [nova packages](#pi-packages).
+Then just talk to Nova. By default, Nova gives the model four tools: `read`, `write`, `edit`, and `bash`. The model uses these to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [Nova Packages](#nova-packages).
 
 **Platform notes:** [Windows](docs/windows.md) | [Termux (Android)](docs/termux.md) | [tmux](docs/tmux.md) | [Terminal setup](docs/terminal-setup.md) | [Shell aliases](docs/shell-aliases.md)
 
@@ -291,7 +272,7 @@ See [docs/settings.md](docs/settings.md) for all options.
 
 ### Project Trust
 
-On interactive startup, pi asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.nova/agent/trust.json`. Trusting a project allows pi to load `.nova/settings.json` and `.nova` resources, install missing project packages, and execute project extensions.
+On interactive startup, Nova asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.nova/agent/trust.json`. Trusting a project allows Nova to load `.nova/settings.json` and `.nova` resources, install missing project packages, and execute project extensions.
 
 Before the trust decision, Nova loads only context files, user/global extensions, and CLI `-e` extensions so they can handle the `project_trust` event. Project-local extensions, project package-managed extensions, and project settings are loaded only after the project is trusted. This split also applies when switching to a session from a different cwd whose trust has not been resolved in the current process.
 
@@ -301,16 +282,18 @@ If no extension or saved decision applies, `defaultProjectTrust` controls the fa
 
 `nova config` and package commands use the same project trust flow, except `nova update` never prompts. Pass `--approve` to trust project-local settings for one command or `--no-approve` to ignore them.
 
-Use `/trust` in interactive mode to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.nova/agent/trust.json` only; the current session is not reloaded, so restart pi for changes to take effect.
+Use `/trust` in interactive mode to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.nova/agent/trust.json` only; the current session is not reloaded, so restart Nova for changes to take effect.
 
 ### Telemetry and update checks
 
 Nova has two separate startup features:
 
-- **Update check:** fetches `https://pi.dev/api/latest-version` to check whether a newer Pi version exists. Disable it with `PI_SKIP_VERSION_CHECK=1`. Disabling update checks only turns off this check.
-- **Install/update telemetry:** after first install or a changelog-detected update, sends an anonymous version ping to `https://pi.dev/api/report-install`. This setting also controls optional provider attribution headers for OpenRouter, Cloudflare, and direct NVIDIA NIM requests. Opt out by setting `enableInstallTelemetry` to `false` in `settings.json`, or by setting `PI_TELEMETRY=0`. This does not disable update checks; Nova may still contact `pi.dev` for the latest version unless update checks are disabled or offline mode is enabled.
+- **Update check:** queries the npm registry for the latest published Nova version. Disable it with `NOVA_SKIP_VERSION_CHECK=1`. Disabling update checks only turns off this check.
+- **Install/update telemetry:** off by default. When `NOVA_TELEMETRY_URL` points at a collector you control, Nova sends one anonymous version ping after first install or a changelog-detected update. The `enableInstallTelemetry` setting (also controlled by `NOVA_TELEMETRY`) gates this ping and the optional provider attribution headers for OpenRouter, Cloudflare, and direct NVIDIA NIM requests. Opt out by setting `enableInstallTelemetry` to `false` in `settings.json`, or by setting `NOVA_TELEMETRY=0`.
 
-Use `--offline` or `PI_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
+Use `--offline` or `NOVA_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
+
+The legacy `PI_`-prefixed names (`PI_OFFLINE`, `PI_SKIP_VERSION_CHECK`, `PI_TELEMETRY`, and the rest of the table below) are still read when the `NOVA_` variable is unset.
 
 ---
 
@@ -343,7 +326,7 @@ Review this code for bugs, security issues, and performance problems.
 Focus on: {{focus}}
 ```
 
-Place in `~/.nova/agent/prompts/`, `.nova/prompts/`, or a [pi package](#pi-packages) to share with others. See [docs/prompt-templates.md](docs/prompt-templates.md).
+Place in `~/.nova/agent/prompts/`, `.nova/prompts/`, or a [Nova Package](#nova-packages) to share with others. See [docs/prompt-templates.md](docs/prompt-templates.md).
 
 ### Skills
 
@@ -359,7 +342,7 @@ Use this skill when the user asks about X.
 2. Then that
 ```
 
-Place in `~/.nova/agent/skills/`, `~/.agents/skills/`, `.nova/skills/`, or `.agents/skills/` (from `cwd` up through parent directories) or a [pi package](#pi-packages) to share with others. See [docs/skills.md](docs/skills.md).
+Place in `~/.nova/agent/skills/`, `~/.agents/skills/`, `.nova/skills/`, or `.agents/skills/` (from `cwd` up through parent directories) or a [Nova Package](#nova-packages) to share with others. See [docs/skills.md](docs/skills.md).
 
 ### Extensions
 
@@ -391,23 +374,23 @@ The default export can also be `async`. Nova waits for async extension factories
 - Games while waiting (yes, Doom runs)
 - ...anything you can dream up
 
-Place in `~/.nova/agent/extensions/`, `.nova/extensions/`, or a [pi package](#pi-packages) to share with others. See [docs/extensions.md](docs/extensions.md) and [examples/extensions/](examples/extensions/).
+Place in `~/.nova/agent/extensions/`, `.nova/extensions/`, or a [Nova Package](#nova-packages) to share with others. See [docs/extensions.md](docs/extensions.md) and [examples/extensions/](examples/extensions/).
 
 ### Themes
 
 Built-in: `dark`, `light`. Themes hot-reload: modify the active theme file and Nova immediately applies changes.
 
-Place in `~/.nova/agent/themes/`, `.nova/themes/`, or a [pi package](#pi-packages) to share with others. See [docs/themes.md](docs/themes.md).
+Place in `~/.nova/agent/themes/`, `.nova/themes/`, or a [Nova Package](#nova-packages) to share with others. See [docs/themes.md](docs/themes.md).
 
 ### Nova Packages
 
-Bundle and share extensions, skills, prompts, and themes via npm or git. Find packages on [npmjs.com](https://www.npmjs.com/search?q=keywords%3Anova-package) or [Discord](https://discord.com/channels/1456806362351669492/1457744485428629628).
+Bundle and share extensions, skills, prompts, and themes via npm or git. Find packages on [npmjs.com](https://www.npmjs.com/search?q=keywords%3Anova-package).
 
 > **Security:** Nova packages run with full system access. Extensions execute arbitrary code, and skills can instruct the model to perform any action including running executables. Review source code before installing third-party packages.
 
 ```bash
-nova install npm:@foo/pi-tools
-nova install npm:@foo/pi-tools@1.2.3      # pinned version
+nova install npm:@foo/nova-tools
+nova install npm:@foo/nova-tools@1.2.3      # pinned version
 nova install git:github.com/user/repo
 nova install git:github.com/user/repo@v1  # tag or commit
 nova install git:git@github.com:user/repo
@@ -416,8 +399,8 @@ nova install https://github.com/user/repo
 nova install https://github.com/user/repo@v1      # tag or commit
 nova install ssh://git@github.com/user/repo
 nova install ssh://git@github.com/user/repo@v1    # tag or commit
-nova remove npm:@foo/pi-tools
-nova uninstall npm:@foo/pi-tools          # alias for remove
+nova remove npm:@foo/nova-tools
+nova uninstall npm:@foo/nova-tools          # alias for remove
 nova list
 nova update                               # update nova only
 nova update --all                         # update nova and packages
@@ -425,19 +408,19 @@ nova update --extensions                  # update packages only
 nova update --models                      # refresh model catalogs only
 nova update --self                        # update nova only
 nova update --self --force                # reinstall nova even if current
-nova update npm:@foo/pi-tools             # update one package
+nova update npm:@foo/nova-tools             # update one package
 nova config                               # enable/disable extensions, skills, prompts, themes
 ```
 
 Packages install to `~/.nova/agent/git/` (git) or `~/.nova/agent/npm/` (npm). Use `-l` for project-local installs (`.nova/git/`, `.nova/npm/`). Git `@ref` values are pinned tags or commits; pinned packages are skipped by `nova update --extensions` and `nova update --all`, so use `nova install git:host/user/repo@new-ref` to move an existing package to a new ref. Git packages install dependencies with `npm install --omit=dev` by default, so runtime deps must be listed under `dependencies`; when `npmCommand` is configured, git packages use plain `install` for compatibility with wrappers. If you use a Node version manager and want package installs to reuse a stable npm context, set `npmCommand` in `settings.json`, for example `["mise", "exec", "node@20", "--", "npm"]`.
 
-Create a package by adding a `pi` key to `package.json`:
+Create a package by adding a `nova` key to `package.json`:
 
 ```json
 {
   "name": "my-nova-package",
   "keywords": ["nova-package"],
-  "pi": {
+  "nova": {
     "extensions": ["./extensions"],
     "skills": ["./skills"],
     "prompts": ["./prompts"],
@@ -446,7 +429,7 @@ Create a package by adding a `pi` key to `package.json`:
 }
 ```
 
-Without a `pi` manifest, Nova auto-discovers from conventional directories (`extensions/`, `skills/`, `prompts/`, `themes/`).
+Without a `nova` manifest, Nova auto-discovers from conventional directories (`extensions/`, `skills/`, `prompts/`, `themes/`). The pre-rebrand `pi` key is still read when `nova` is absent.
 
 See [docs/packages.md](docs/packages.md).
 
@@ -488,7 +471,7 @@ See [docs/rpc.md](docs/rpc.md) for the protocol.
 
 ## Philosophy
 
-Nova is aggressively extensible so it doesn't have to dictate your workflow. Features that other tools bake in can be built with [extensions](#extensions), [skills](#skills), or installed from third-party [nova packages](#pi-packages). This keeps the core minimal while letting you shape nova to fit how you work.
+Nova is aggressively extensible so it doesn't have to dictate your workflow. Features that other tools bake in can be built with [extensions](#extensions), [skills](#skills), or installed from third-party [Nova Packages](#nova-packages). This keeps the core minimal while letting you shape Nova to fit how you work.
 
 **No MCP.** Build CLI tools with READMEs (see [Skills](#skills)), or build an extension that adds MCP support. [Why?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
 
@@ -660,25 +643,26 @@ nova --thinking high "Solve this complex problem"
 
 | Variable | Description |
 |----------|-------------|
-| `PI_CODING_AGENT` | Set to `true` by the CLI and RPC entry points so child processes can detect that they run inside Nova |
-| `PI_CODING_AGENT_DIR` | Override config directory (default: `~/.nova/agent`) |
-| `PI_CODING_AGENT_SESSION_DIR` | Override session storage directory (overridden by `--session-dir`) |
-| `PI_PACKAGE_DIR` | Override package directory (useful for Nix/Guix where store paths tokenize poorly) |
-| `PI_OFFLINE` | Disable startup network operations, including update checks, package update checks, and install/update telemetry |
-| `PI_SKIP_VERSION_CHECK` | Skip the Nova version update check at startup. This prevents the `pi.dev` latest-version request |
-| `PI_TELEMETRY` | Override install/update telemetry and provider attribution headers. Use `1`/`true`/`yes` to enable or `0`/`false`/`no` to disable. This does not disable update checks |
-| `PI_CACHE_RETENTION` | Set to `long` for extended prompt cache (Anthropic: 1h, OpenAI: 24h) |
+| `NOVA_CODING_AGENT` | Set to `true` by the CLI and RPC entry points so child processes can detect that they run inside Nova |
+| `NOVA_CODING_AGENT_DIR` | Override config directory (default: `~/.nova/agent`) |
+| `NOVA_CODING_AGENT_SESSION_DIR` | Override session storage directory (overridden by `--session-dir`) |
+| `NOVA_PACKAGE_DIR` | Override package directory (useful for Nix/Guix where store paths tokenize poorly) |
+| `NOVA_OFFLINE` | Disable startup network operations, including update checks, package update checks, and install/update telemetry |
+| `NOVA_SKIP_VERSION_CHECK` | Skip the Nova version update check at startup. This prevents the latest-release request |
+| `NOVA_TELEMETRY` | Override install/update telemetry and provider attribution headers. Use `1`/`true`/`yes` to enable or `0`/`false`/`no` to disable. This does not disable update checks |
+| `NOVA_TELEMETRY_URL` | Collector endpoint for the install/update version ping. Unset means no ping is ever sent |
+| `NOVA_CACHE_RETENTION` | Set to `long` for extended prompt cache (Anthropic: 1h, OpenAI: 24h) |
 | `VISUAL`, `EDITOR` | Fallback external editor for Ctrl+G when `externalEditor` is unset; defaults to Notepad on Windows and `nano` elsewhere |
 
 Commands run by the LLM-callable bash tool also receive current session metadata:
 
 | Variable | Description |
 |----------|-------------|
-| `PI_SESSION_ID` | Current session ID |
-| `PI_SESSION_FILE` | Absolute session JSONL path; unset for ephemeral sessions |
-| `PI_PROVIDER` | Currently selected model provider |
-| `PI_MODEL` | Currently selected model ID |
-| `PI_REASONING_LEVEL` | Current effective reasoning level |
+| `NOVA_SESSION_ID` | Current session ID |
+| `NOVA_SESSION_FILE` | Absolute session JSONL path; unset for ephemeral sessions |
+| `NOVA_PROVIDER` | Currently selected model provider |
+| `NOVA_MODEL` | Currently selected model ID |
+| `NOVA_REASONING_LEVEL` | Current effective reasoning level |
 
 These values are resolved when each command starts. See [Environment Variables](docs/environment-variables.md#bash-tool-session-environment) for semantics, examples, and custom-tool opt-out.
 
@@ -694,12 +678,12 @@ MIT
 
 ## See Also
 
-- [@dongzijie1/nova-ai](https://www.npmjs.com/package/@dongzijie1/nova-ai): Core LLM toolkit
-- [@dongzijie1/nova-agent-core](https://www.npmjs.com/package/@dongzijie1/nova-agent-core): Agent framework
-- [@dongzijie1/nova-tui](https://www.npmjs.com/package/@dongzijie1/nova-tui): Terminal UI components
+- [@dongzijie1/pi-ai](https://www.npmjs.com/package/@dongzijie1/pi-ai): Core LLM toolkit
+- [@dongzijie1/pi-agent-core](https://www.npmjs.com/package/@dongzijie1/pi-agent-core): Agent framework
+- [@dongzijie1/pi-tui](https://www.npmjs.com/package/@dongzijie1/pi-tui): Terminal UI components
 
 <p align="center">
-  <a href="https://pi.dev">pi.dev</a> domain graciously donated by
-  <br /><br />
-  <a href="https://exe.dev"><img src="docs/images/exy.png" alt="Exy mascot" width="48" /><br />exe.dev</a>
+  Nova is forked from <a href="https://github.com/earendil-works/pi">Pi Agent</a> by Earendil Works.
+  The <code>/share</code> command links to the public session viewer hosted at
+  <a href="https://pi.dev">pi.dev</a>, a domain graciously donated by exe.dev.
 </p>

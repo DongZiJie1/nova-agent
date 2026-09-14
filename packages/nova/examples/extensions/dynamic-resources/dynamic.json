@@ -1,5 +1,5 @@
 {
-	"$schema": "https://raw.githubusercontent.com/earendil-works/pi/main/packages/nova/src/modes/interactive/theme/theme-schema.json",
+	"$schema": "https://raw.githubusercontent.com/DongZiJie1/nova-agent/main/packages/nova/src/modes/interactive/theme/theme-schema.json",
 	"name": "dynamic-resources",
 	"vars": {
 		"cyan": "#00d7ff",

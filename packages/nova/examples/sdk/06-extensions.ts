@@ -10,7 +10,7 @@
  * - Paths specified in settings.json "extensions" array
  *
  * An extension is a TypeScript file that exports a default function:
- *   export default function (pi: ExtensionAPI) { ... }
+ *   export default function (nova: ExtensionAPI) { ... }
  */
 
 import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager } from "@dongzijie1/nova";
@@ -23,8 +23,8 @@ const resourceLoader = new DefaultResourceLoader({
 	agentDir: getAgentDir(),
 	additionalExtensionPaths: ["./my-logging-extension.ts", "./my-safety-extension.ts"],
 	extensionFactories: [
-		(pi) => {
-			pi.on("agent_start", () => {
+		(nova) => {
+			nova.on("agent_start", () => {
 				console.log("[Inline Extension] Agent starting");
 			});
 		},
@@ -54,23 +54,23 @@ try {
 /*
 import type { ExtensionAPI } from "@dongzijie1/nova";
 
-export default function (pi: ExtensionAPI) {
-	pi.on("agent_start", async () => {
+export default function (nova: ExtensionAPI) {
+	nova.on("agent_start", async () => {
 		console.log("[Extension] Agent starting");
 	});
 
-	pi.on("tool_call", async (event) => {
+	nova.on("tool_call", async (event) => {
 		console.log(\`[Extension] Tool: \${event.toolName}\`);
 		// Return { block: true, reason: "..." } to block execution
 		return undefined;
 	});
 
-	pi.on("agent_end", async (event) => {
+	nova.on("agent_end", async (event) => {
 		console.log(\`[Extension] Done, \${event.messages.length} messages\`);
 	});
 
 	// Register a custom tool
-	pi.registerTool({
+	nova.registerTool({
 		name: "my_tool",
 		label: "My Tool",
 		description: "Does something useful",
@@ -84,7 +84,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Register a command
-	pi.registerCommand("mycommand", {
+	nova.registerCommand("mycommand", {
 		description: "Do something",
 		handler: async (args, ctx) => {
 			ctx.ui.notify(\`Command executed with: \${args}\`);

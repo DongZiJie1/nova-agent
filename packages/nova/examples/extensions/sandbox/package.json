@@ -1,5 +1,5 @@
 {
-	"name": "pi-extension-sandbox",
+	"name": "nova-extension-sandbox",
 	"private": true,
 	"version": "1.5.0",
 	"type": "module",
@@ -8,7 +8,7 @@
 		"build": "echo 'nothing to build'",
 		"check": "echo 'nothing to check'"
 	},
-	"pi": {
+	"nova": {
 		"extensions": [
 			"./index.ts"
 		]
