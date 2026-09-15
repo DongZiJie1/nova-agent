@@ -721,6 +721,114 @@ describe("ModelRegistry", () => {
 		});
 	});
 
+	describe("model budget validation", () => {
+		/** Anthropic-compatible provider entry holding a single hand-written model */
+		function rawProvider(model: Record<string, unknown>) {
+			return {
+				baseUrl: "https://open.bigmodel.cn/api/anthropic",
+				apiKey: "DEMO_KEY",
+				api: "anthropic-messages",
+				models: [model],
+			};
+		}
+
+		test("rejects a custom model whose maxTokens copies its contextWindow", async () => {
+			writeRawModelsJson({
+				zai: rawProvider({
+					id: "glm-5.3-flash",
+					reasoning: true,
+					input: ["text", "image"],
+					contextWindow: 1000000,
+					maxTokens: 1000000,
+				}),
+			});
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+
+			expect(registry.getError()).toContain(
+				'model glm-5.3-flash: "maxTokens" (1000000) must be smaller than "contextWindow" (1000000)',
+			);
+			expect(registry.find("zai", "glm-5.3-flash")).toBeUndefined();
+		});
+
+		test("rejects a maxTokens larger than the contextWindow", async () => {
+			writeRawModelsJson({
+				zai: rawProvider({
+					id: "glm-5.3-flash",
+					reasoning: false,
+					input: ["text"],
+					contextWindow: 200000,
+					maxTokens: 200001,
+				}),
+			});
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+
+			expect(registry.getError()).toContain(
+				'model glm-5.3-flash: "maxTokens" (200001) must be smaller than "contextWindow" (200000)',
+			);
+			expect(registry.find("zai", "glm-5.3-flash")).toBeUndefined();
+		});
+
+		test("accepts an output cap below the context window", async () => {
+			writeRawModelsJson({
+				zai: rawProvider({
+					id: "glm-5.3-flash",
+					reasoning: false,
+					input: ["text"],
+					contextWindow: 1000000,
+					maxTokens: 131072,
+				}),
+			});
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+
+			expect(registry.getError()).toBeUndefined();
+			expect(registry.find("zai", "glm-5.3-flash")?.maxTokens).toBe(131072);
+		});
+
+		test("rejects an override that pushes maxTokens up to the context window", async () => {
+			writeRawModelsJson({
+				zai: {
+					...rawProvider({
+						id: "glm-5.3-flash",
+						reasoning: false,
+						input: ["text"],
+						contextWindow: 200000,
+						maxTokens: 8192,
+					}),
+					modelOverrides: { "glm-5.3-flash": { maxTokens: 200000 } },
+				},
+			});
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+
+			expect(registry.getError()).toContain(
+				'model glm-5.3-flash: "maxTokens" (200000) must be smaller than "contextWindow" (200000)',
+			);
+		});
+
+		test("keeps an override that leaves the inherited budgets alone", async () => {
+			writeRawModelsJson({
+				zai: {
+					...rawProvider({
+						id: "glm-5.3-flash",
+						reasoning: false,
+						input: ["text"],
+						contextWindow: 200000,
+						maxTokens: 8192,
+					}),
+					modelOverrides: { "glm-5.3-flash": { name: "GLM Custom" } },
+				},
+			});
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+
+			expect(registry.getError()).toBeUndefined();
+			expect(registry.find("zai", "glm-5.3-flash")?.name).toBe("GLM Custom");
+		});
+	});
+
 	describe("modelOverrides (per-model customization)", () => {
 		/** openrouter provider entry with the given configured models and optional per-model overrides */
 		function openRouterConfig(

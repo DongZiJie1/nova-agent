@@ -724,7 +724,12 @@ interface ProviderModelConfig {
   /** Maximum context window size in tokens. */
   contextWindow: number;
 
-  /** Maximum output tokens. */
+  /**
+   * Maximum output tokens of a single reply. Must be smaller than `contextWindow`,
+   * which covers input and output. Use the output cap the provider documents for
+   * this model (e.g. 131072 for Z.AI's Anthropic-compatible endpoint); copying the
+   * context window here makes providers reject every request.
+   */
   maxTokens: number;
 
   /** Custom headers for this specific model. */

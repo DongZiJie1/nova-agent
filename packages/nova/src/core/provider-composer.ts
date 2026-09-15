@@ -98,7 +98,7 @@ function mergeCompat(
 }
 
 function applyModelOverride(model: Model<Api>, override: ModelsJsonModelOverride): Model<Api> {
-	return {
+	const next: Model<Api> = {
 		...model,
 		name: override.name ?? model.name,
 		reasoning: override.reasoning ?? model.reasoning,
@@ -119,6 +119,12 @@ function applyModelOverride(model: Model<Api>, override: ModelsJsonModelOverride
 		maxTokens: override.maxTokens ?? model.maxTokens,
 		compat: mergeCompat(model.compat, override.compat),
 	};
+	// Only the budgets this override authors are checked: values inherited from the
+	// catalog are not what the user just typed.
+	if (override.contextWindow !== undefined || override.maxTokens !== undefined) {
+		assertOutputCapFitsContext(model.provider, next);
+	}
+	return next;
 }
 
 /** A brand-new model must declare these; a definition that replaces an existing model inherits them. */
@@ -131,6 +137,26 @@ function missingNewModelFields(definition: {
 	input?: ("text" | "image")[];
 }): string[] {
 	return NEW_MODEL_REQUIRED_FIELDS.filter((field) => definition[field] === undefined);
+}
+
+/**
+ * `maxTokens` is the output cap of a single reply, so it has to fit inside the
+ * `contextWindow`, a budget that covers input *and* output. A cap equal to (or
+ * larger than) the window is nearly always a `contextWindow` copy-paste, and
+ * providers that transmit it verbatim reject the whole request: Z.AI's
+ * Anthropic-compatible endpoint answers "max_tokens参数非法" (code 1210) for
+ * anything above its own 131072 limit.
+ */
+function assertOutputCapFitsContext(
+	providerId: string,
+	model: Pick<Model<Api>, "id" | "contextWindow" | "maxTokens">,
+): void {
+	if (model.maxTokens < model.contextWindow) return;
+	throw new Error(
+		`Provider ${providerId}, model ${model.id}: "maxTokens" (${model.maxTokens}) must be smaller than "contextWindow" (${model.contextWindow}). ` +
+			`"maxTokens" is the maximum output tokens of one reply, not the context window; ` +
+			`set the output cap the provider documents for this model (a typical value is 8192 to 131072).`,
+	);
 }
 
 function knownApiNames(): string {
@@ -185,6 +211,9 @@ function modelFromJson(
 	const input = (definition.input ?? replaced?.input)!;
 	const contextWindow = (definition.contextWindow ?? replaced?.contextWindow)!;
 	const maxTokens = (definition.maxTokens ?? replaced?.maxTokens)!;
+	if (definition.contextWindow !== undefined || definition.maxTokens !== undefined) {
+		assertOutputCapFitsContext(providerId, { id: definition.id, contextWindow, maxTokens });
+	}
 	return {
 		id: definition.id,
 		name: definition.name ?? replaced?.name ?? definition.id,
