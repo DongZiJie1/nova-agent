@@ -728,7 +728,10 @@ interface ProviderModelConfig {
    * Maximum output tokens of a single reply. Must be smaller than `contextWindow`,
    * which covers input and output. Use the output cap the provider documents for
    * this model (e.g. 131072 for Z.AI's Anthropic-compatible endpoint); copying the
-   * context window here makes providers reject every request.
+   * context window here makes providers reject every request. Nova refuses a
+   * `maxTokens` that does not fit the context window, and recovers from a value
+   * that merely exceeds the endpoint's own cap by retrying once with the cap the
+   * endpoint reports in its error.
    */
   maxTokens: number;
 

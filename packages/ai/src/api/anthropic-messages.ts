@@ -34,6 +34,12 @@ import { getNovaEnv } from "../utils/env-compat.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { parseJsonWithRepair, parseStreamingJson } from "../utils/json-parse.ts";
+import {
+	clampMaxTokensToLearnedCap,
+	extractMaxTokensCap,
+	maxTokensCapKey,
+	rememberMaxTokensCap,
+} from "../utils/max-tokens-cap.ts";
 import { retryProviderRequest } from "../utils/provider-retry.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 
@@ -556,14 +562,27 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 				...(options?.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
 				maxRetries: 0,
 			};
-			const response = await retryProviderRequest(
-				() => client.messages.create({ ...params, stream: true }, requestOptions).asResponse(),
-				{
-					maxRetries: options?.maxRetries,
-					maxRetryDelayMs: options?.maxRetryDelayMs,
-					signal: options?.signal,
-				},
-			);
+			const retryOptions = {
+				maxRetries: options?.maxRetries,
+				maxRetryDelayMs: options?.maxRetryDelayMs,
+				signal: options?.signal,
+			};
+			const send = (nextParams: MessageCreateParamsStreaming) =>
+				retryProviderRequest(
+					() => client.messages.create({ ...nextParams, stream: true }, requestOptions).asResponse(),
+					retryOptions,
+				);
+			let response: Response;
+			try {
+				response = await send(params);
+			} catch (error) {
+				// A provider that refuses `max_tokens` states the cap it does accept; use
+				// that number rather than guessing, and keep it for the rest of the process.
+				const cap = extractMaxTokensCap(error, params.max_tokens);
+				if (cap === undefined) throw error;
+				rememberMaxTokensCap(maxTokensCapKey(model), cap);
+				response = await send({ ...params, max_tokens: cap });
+			}
 			await options?.onResponse?.({ status: response.status, headers: headersToRecord(response.headers) }, model);
 			stream.push({ type: "start", partial: output });
 
@@ -960,7 +979,9 @@ function buildParams(
 			deferredToolNames,
 			normalizeToolName,
 		),
-		max_tokens: options?.maxTokens ?? model.maxTokens,
+		// An endpoint that already refused an output cap keeps that limit for the
+		// rest of the process, so later turns skip the doomed first request.
+		max_tokens: clampMaxTokensToLearnedCap(maxTokensCapKey(model), options?.maxTokens ?? model.maxTokens),
 		stream: true,
 	};
 
