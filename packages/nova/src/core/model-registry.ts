@@ -33,6 +33,10 @@ export class ModelRegistry {
 		return this.runtime.getError();
 	}
 
+	getWarnings(): string[] {
+		return this.runtime.getWarnings();
+	}
+
 	getAll(): Model<Api>[] {
 		return [...this.runtime.getModels()];
 	}

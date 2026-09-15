@@ -408,23 +408,13 @@ describe("AgentSession prompt characterization", () => {
 						api: "anthropic-messages",
 						baseUrl: "https://example.com/api/anthropic",
 						apiKey: "DEMO_KEY",
-						models: [
-							{
-								id: "glm-5.3-flash",
-								reasoning: false,
-								input: ["text"],
-								contextWindow: 1000000,
-								maxTokens: 1000000,
-							},
-						],
+						models: [{ id: "glm-5.3-flash" }],
 					},
 				},
 			},
 		});
 		harnesses.push(harness);
 
-		await expect(harness.session.prompt("hi")).rejects.toThrow(
-			'"maxTokens" (1000000) must be smaller than "contextWindow" (1000000)',
-		);
+		await expect(harness.session.prompt("hi")).rejects.toThrow('missing "contextWindow", "maxTokens", "input"');
 	});
 });

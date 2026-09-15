@@ -830,6 +830,9 @@ export async function main(args: string[], options?: MainOptions) {
 
 	time("resolveModelScope");
 	reportDiagnostics(runtime.diagnostics);
+	for (const warning of modelRuntime.getWarnings()) {
+		console.error(chalk.yellow(`Warning: ${warning}`));
+	}
 	if (runtime.diagnostics.some((diagnostic) => diagnostic.type === "error")) {
 		if (runtime.diagnostics.some((diagnostic) => diagnostic.message.includes("Failed to load extension"))) {
 			console.error(chalk.yellow(EXTENSION_LOAD_FAILURE_HINT));
