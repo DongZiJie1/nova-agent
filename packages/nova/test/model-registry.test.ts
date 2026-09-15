@@ -721,6 +721,115 @@ describe("ModelRegistry", () => {
 		});
 	});
 
+	describe("model budget warnings", () => {
+		/** Provider entry holding the given hand-written models */
+		function rawProvider(models: Array<Record<string, unknown>>) {
+			return {
+				baseUrl: "https://open.bigmodel.cn/api/anthropic",
+				apiKey: "DEMO_KEY",
+				api: "anthropic-messages",
+				models,
+			};
+		}
+
+		function glm(maxTokens: number, contextWindow = 1000000) {
+			return {
+				id: "glm-5.3-flash",
+				reasoning: false,
+				input: ["text"],
+				contextWindow,
+				maxTokens,
+			};
+		}
+
+		test("warns when a model copies its contextWindow into maxTokens", async () => {
+			writeRawModelsJson({ zai: rawProvider([glm(1000000)]) });
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+
+			expect(registry.getError()).toBeUndefined();
+			expect(registry.getWarnings().join("\n")).toContain(
+				'model glm-5.3-flash: "maxTokens" (1000000) is not smaller than "contextWindow" (1000000)',
+			);
+			// The entry stays usable: only the endpoint knows its real output cap, and
+			// the adapter clamps at request time.
+			expect(registry.find("zai", "glm-5.3-flash")?.maxTokens).toBe(1000000);
+		});
+
+		test("keeps the healthy siblings of a suspicious model", async () => {
+			// Regression: refusing the entry used to fail the whole provider, which
+			// silently removed models that had nothing wrong with them.
+			writeRawModelsJson({
+				deepseek: {
+					api: "openai-completions",
+					baseUrl: "https://api.deepseek.com",
+					apiKey: "DEMO_KEY",
+					models: [
+						{ id: "deepseek-flash", reasoning: true, input: ["text"], contextWindow: 1000000, maxTokens: 384000 },
+						{ id: "deepseek-pro", reasoning: true, input: ["text"], contextWindow: 1000000, maxTokens: 1000000 },
+					],
+				},
+			});
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+
+			expect(registry.getError()).toBeUndefined();
+			expect(getModelsForProvider(registry, "deepseek").map((model) => model.id)).toEqual([
+				"deepseek-flash",
+				"deepseek-pro",
+			]);
+			expect(registry.getWarnings().join("\n")).toContain('model deepseek-pro: "maxTokens" (1000000)');
+		});
+
+		test("warns when maxTokens is larger than the contextWindow", async () => {
+			writeRawModelsJson({ zai: rawProvider([glm(200001, 200000)]) });
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+
+			expect(registry.getWarnings().join("\n")).toContain(
+				'model glm-5.3-flash: "maxTokens" (200001) is not smaller than "contextWindow" (200000)',
+			);
+		});
+
+		test("stays quiet when the output cap fits the context window", async () => {
+			writeRawModelsJson({ zai: rawProvider([glm(131072)]) });
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+
+			expect(registry.getWarnings()).toEqual([]);
+			expect(registry.find("zai", "glm-5.3-flash")?.maxTokens).toBe(131072);
+		});
+
+		test("warns about an override that pushes maxTokens up to the context window", async () => {
+			writeRawModelsJson({
+				zai: {
+					...rawProvider([glm(8192, 200000)]),
+					modelOverrides: { "glm-5.3-flash": { maxTokens: 200000 } },
+				},
+			});
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+
+			expect(registry.getWarnings().join("\n")).toContain(
+				'model glm-5.3-flash: "maxTokens" (200000) is not smaller than "contextWindow" (200000)',
+			);
+		});
+
+		test("stays quiet about an override that leaves the budgets alone", async () => {
+			writeRawModelsJson({
+				zai: {
+					...rawProvider([glm(8192, 200000)]),
+					modelOverrides: { "glm-5.3-flash": { name: "GLM Custom" } },
+				},
+			});
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+
+			expect(registry.getWarnings()).toEqual([]);
+			expect(registry.find("zai", "glm-5.3-flash")?.name).toBe("GLM Custom");
+		});
+	});
+
 	describe("modelOverrides (per-model customization)", () => {
 		/** openrouter provider entry with the given configured models and optional per-model overrides */
 		function openRouterConfig(

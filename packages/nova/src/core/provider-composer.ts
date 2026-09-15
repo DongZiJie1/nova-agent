@@ -97,8 +97,12 @@ function mergeCompat(
 	return merged;
 }
 
-function applyModelOverride(model: Model<Api>, override: ModelsJsonModelOverride): Model<Api> {
-	return {
+function applyModelOverride(
+	model: Model<Api>,
+	override: ModelsJsonModelOverride,
+	onWarning?: (message: string) => void,
+): Model<Api> {
+	const next: Model<Api> = {
 		...model,
 		name: override.name ?? model.name,
 		reasoning: override.reasoning ?? model.reasoning,
@@ -119,6 +123,13 @@ function applyModelOverride(model: Model<Api>, override: ModelsJsonModelOverride
 		maxTokens: override.maxTokens ?? model.maxTokens,
 		compat: mergeCompat(model.compat, override.compat),
 	};
+	// Only the budgets this override authors are checked: values inherited from the
+	// catalog are not what the user just typed.
+	if (override.contextWindow !== undefined || override.maxTokens !== undefined) {
+		const warning = outputCapWarning(model.provider, next);
+		if (warning) onWarning?.(warning);
+	}
+	return next;
 }
 
 /** A brand-new model must declare these; a definition that replaces an existing model inherits them. */
@@ -131,6 +142,32 @@ function missingNewModelFields(definition: {
 	input?: ("text" | "image")[];
 }): string[] {
 	return NEW_MODEL_REQUIRED_FIELDS.filter((field) => definition[field] === undefined);
+}
+
+/**
+ * `maxTokens` is the output cap of a single reply, so it has to fit inside the
+ * `contextWindow`, a budget that covers input *and* output. A cap equal to (or
+ * larger than) the window is nearly always a `contextWindow` copy-paste, and
+ * providers that transmit it verbatim reject the whole request: Z.AI's
+ * Anthropic-compatible endpoint answers "max_tokens参数非法" (code 1210) for
+ * anything above its own 131072 limit.
+ *
+ * Reported as a warning instead of an error. The endpoint's real output cap is
+ * not something Nova can know, the adapter recovers at request time by reading
+ * the cap the provider reports, and refusing the entry would drop every other
+ * model of the same provider: one suspicious model is not worth losing its
+ * healthy siblings.
+ */
+function outputCapWarning(
+	providerId: string,
+	model: Pick<Model<Api>, "id" | "contextWindow" | "maxTokens">,
+): string | undefined {
+	if (model.maxTokens < model.contextWindow) return undefined;
+	return (
+		`Provider ${providerId}, model ${model.id}: "maxTokens" (${model.maxTokens}) is not smaller than "contextWindow" (${model.contextWindow}). ` +
+		`"maxTokens" is the maximum output tokens of one reply, not the context window; ` +
+		`set the output cap the provider documents for this model (a typical value is 8192 to 131072).`
+	);
 }
 
 function knownApiNames(): string {
@@ -146,6 +183,7 @@ function modelFromJson(
 	providerConfig: ModelsJsonProvider,
 	providerBaseUrl: string | undefined,
 	replaced: Model<Api> | undefined,
+	onWarning?: (message: string) => void,
 ): Model<Api> {
 	const api = definition.api ?? providerConfig.api ?? replaced?.api;
 	const baseUrl = definition.baseUrl ?? providerConfig.baseUrl ?? replaced?.baseUrl ?? providerBaseUrl;
@@ -185,6 +223,10 @@ function modelFromJson(
 	const input = (definition.input ?? replaced?.input)!;
 	const contextWindow = (definition.contextWindow ?? replaced?.contextWindow)!;
 	const maxTokens = (definition.maxTokens ?? replaced?.maxTokens)!;
+	if (definition.contextWindow !== undefined || definition.maxTokens !== undefined) {
+		const warning = outputCapWarning(providerId, { id: definition.id, contextWindow, maxTokens });
+		if (warning) onWarning?.(warning);
+	}
 	return {
 		id: definition.id,
 		name: definition.name ?? replaced?.name ?? definition.id,
@@ -207,6 +249,7 @@ function applyModelsJson(
 	baseModels: readonly Model<Api>[],
 	config: ModelsJsonProvider | undefined,
 	providerBaseUrl: string | undefined,
+	onWarning?: (message: string) => void,
 ): Model<Api>[] {
 	if (!config) return [...baseModels];
 	if (config.oauth && !config.baseUrl) {
@@ -241,6 +284,7 @@ function applyModelsJson(
 			config,
 			providerBaseUrl,
 			existingIndex >= 0 ? models[existingIndex] : undefined,
+			onWarning,
 		);
 		if (existingIndex >= 0) models[existingIndex] = model;
 		else models.push(model);
@@ -483,10 +527,18 @@ export function composeModelProvider(
 	base: Provider | undefined,
 	modelConfig: ModelConfig,
 	extension: ProviderConfigInput | undefined,
+	onWarning?: (message: string) => void,
 ): Provider {
 	const config = modelConfig.getProvider(providerId);
 	let extensionOAuthCredential: OAuthCredentials | undefined;
 	let refreshedExtensionModels: ProviderConfigInput["models"];
+	const reportedWarnings = new Set<string>();
+	const warn = (message: string) => {
+		// getModels() runs on every read of the provider, so report each issue once.
+		if (reportedWarnings.has(message)) return;
+		reportedWarnings.add(message);
+		onWarning?.(message);
+	};
 	const currentExtension = (): ProviderConfigInput | undefined =>
 		extension && refreshedExtensionModels ? { ...extension, models: refreshedExtensionModels } : extension;
 	// models.json modelOverrides are the topmost user-config layer: they apply once,
@@ -494,7 +546,7 @@ export function composeModelProvider(
 	const getModels = () => {
 		let models = applyExtension(
 			providerId,
-			applyModelsJson(providerId, base?.getModels() ?? [], config, base?.baseUrl),
+			applyModelsJson(providerId, base?.getModels() ?? [], config, base?.baseUrl, warn),
 			currentExtension(),
 		);
 		if (extensionOAuthCredential && extension?.oauth?.modifyModels) {
@@ -502,7 +554,7 @@ export function composeModelProvider(
 		}
 		return models.map((model) => {
 			const override = config?.modelOverrides?.[model.id];
-			return override ? applyModelOverride(model, override) : model;
+			return override ? applyModelOverride(model, override, warn) : model;
 		});
 	};
 	// Validate eagerly so registration/reload reports structural errors immediately.

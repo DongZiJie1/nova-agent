@@ -44,6 +44,9 @@ export async function listModels(
 	if (loadError) {
 		console.error(chalk.yellow(`Warning: errors loading models.json:\n${loadError}`));
 	}
+	for (const warning of modelRuntime.getWarnings()) {
+		console.error(chalk.yellow(`Warning: ${warning}`));
+	}
 
 	if (options.json) {
 		// Refresh availability so `auth.configured` reflects stored credentials.

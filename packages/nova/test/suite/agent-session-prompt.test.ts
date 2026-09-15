@@ -395,4 +395,26 @@ describe("AgentSession prompt characterization", () => {
 			`No API key found for ${harness.getModel().provider}.`,
 		);
 	});
+
+	it("names the models.json error when a provider failed to compose", async () => {
+		// A rejected models.json entry removes the provider's models, so the prompt
+		// fails on auth. Without the composition error the user only sees advice
+		// about API keys and never learns why the model is missing.
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			modelsJson: {
+				providers: {
+					zai: {
+						api: "anthropic-messages",
+						baseUrl: "https://example.com/api/anthropic",
+						apiKey: "DEMO_KEY",
+						models: [{ id: "glm-5.3-flash" }],
+					},
+				},
+			},
+		});
+		harnesses.push(harness);
+
+		await expect(harness.session.prompt("hi")).rejects.toThrow('missing "contextWindow", "maxTokens", "input"');
+	});
 });

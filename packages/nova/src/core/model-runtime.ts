@@ -94,6 +94,8 @@ export class ModelRuntime implements Models {
 	private readonly nativeExtensionProviders = new Map<string, Provider>();
 	private readonly extensionProviders = new Map<string, ProviderConfigInput>();
 	private readonly compositionErrors = new Map<string, string>();
+	/** Non-fatal findings reported while composing a provider from models.json. */
+	private readonly compositionWarnings = new Map<string, string[]>();
 	private readonly modelsPath: string | undefined;
 	private config: ModelConfig;
 	private snapshot: ModelRuntimeSnapshot = {
@@ -172,19 +174,26 @@ export class ModelRuntime implements Models {
 		if (!base && !this.config.getProvider(providerId) && !extension) {
 			this.models.deleteProvider(providerId);
 			this.compositionErrors.delete(providerId);
+			this.compositionWarnings.delete(providerId);
 			return;
 		}
 		if (base && !this.config.getProvider(providerId) && !extension) {
 			// No overlays: use the builtin untouched so its auth/login/stream behavior is exact.
 			this.models.setProvider(base);
 			this.compositionErrors.delete(providerId);
+			this.compositionWarnings.delete(providerId);
 			return;
 		}
 		try {
-			this.models.setProvider(composeModelProvider(providerId, base, this.config, extension));
+			const warnings: string[] = [];
+			this.models.setProvider(
+				composeModelProvider(providerId, base, this.config, extension, (message) => warnings.push(message)),
+			);
+			this.compositionWarnings.set(providerId, warnings);
 			this.compositionErrors.delete(providerId);
 		} catch (error) {
 			this.compositionErrors.set(providerId, error instanceof Error ? error.message : String(error));
+			this.compositionWarnings.delete(providerId);
 			if (base) this.models.setProvider(base);
 			else this.models.deleteProvider(providerId);
 		}
@@ -193,6 +202,7 @@ export class ModelRuntime implements Models {
 	private rebuildProviders(): void {
 		this.models.clearProviders();
 		this.compositionErrors.clear();
+		this.compositionWarnings.clear();
 		for (const providerId of this.providerIds()) this.recomposeProvider(providerId);
 		this.updateModelSnapshot();
 	}
@@ -349,6 +359,14 @@ export class ModelRuntime implements Models {
 		}
 		if (this.availabilityError) errors.push(`Availability refresh: ${this.availabilityError}`);
 		return errors.length > 0 ? errors.join("\n\n") : undefined;
+	}
+
+	/**
+	 * Findings that are worth showing but do not cost the provider its models,
+	 * e.g. a token budget that looks like a copied context window.
+	 */
+	getWarnings(): string[] {
+		return [...this.compositionWarnings.values()].flat();
 	}
 
 	getRegisteredProviderConfig(providerId: string): ProviderConfigInput | undefined {
