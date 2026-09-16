@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-09-14
+
+### Added
+
+- Added file-change review and safe rollback support. The `write` tool records reversible patches and new-file state, and the `revert_file_change` RPC command can undo edits, overwrites, and created files.
+- Added unified tool permission modes: `ask` (the default), `edits`, and `allow`. Read-only tools are approved automatically; CLI, settings, and RPC clients can select a mode or answer individual requests; execution traces record the decision and its reason.
+- Added a structured, user-configured model catalog via `nova --list-models --json`, including resolved capabilities and authentication status. Nova reloads `models.json` when selecting a model so configuration changes can take effect without restarting.
+- Added runtime guardrails: a 10-minute default Bash timeout, a limit of eight concurrent Bash processes, an 8,000-line or 256 KiB cap for SDK and extension tool output, and a 30-minute per-turn timeout. The limits are configurable through `bashTimeoutSeconds`, `maxConcurrentBash`, and `turnTimeoutMinutes`.
+
+### Changed
+
+- **Breaking:** Nova no longer ships bundled text or image model catalogs, or a default model. Available models now come exclusively from `~/.nova/agent/models.json`; new entries must explicitly resolve `api` or `baseUrl` and declare `contextWindow`, `maxTokens`, and `input`.
+- Changed unattended print and RPC calls to deny tools that need confirmation unless callers explicitly use `--permission-mode allow` or answer permission requests through RPC.
+- Changed delegated Agents to inherit their parent session working directory unless an explicit directory is supplied, keeping worktree-based tasks in the intended checkout.
+- Completed the runtime and distribution rebrand to Nova: `NOVA_*` environment variables take precedence while `PI_*` remains a compatibility fallback, and release artifacts use `nova-*` names with a `nova` executable.
+
+### Fixed
+
+- Fixed session deletion in `ask` mode to request confirmation only once and to move only Nova session data to the system trash, never project files.
+- Fixed source-archive generation after removal of generated model data, regenerated workspace lockfile entries, added missing cross-platform optional native dependencies, and installed `trash-cli` in Linux CI so session-deletion tests pass.
+
 ## [1.3.0] - 2026-08-23
 
 ### Added
