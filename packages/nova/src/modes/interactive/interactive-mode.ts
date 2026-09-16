@@ -905,6 +905,9 @@ export class InteractiveMode {
 		if (modelsJsonError) {
 			this.showError(`models.json error: ${modelsJsonError}`);
 		}
+		for (const warning of this.session.modelRuntime.getWarnings()) {
+			this.showWarning(warning);
+		}
 
 		if (modelFallbackMessage) {
 			this.showWarning(modelFallbackMessage);
@@ -5447,6 +5450,9 @@ export class InteractiveMode {
 			const modelsJsonError = this.session.modelRuntime.getError();
 			if (modelsJsonError) {
 				this.showError(`models.json error: ${modelsJsonError}`);
+			}
+			for (const warning of this.session.modelRuntime.getWarnings()) {
+				this.showWarning(warning);
 			}
 			this.showStatus(
 				savedImplicitProjectTrust

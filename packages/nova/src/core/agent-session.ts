@@ -466,6 +466,18 @@ export class AgentSession {
 		return this._modelRuntime;
 	}
 
+	/**
+	 * A model whose provider failed to compose (a bad models.json entry, a failed
+	 * registration) resolves to no provider at all, so the generic "no API key"
+	 * message would hide the real cause. Append the composition error when there
+	 * is one.
+	 */
+	private _noApiKeyFoundMessage(provider: string): string {
+		const message = formatNoApiKeyFoundMessage(provider);
+		const runtimeError = this._modelRuntime.getError();
+		return runtimeError ? `${message}\n\nmodels.json error:\n${runtimeError}` : message;
+	}
+
 	private async _getRequiredRequestAuth(model: Model<any>): Promise<{
 		apiKey?: string;
 		headers?: Record<string, string>;
@@ -477,7 +489,7 @@ export class AgentSession {
 		} catch (error) {
 			const cause = error instanceof Error ? error.cause : undefined;
 			if (cause instanceof Error && cause.message === "authHeader requires a resolved API key") {
-				throw new Error(formatNoApiKeyFoundMessage(model.provider));
+				throw new Error(this._noApiKeyFoundMessage(model.provider));
 			}
 			throw error;
 		}
@@ -497,7 +509,7 @@ export class AgentSession {
 					`Run '/login ${model.provider}' to re-authenticate.`,
 			);
 		}
-		throw new Error(formatNoApiKeyFoundMessage(model.provider));
+		throw new Error(this._noApiKeyFoundMessage(model.provider));
 	}
 
 	private async _getSummarizationRequestAuth(model: Model<any>): Promise<{
@@ -1473,7 +1485,7 @@ export class AgentSession {
 							`Run '/login ${this.model.provider}' to re-authenticate.`,
 					);
 				}
-				throw new Error(formatNoApiKeyFoundMessage(this.model.provider));
+				throw new Error(this._noApiKeyFoundMessage(this.model.provider));
 			}
 
 			// Check if we need to compact before sending (catches aborted responses).
