@@ -110,6 +110,7 @@ import { createNovaDataToolDefinition } from "./nova-data.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.ts";
+import { createWriteUserMemoryToolDefinition } from "./write-user-memory.ts";
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
@@ -124,7 +125,8 @@ export type ToolName =
 	| "nova_data"
 	| "ask_user_question"
 	| "hub_list_agents"
-	| "hub_delegate_task";
+	| "hub_delegate_task"
+	| "write_user_memory";
 export const allToolNames: Set<ToolName> = new Set([
 	"read",
 	"bash",
@@ -137,6 +139,7 @@ export const allToolNames: Set<ToolName> = new Set([
 	"ask_user_question",
 	"hub_list_agents",
 	"hub_delegate_task",
+	"write_user_memory",
 ]);
 
 export interface ToolsOptions {
@@ -173,6 +176,8 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createHubListAgentsToolDefinition();
 		case "hub_delegate_task":
 			return createHubDelegateTaskToolDefinition();
+		case "write_user_memory":
+			return createWriteUserMemoryToolDefinition();
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -202,6 +207,8 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return wrapToolDefinition(createHubListAgentsToolDefinition());
 		case "hub_delegate_task":
 			return wrapToolDefinition(createHubDelegateTaskToolDefinition());
+		case "write_user_memory":
+			return wrapToolDefinition(createWriteUserMemoryToolDefinition());
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -238,6 +245,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		ask_user_question: createAskUserQuestionToolDefinition(),
 		hub_list_agents: createHubListAgentsToolDefinition(),
 		hub_delegate_task: createHubDelegateTaskToolDefinition(),
+		write_user_memory: createWriteUserMemoryToolDefinition(),
 	};
 }
 
@@ -272,6 +280,7 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		ask_user_question: wrapToolDefinition(createAskUserQuestionToolDefinition()),
 		hub_list_agents: wrapToolDefinition(createHubListAgentsToolDefinition()),
 		hub_delegate_task: wrapToolDefinition(createHubDelegateTaskToolDefinition()),
+		write_user_memory: wrapToolDefinition(createWriteUserMemoryToolDefinition()),
 	};
 }
 
@@ -281,7 +290,7 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
  * injected by the host); a standalone CLI never sees them.
  */
 export function createDefaultActiveToolNames(): ToolName[] {
-	const names: ToolName[] = ["read", "bash", "edit", "write", "ask_user_question", "nova_data"];
+	const names: ToolName[] = ["read", "bash", "edit", "write", "ask_user_question", "nova_data", "write_user_memory"];
 	if (process.env.NOVA_HUB_URL) {
 		names.push("hub_list_agents", "hub_delegate_task");
 	}

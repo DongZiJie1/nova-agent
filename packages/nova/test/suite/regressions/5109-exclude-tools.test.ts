@@ -57,6 +57,7 @@ describe("regression #5109: exclude tools", () => {
 				"edit",
 				"nova_data",
 				"write",
+				"write_user_memory",
 			]);
 			// Tool snippets are intentionally NOT in the system prompt.
 			expect(harness.session.systemPrompt).not.toContain("- read:");
