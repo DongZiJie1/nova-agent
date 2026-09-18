@@ -90,6 +90,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 			"ls",
 			"nova_data",
 			"read",
+			"todo",
 			"write",
 			"write_user_memory",
 		]);

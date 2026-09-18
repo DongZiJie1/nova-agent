@@ -25,6 +25,10 @@ export interface ToolPermissionManagerOptions {
  * Requests that never prompt, in any mode. `nova_data` is included as a whole
  * tool: session deletion does not need a second gate here because the tool runs
  * its own confirmation in every mode (see nova-data.ts).
+ *
+ * `todo` is included as a whole tool for the same reason: it only writes Nova's
+ * own todo list (`todos.json` in the agent directory), which the user can edit
+ * or delete in the 待办 page, and it never touches project files.
  */
 const AUTO_APPROVED_TOOLS = new Set([
 	"read",
@@ -35,6 +39,7 @@ const AUTO_APPROVED_TOOLS = new Set([
 	"hub_list_agents",
 	"hub_wait_tasks",
 	"nova_data",
+	"todo",
 ]);
 
 const EDIT_TOOLS = new Set(["edit", "write"]);
