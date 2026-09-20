@@ -21,6 +21,8 @@ export interface TodoItem {
 	id: string;
 	title: string;
 	description: string;
+	tags: string[];
+	topic?: string;
 	status: TodoStatus;
 	priority: TodoPriority;
 	projectPath?: string;
@@ -40,8 +42,10 @@ export interface TodoState {
 }
 
 export interface CreateTodoInput {
+	topic?: string;
 	title: string;
 	description?: string;
+	tags?: string[];
 	priority?: TodoPriority;
 	projectPath?: string;
 	dueAt?: string;
@@ -50,8 +54,10 @@ export interface CreateTodoInput {
 }
 
 export interface UpdateTodoInput {
+	topic?: string;
 	title?: string;
 	description?: string;
+	tags?: string[];
 	status?: TodoStatus;
 	priority?: TodoPriority;
 	projectPath?: string;
@@ -60,6 +66,8 @@ export interface UpdateTodoInput {
 
 export const TODO_TITLE_MAX = 120;
 export const TODO_DESCRIPTION_MAX = 4_000;
+export const TODO_TAG_MAX = 24;
+export const TODO_TAGS_MAX = 5;
 
 const TODO_STATUSES: readonly TodoStatus[] = ["pending", "in_progress", "completed"];
 const TODO_PRIORITIES: readonly TodoPriority[] = ["low", "medium", "high"];
@@ -84,6 +92,27 @@ export function normalizeTodoDescription(value: string | undefined): string {
 	if ([...description].length > TODO_DESCRIPTION_MAX)
 		throw new Error(`Todo description must not exceed ${TODO_DESCRIPTION_MAX} characters`);
 	return description;
+}
+
+/**
+ * Tags are the user's own grouping axis (论文 / 实验 / 工程 …), so they stay
+ * free-form. Comparison ignores case and inner spacing so "Agent RL" and
+ * "agent  rl" are the same tag, and the first spelling wins.
+ */
+export function normalizeTodoTags(value: readonly string[] | undefined): string[] {
+	const tags: string[] = [];
+	const seen = new Set<string>();
+	for (const raw of value ?? []) {
+		const tag = String(raw).trim().split(/\s+/).join(" ");
+		if (!tag) continue;
+		if ([...tag].length > TODO_TAG_MAX) throw new Error(`Todo tag must not exceed ${TODO_TAG_MAX} characters`);
+		const key = tag.toLocaleLowerCase();
+		if (seen.has(key)) continue;
+		seen.add(key);
+		tags.push(tag);
+	}
+	if (tags.length > TODO_TAGS_MAX) throw new Error(`A todo must not have more than ${TODO_TAGS_MAX} tags`);
+	return tags;
 }
 
 /** `YYYY-MM-DD` for a day without a time, or an RFC 3339 timestamp. */
@@ -113,8 +142,12 @@ function parseTodoItem(value: unknown): TodoItem | undefined {
 	const timestamp = typeof item.updatedAt === "string" ? item.updatedAt : new Date().toISOString();
 	return {
 		id: item.id,
+		topic: typeof item.topic === "string" ? normalizeOptional(item.topic) : undefined,
 		title: item.title,
 		description: typeof item.description === "string" ? item.description : "",
+		tags: Array.isArray(item.tags)
+			? item.tags.filter((tag): tag is string => typeof tag === "string").slice(0, TODO_TAGS_MAX)
+			: [],
 		status,
 		priority,
 		projectPath: typeof item.projectPath === "string" ? item.projectPath : undefined,
@@ -127,6 +160,10 @@ function parseTodoItem(value: unknown): TodoItem | undefined {
 		completedAt: typeof item.completedAt === "string" ? item.completedAt : undefined,
 		order: typeof item.order === "number" ? item.order : 0,
 	};
+}
+
+export function todoTopic(todo: TodoItem): string {
+	return todo.topic || todo.tags[0] || "未分类";
 }
 
 export class TodoStore {
@@ -167,9 +204,11 @@ export class TodoStore {
 		if (!isTodoPriority(priority)) throw new Error(`Invalid todo priority: ${priority}`);
 		const nextOrder = state.items.reduce((max, item) => Math.max(max, item.order), -1) + 1;
 		const todo: TodoItem = {
+			topic: normalizeTodoTags(input.topic ? [input.topic] : [])[0],
 			id: `todo_${randomUUID()}`,
 			title: normalizeTodoTitle(input.title),
 			description: normalizeTodoDescription(input.description),
+			tags: normalizeTodoTags(input.tags),
 			status: "pending",
 			priority,
 			projectPath: normalizeOptional(input.projectPath),
@@ -190,8 +229,10 @@ export class TodoStore {
 		const state = this.read();
 		const todo = state.items.find((item) => item.id === id);
 		if (!todo) throw new Error(`Todo not found: ${id}`);
+		if (input.topic !== undefined) todo.topic = normalizeTodoTags(input.topic ? [input.topic] : [])[0];
 		if (input.title !== undefined) todo.title = normalizeTodoTitle(input.title);
 		if (input.description !== undefined) todo.description = normalizeTodoDescription(input.description);
+		if (input.tags !== undefined) todo.tags = normalizeTodoTags(input.tags);
 		if (input.priority !== undefined) {
 			if (!isTodoPriority(input.priority)) throw new Error(`Invalid todo priority: ${input.priority}`);
 			todo.priority = input.priority;

@@ -214,6 +214,83 @@ describe("todo tool", () => {
 		expect(JSON.parse(resultText(bounded)).truncated).toBe(true);
 	});
 
+	it("stores tags, cleans them up, and filters the list by tag", async () => {
+		const created = await tool.execute(
+			"tag-create",
+			{
+				action: "create",
+				title: "读 DeepSeekMath",
+				tags: [" 论文 ", "论文", "RL", ""],
+			},
+			undefined,
+			undefined,
+			context(),
+		);
+		const createdId = (created.details as TodoToolDetails).todo?.id ?? "";
+		expect((created.details as TodoToolDetails).todo?.tags).toEqual(["论文", "RL"]);
+
+		await tool.execute(
+			"tag-create-2",
+			{ action: "create", title: "跑通 GRPO", tags: ["实验"] },
+			undefined,
+			undefined,
+			context(),
+		);
+
+		const papers = await tool.execute("tag-list", { action: "list", tag: "论文" }, undefined, undefined, context());
+		expect(papers.details.total).toBe(1);
+		expect(JSON.parse(resultText(papers)).todos[0].tags).toEqual(["论文", "RL"]);
+		// Equal counts fall back to locale order, so ASCII sorts before CJK.
+		expect(JSON.parse(resultText(papers)).availableTags).toEqual(["RL", "实验", "论文"]);
+
+		// update replaces the whole list; an empty array clears it
+		const retagged = await tool.execute(
+			"tag-update",
+			{ action: "update", todo_id: createdId, tags: ["实验", "论文"] },
+			undefined,
+			undefined,
+			context(),
+		);
+		expect((retagged.details as TodoToolDetails).todo?.tags).toEqual(["实验", "论文"]);
+		await tool.execute(
+			"tag-clear",
+			{ action: "update", todo_id: createdId, tags: [] },
+			undefined,
+			undefined,
+			context(),
+		);
+		expect(storedState().items[0].tags).toEqual([]);
+	});
+
+	it("reads todos written before tags existed", async () => {
+		seedStudioTodo();
+		expect(storedState().items[0].tags).toBeUndefined();
+
+		const listed = await tool.execute("legacy-list", { action: "list" }, undefined, undefined, context());
+		expect((listed.details as TodoToolDetails).todos?.[0].tags).toEqual([]);
+	});
+
+	it("rejects tags that break the shared contract", async () => {
+		const tooMany = await tool.execute(
+			"tag-bad-1",
+			{ action: "create", title: "Too many tags", tags: ["a", "b", "c", "d", "e", "f"] },
+			undefined,
+			undefined,
+			context(),
+		);
+		const tooLong = await tool.execute(
+			"tag-bad-2",
+			{ action: "create", title: "Long tag", tags: ["x".repeat(25)] },
+			undefined,
+			undefined,
+			context(),
+		);
+
+		expect(tooMany.details.error).toContain("more than 5 tags");
+		expect(tooLong.details.error).toContain("24 characters");
+		expect(existsSync(todoFile())).toBe(false);
+	});
+
 	it("updates an existing todo and stamps completion", async () => {
 		seedStudioTodo({ id: "todo_target" });
 

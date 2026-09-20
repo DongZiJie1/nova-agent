@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added tags and topics to the `todo` tool: `topic` defaults to the first tag (or 未分类), the list can filter by tag or topic, and `offset` with `limit` pages through the rest. Todos written before tags existed keep their grouping without any rewrite.
 - Added the `todo` tool for recording and updating items on Nova's todo list (`todos.json` in the agent directory), the same store the 待办 page of Nova Studio reads. Items created by the agent are attributed to it and stay linked to the session that wrote them.
 
 ## [1.5.0] - 2026-09-14
