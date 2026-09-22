@@ -65,7 +65,7 @@ export interface UpdateTodoInput {
 }
 
 export const TODO_TITLE_MAX = 120;
-export const TODO_DESCRIPTION_MAX = 4_000;
+export const TODO_DESCRIPTION_MAX = 50_000;
 export const TODO_TAG_MAX = 24;
 export const TODO_TAGS_MAX = 5;
 
