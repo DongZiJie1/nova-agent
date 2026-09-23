@@ -21,6 +21,8 @@ export interface TodoItem {
 	id: string;
 	title: string;
 	description: string;
+	/** User-authored completion notes from Nova Studio; preserved on agent writes. */
+	completionNotes?: string;
 	tags: string[];
 	topic?: string;
 	status: TodoStatus;
@@ -145,6 +147,7 @@ function parseTodoItem(value: unknown): TodoItem | undefined {
 		topic: typeof item.topic === "string" ? normalizeOptional(item.topic) : undefined,
 		title: item.title,
 		description: typeof item.description === "string" ? item.description : "",
+		completionNotes: typeof item.completionNotes === "string" ? item.completionNotes : "",
 		tags: Array.isArray(item.tags)
 			? item.tags.filter((tag): tag is string => typeof tag === "string").slice(0, TODO_TAGS_MAX)
 			: [],
