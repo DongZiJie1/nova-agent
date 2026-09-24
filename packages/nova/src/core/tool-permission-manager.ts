@@ -26,9 +26,10 @@ export interface ToolPermissionManagerOptions {
  * tool: session deletion does not need a second gate here because the tool runs
  * its own confirmation in every mode (see nova-data.ts).
  *
- * `todo` is included as a whole tool for the same reason: it only writes Nova's
- * own todo list (`todos.json` in the agent directory), which the user can edit
- * or delete in the 待办 page, and it never touches project files.
+ * `todo` and the scheduled-task tools are included for the same reason: they
+ * only write Nova's own agent-dir stores (`todos.json` / `scheduled-tasks.json`),
+ * which the user can edit or delete in Studio, and they never touch project
+ * files.
  */
 const AUTO_APPROVED_TOOLS = new Set([
 	"read",
@@ -40,6 +41,8 @@ const AUTO_APPROVED_TOOLS = new Set([
 	"hub_wait_tasks",
 	"nova_data",
 	"todo",
+	"query_scheduled_tasks",
+	"write_scheduled_task",
 ]);
 
 const EDIT_TOOLS = new Set(["edit", "write"]);

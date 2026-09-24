@@ -19,6 +19,8 @@
  * - Z.AI (Anthropic-compatible):
  *   `400 {"type":"error","error":{"type":"invalid_request_error","code":"1210",
  *   "message":"[1210][max_tokens参数非法：限制数值范围[1,131072]]"}}`
+ * - Xiaomi MiMo / Anthropic-compatible gateways:
+ *   `'max_tokens' 989974 is out of supported range (0, 131072]`
  * - Anthropic:
  *   `max_tokens: 1000000 > 64000, which is the maximum allowed number of output tokens for claude-sonnet-4-5`
  * - Generic OpenAI-compatible gateways:
@@ -29,11 +31,12 @@
 const MAX_TOKENS_MENTION = /max[_\s-]?tokens/i;
 
 /**
- * Upper bound stated as a range, e.g. `[1, 131072]`. Requires a mention of
- * `max_tokens` first, so input-length ranges ("Range of input length should be
- * [1, 131072]", which DashScope returns on context overflow) are left alone.
+ * Upper bound stated as a range, e.g. `[1, 131072]` or `(0, 131072]`.
+ * Requires a mention of `max_tokens` first, so input-length ranges
+ * ("Range of input length should be [1, 131072]", which DashScope returns on
+ * context overflow) are left alone.
  */
-const RANGE_CAP = /\[\s*1\s*,\s*([\d,]{1,10})\s*\]/;
+const RANGE_CAP = /[([]\s*[01]\s*,\s*([\d,]{1,10})\s*[)\]]/;
 
 /** Comparison or prose form, e.g. "max_tokens: 1000000 > 64000" or "at most 8192". */
 const COMPARISON_CAP =
