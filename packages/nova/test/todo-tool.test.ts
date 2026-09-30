@@ -146,6 +146,16 @@ describe("todo tool", () => {
 		expect(state.items[1]).toMatchObject({ order: 4, projectPath: "/project/beta" });
 	});
 
+	it("includes stored change history in list results", async () => {
+		seedStudioTodo({
+			history: [{ type: "due_at_changed", from: "2026-09-30", to: "2026-10-05", changedAt: "2026-09-29T00:00:00Z" }],
+		});
+		const result = await tool.execute("list-history", { action: "list" }, undefined, undefined, context());
+		expect(JSON.parse(resultText(result)).todos[0].history).toEqual([
+			{ type: "due_at_changed", from: "2026-09-30", to: "2026-10-05", changedAt: "2026-09-29T00:00:00Z" },
+		]);
+	});
+
 	it("does not link a todo to Nova's own scratch checkout", async () => {
 		const worktree = await tool.execute(
 			"create-worktree",

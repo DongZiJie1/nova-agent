@@ -17,7 +17,7 @@ const todoSchema = Type.Object({
 	),
 	action: Type.Union([Type.Literal("create"), Type.Literal("list"), Type.Literal("update"), Type.Literal("get")], {
 		description:
-			"Todo operation: create adds one, list returns summaries (paged), update edits status/fields, get returns one todo's full record including complete description and completion notes",
+			"Todo operation: create adds one, list returns summaries with change history (paged), update edits status/fields, get returns one todo's full record including complete description and completion notes",
 	}),
 	title: Type.Optional(
 		Type.String({
@@ -97,6 +97,7 @@ export function todoSummary(todo: TodoItem) {
 		createdAt: todo.createdAt,
 		updatedAt: todo.updatedAt,
 		completedAt: todo.completedAt,
+		history: todo.history,
 	};
 }
 
@@ -143,7 +144,7 @@ export function createTodoToolDefinition(): ToolDefinition<typeof todoSchema, To
 		name: "todo",
 		label: "todo",
 		description:
-			"Nova's todo list — the items the user sees on the 待办 page of Nova Studio. Use it to record work that should outlive this conversation, keep an existing item's status current, and read a stored item's full details. Create one todo per deliverable, list before creating to avoid duplicates, and update the same todo while working on it instead of creating another one. Always tag a new todo so the user can group the list later. list/create/update return a short summary only (description truncated, no completion notes); call get with a todo_id when you need the full description or the user's completion notes.",
+			"Nova's todo list — the items the user sees on the 待办 page of Nova Studio. Use it to record work that should outlive this conversation, keep an existing item's status current, and read a stored item's full details. Create one todo per deliverable, list before creating to avoid duplicates, and update the same todo while working on it instead of creating another one. Always tag a new todo so the user can group the list later. list/create/update include change history but truncate descriptions and omit completion notes; call get with a todo_id when you need the full description or the user's completion notes.",
 		promptSnippet: "Record, update, and read items on the user's Nova todo list.",
 		promptGuidelines: [
 			"Every todo belongs to a topic that defaults to its first tag. List first to obtain IDs, and keep related work in the same topic so the page stays grouped.",
