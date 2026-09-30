@@ -84,6 +84,20 @@ describe("ToolPermissionManager", () => {
 		expect(confirm).not.toHaveBeenCalled();
 	});
 
+	// The todo tool writes only Nova's own todo list, which the 待办 page lets the
+	// user edit or delete, so it never needs a permission prompt of its own.
+	it.each(["ask", "edits", "allow"] as const)("auto-approves todo writes in %s mode without a UI", async (mode) => {
+		const confirm = vi.fn<ExtensionUIContext["confirm"]>();
+		const result = await new ToolPermissionManager({ mode }).check(
+			{ ...request, toolName: "todo", args: { action: "create", title: "Ship the todo tool" } },
+			undefined,
+		);
+
+		expect(result.allowed).toBe(true);
+		if (mode !== "allow") expect(result.reason).toBe("Tool auto-approved");
+		expect(confirm).not.toHaveBeenCalled();
+	});
+
 	it("prompts with the tool details and allows an approved call", async () => {
 		const confirm = vi.fn<ExtensionUIContext["confirm"]>().mockResolvedValue(true);
 		const result = await new ToolPermissionManager({ mode: "ask", timeoutMs: 500 }).check(

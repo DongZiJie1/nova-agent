@@ -108,8 +108,10 @@ import { createHubDelegateTaskToolDefinition, createHubListAgentsToolDefinition 
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
 import { createNovaDataToolDefinition } from "./nova-data.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
+import { createTodoToolDefinition } from "./todo.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.ts";
+import { createWriteUserMemoryToolDefinition } from "./write-user-memory.ts";
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
@@ -122,9 +124,11 @@ export type ToolName =
 	| "find"
 	| "ls"
 	| "nova_data"
+	| "todo"
 	| "ask_user_question"
 	| "hub_list_agents"
-	| "hub_delegate_task";
+	| "hub_delegate_task"
+	| "write_user_memory";
 export const allToolNames: Set<ToolName> = new Set([
 	"read",
 	"bash",
@@ -134,9 +138,11 @@ export const allToolNames: Set<ToolName> = new Set([
 	"find",
 	"ls",
 	"nova_data",
+	"todo",
 	"ask_user_question",
 	"hub_list_agents",
 	"hub_delegate_task",
+	"write_user_memory",
 ]);
 
 export interface ToolsOptions {
@@ -167,12 +173,16 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createLsToolDefinition(cwd, options?.ls);
 		case "nova_data":
 			return createNovaDataToolDefinition();
+		case "todo":
+			return createTodoToolDefinition();
 		case "ask_user_question":
 			return createAskUserQuestionToolDefinition();
 		case "hub_list_agents":
 			return createHubListAgentsToolDefinition();
 		case "hub_delegate_task":
 			return createHubDelegateTaskToolDefinition();
+		case "write_user_memory":
+			return createWriteUserMemoryToolDefinition();
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -196,12 +206,16 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createLsTool(cwd, options?.ls);
 		case "nova_data":
 			return wrapToolDefinition(createNovaDataToolDefinition());
+		case "todo":
+			return wrapToolDefinition(createTodoToolDefinition());
 		case "ask_user_question":
 			return wrapToolDefinition(createAskUserQuestionToolDefinition());
 		case "hub_list_agents":
 			return wrapToolDefinition(createHubListAgentsToolDefinition());
 		case "hub_delegate_task":
 			return wrapToolDefinition(createHubDelegateTaskToolDefinition());
+		case "write_user_memory":
+			return wrapToolDefinition(createWriteUserMemoryToolDefinition());
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -235,9 +249,11 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		find: createFindToolDefinition(cwd, options?.find),
 		ls: createLsToolDefinition(cwd, options?.ls),
 		nova_data: createNovaDataToolDefinition(),
+		todo: createTodoToolDefinition(),
 		ask_user_question: createAskUserQuestionToolDefinition(),
 		hub_list_agents: createHubListAgentsToolDefinition(),
 		hub_delegate_task: createHubDelegateTaskToolDefinition(),
+		write_user_memory: createWriteUserMemoryToolDefinition(),
 	};
 }
 
@@ -269,9 +285,11 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		find: createFindTool(cwd, options?.find),
 		ls: createLsTool(cwd, options?.ls),
 		nova_data: wrapToolDefinition(createNovaDataToolDefinition()),
+		todo: wrapToolDefinition(createTodoToolDefinition()),
 		ask_user_question: wrapToolDefinition(createAskUserQuestionToolDefinition()),
 		hub_list_agents: wrapToolDefinition(createHubListAgentsToolDefinition()),
 		hub_delegate_task: wrapToolDefinition(createHubDelegateTaskToolDefinition()),
+		write_user_memory: wrapToolDefinition(createWriteUserMemoryToolDefinition()),
 	};
 }
 
@@ -281,7 +299,16 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
  * injected by the host); a standalone CLI never sees them.
  */
 export function createDefaultActiveToolNames(): ToolName[] {
-	const names: ToolName[] = ["read", "bash", "edit", "write", "ask_user_question", "nova_data"];
+	const names: ToolName[] = [
+		"read",
+		"bash",
+		"edit",
+		"write",
+		"ask_user_question",
+		"nova_data",
+		"todo",
+		"write_user_memory",
+	];
 	if (process.env.NOVA_HUB_URL) {
 		names.push("hub_list_agents", "hub_delegate_task");
 	}
