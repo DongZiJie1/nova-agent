@@ -15,6 +15,13 @@ describe("extractMaxTokensCap", () => {
 		expect(extractMaxTokensCap(new Error(message), 1000000)).toBe(131072);
 	});
 
+	it("reads the open-interval range MiMo returns for an oversized max_tokens", () => {
+		const message =
+			'400 {"error":{"type":"invalid_request_error","message":"\'max_tokens\' 989974 is out of supported range (0, 131072]"}}';
+
+		expect(extractMaxTokensCap(new Error(message), 989974)).toBe(131072);
+	});
+
 	it("reads the comparison Anthropic puts in its own error", () => {
 		const message =
 			"400 max_tokens: 1000000 > 64000, which is the maximum allowed number of output tokens for claude-sonnet-4-5";

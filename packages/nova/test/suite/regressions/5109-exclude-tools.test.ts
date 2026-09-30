@@ -56,8 +56,10 @@ describe("regression #5109: exclude tools", () => {
 				"dynamic_tool",
 				"edit",
 				"nova_data",
+				"query_scheduled_tasks",
 				"todo",
 				"write",
+				"write_scheduled_task",
 				"write_user_memory",
 			]);
 			// Tool snippets are intentionally NOT in the system prompt.

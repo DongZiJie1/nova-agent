@@ -71,6 +71,11 @@ export {
 	type NovaDataToolInput,
 } from "./nova-data.ts";
 export {
+	createQueryScheduledTasksToolDefinition,
+	type QueryScheduledTasksDetails,
+	type QueryScheduledTasksInput,
+} from "./query-scheduled-tasks.ts";
+export {
 	createReadTool,
 	createReadToolDefinition,
 	type ReadOperations,
@@ -96,6 +101,11 @@ export {
 	type WriteToolInput,
 	type WriteToolOptions,
 } from "./write.ts";
+export {
+	createWriteScheduledTaskToolDefinition,
+	type WriteScheduledTaskDetails,
+	type WriteScheduledTaskInput,
+} from "./write-scheduled-task.ts";
 
 import type { AgentTool } from "@dongzijie1/pi-agent-core";
 import type { ToolDefinition } from "../extensions/types.ts";
@@ -107,10 +117,12 @@ import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "
 import { createHubDelegateTaskToolDefinition, createHubListAgentsToolDefinition } from "./hub.ts";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
 import { createNovaDataToolDefinition } from "./nova-data.ts";
+import { createQueryScheduledTasksToolDefinition } from "./query-scheduled-tasks.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
 import { createTodoToolDefinition } from "./todo.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.ts";
+import { createWriteScheduledTaskToolDefinition } from "./write-scheduled-task.ts";
 import { createWriteUserMemoryToolDefinition } from "./write-user-memory.ts";
 
 export type Tool = AgentTool<any>;
@@ -125,6 +137,8 @@ export type ToolName =
 	| "ls"
 	| "nova_data"
 	| "todo"
+	| "query_scheduled_tasks"
+	| "write_scheduled_task"
 	| "ask_user_question"
 	| "hub_list_agents"
 	| "hub_delegate_task"
@@ -139,6 +153,8 @@ export const allToolNames: Set<ToolName> = new Set([
 	"ls",
 	"nova_data",
 	"todo",
+	"query_scheduled_tasks",
+	"write_scheduled_task",
 	"ask_user_question",
 	"hub_list_agents",
 	"hub_delegate_task",
@@ -175,6 +191,10 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createNovaDataToolDefinition();
 		case "todo":
 			return createTodoToolDefinition();
+		case "query_scheduled_tasks":
+			return createQueryScheduledTasksToolDefinition();
+		case "write_scheduled_task":
+			return createWriteScheduledTaskToolDefinition();
 		case "ask_user_question":
 			return createAskUserQuestionToolDefinition();
 		case "hub_list_agents":
@@ -208,6 +228,10 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return wrapToolDefinition(createNovaDataToolDefinition());
 		case "todo":
 			return wrapToolDefinition(createTodoToolDefinition());
+		case "query_scheduled_tasks":
+			return wrapToolDefinition(createQueryScheduledTasksToolDefinition());
+		case "write_scheduled_task":
+			return wrapToolDefinition(createWriteScheduledTaskToolDefinition());
 		case "ask_user_question":
 			return wrapToolDefinition(createAskUserQuestionToolDefinition());
 		case "hub_list_agents":
@@ -250,6 +274,8 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		ls: createLsToolDefinition(cwd, options?.ls),
 		nova_data: createNovaDataToolDefinition(),
 		todo: createTodoToolDefinition(),
+		query_scheduled_tasks: createQueryScheduledTasksToolDefinition(),
+		write_scheduled_task: createWriteScheduledTaskToolDefinition(),
 		ask_user_question: createAskUserQuestionToolDefinition(),
 		hub_list_agents: createHubListAgentsToolDefinition(),
 		hub_delegate_task: createHubDelegateTaskToolDefinition(),
@@ -286,6 +312,8 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		ls: createLsTool(cwd, options?.ls),
 		nova_data: wrapToolDefinition(createNovaDataToolDefinition()),
 		todo: wrapToolDefinition(createTodoToolDefinition()),
+		query_scheduled_tasks: wrapToolDefinition(createQueryScheduledTasksToolDefinition()),
+		write_scheduled_task: wrapToolDefinition(createWriteScheduledTaskToolDefinition()),
 		ask_user_question: wrapToolDefinition(createAskUserQuestionToolDefinition()),
 		hub_list_agents: wrapToolDefinition(createHubListAgentsToolDefinition()),
 		hub_delegate_task: wrapToolDefinition(createHubDelegateTaskToolDefinition()),
@@ -307,6 +335,8 @@ export function createDefaultActiveToolNames(): ToolName[] {
 		"ask_user_question",
 		"nova_data",
 		"todo",
+		"query_scheduled_tasks",
+		"write_scheduled_task",
 		"write_user_memory",
 	];
 	if (process.env.NOVA_HUB_URL) {
