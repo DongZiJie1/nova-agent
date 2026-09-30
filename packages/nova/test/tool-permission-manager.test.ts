@@ -14,14 +14,13 @@ function uiWithConfirm(confirm: ExtensionUIContext["confirm"]): ExtensionUIConte
 }
 
 describe("ToolPermissionManager", () => {
-	it("asks by default", async () => {
-		const confirm = vi.fn<ExtensionUIContext["confirm"]>().mockResolvedValue(true);
+	it("allows by default", async () => {
+		const confirm = vi.fn<ExtensionUIContext["confirm"]>();
 
 		await expect(new ToolPermissionManager().check(request, uiWithConfirm(confirm))).resolves.toEqual({
 			allowed: true,
-			prompted: true,
 		});
-		expect(confirm).toHaveBeenCalledOnce();
+		expect(confirm).not.toHaveBeenCalled();
 	});
 
 	it("allows execution without prompting in allow mode", async () => {
@@ -36,7 +35,10 @@ describe("ToolPermissionManager", () => {
 		"auto-approves the read-only %s tool",
 		async (toolName) => {
 			const confirm = vi.fn<ExtensionUIContext["confirm"]>();
-			const result = await new ToolPermissionManager().check({ ...request, toolName }, uiWithConfirm(confirm));
+			const result = await new ToolPermissionManager({ mode: "ask" }).check(
+				{ ...request, toolName },
+				uiWithConfirm(confirm),
+			);
 
 			expect(result).toEqual({ allowed: true, reason: "Tool auto-approved" });
 			expect(confirm).not.toHaveBeenCalled();
@@ -47,7 +49,7 @@ describe("ToolPermissionManager", () => {
 		"auto-approves the read-only nova_data action %s",
 		async (action) => {
 			const confirm = vi.fn<ExtensionUIContext["confirm"]>();
-			const result = await new ToolPermissionManager().check(
+			const result = await new ToolPermissionManager({ mode: "ask" }).check(
 				{ ...request, toolName: "nova_data", args: { action } },
 				uiWithConfirm(confirm),
 			);

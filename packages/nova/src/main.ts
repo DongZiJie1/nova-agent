@@ -455,8 +455,8 @@ function buildSessionOptions(
 		options.excludeTools = [...parsed.excludeTools];
 	}
 
-	// Tool permission mode: CLI flag > settings.json default > "ask"
-	options.toolPermissionMode = parsed.permissionMode ?? settingsManager.getDefaultToolPermissionMode() ?? "ask";
+	// Tool permission mode: CLI flag > settings.json default > "allow"
+	options.toolPermissionMode = parsed.permissionMode ?? settingsManager.getDefaultToolPermissionMode() ?? "allow";
 
 	return { options, cliThinkingFromModel, diagnostics };
 }
