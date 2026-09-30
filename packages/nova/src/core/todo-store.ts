@@ -200,6 +200,12 @@ export class TodoStore {
 		return status ? items.filter((item) => item.status === status) : items;
 	}
 
+	get(id: string): TodoItem {
+		const todo = this.read().items.find((item) => item.id === id);
+		if (!todo) throw new Error(`Todo not found: ${id}`);
+		return todo;
+	}
+
 	create(input: CreateTodoInput): TodoItem {
 		const state = this.read();
 		const now = new Date().toISOString();

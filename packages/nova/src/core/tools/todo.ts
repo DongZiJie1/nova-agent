@@ -15,8 +15,9 @@ const todoSchema = Type.Object({
 	offset: Type.Optional(
 		Type.Integer({ minimum: 0, description: "List pagination offset; use with limit to read the entire list." }),
 	),
-	action: Type.Union([Type.Literal("create"), Type.Literal("list"), Type.Literal("update")], {
-		description: "Todo operation to perform",
+	action: Type.Union([Type.Literal("create"), Type.Literal("list"), Type.Literal("update"), Type.Literal("get")], {
+		description:
+			"Todo operation: create adds one, list returns summaries (paged), update edits status/fields, get returns one todo's full record including complete description and completion notes",
 	}),
 	title: Type.Optional(
 		Type.String({
@@ -26,7 +27,8 @@ const todoSchema = Type.Object({
 	),
 	description: Type.Optional(
 		Type.String({
-			description: "Optional background, goal, or acceptance criteria shown in the todo detail panel",
+			description:
+				"Optional background, goal, or acceptance criteria shown in the todo detail panel. May be long; list/create/update echo it truncated, get returns it in full",
 		}),
 	),
 	tags: Type.Optional(
@@ -49,7 +51,7 @@ const todoSchema = Type.Object({
 	),
 	due_at: Type.Optional(Type.String({ description: "Due date as YYYY-MM-DD, or an RFC 3339 timestamp" })),
 	todo_id: Type.Optional(
-		Type.String({ description: "Required for update: exact id returned by an earlier create or list call" }),
+		Type.String({ description: "Required for update and get: exact id returned by an earlier create or list call" }),
 	),
 	status: Type.Optional(
 		Type.Union([Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed")], {
@@ -141,8 +143,8 @@ export function createTodoToolDefinition(): ToolDefinition<typeof todoSchema, To
 		name: "todo",
 		label: "todo",
 		description:
-			"Nova's todo list — the items the user sees on the 待办 page of Nova Studio. Use it to record work that should outlive this conversation, and to keep an existing item's status current. Create one todo per deliverable, list before creating to avoid duplicates, and update the same todo while working on it instead of creating another one. Always tag a new todo so the user can group the list later.",
-		promptSnippet: "Record and update items on the user's Nova todo list.",
+			"Nova's todo list — the items the user sees on the 待办 page of Nova Studio. Use it to record work that should outlive this conversation, keep an existing item's status current, and read a stored item's full details. Create one todo per deliverable, list before creating to avoid duplicates, and update the same todo while working on it instead of creating another one. Always tag a new todo so the user can group the list later. list/create/update return a short summary only (description truncated, no completion notes); call get with a todo_id when you need the full description or the user's completion notes.",
+		promptSnippet: "Record, update, and read items on the user's Nova todo list.",
 		promptGuidelines: [
 			"Every todo belongs to a topic that defaults to its first tag. List first to obtain IDs, and keep related work in the same topic so the page stays grouped.",
 			"When the user requests a plan, create its actionable steps. Use offset to read subsequent pages when truncated is true.",
@@ -151,6 +153,7 @@ export function createTodoToolDefinition(): ToolDefinition<typeof todoSchema, To
 			"Tag every todo you create or touch when its kind is obvious: 论文 for reading/summarizing papers, 实验 for training or code experiments, 工程 for repo/tooling work, 学习 for study plans, 求职 for career work. One to three tags is usually enough.",
 			"Prefer the tags already listed in availableTags over new synonyms (论文, not 文献/Paper/阅读); only add a new tag when the existing ones genuinely do not fit.",
 			"Use list with tag to answer questions like “还有哪些论文待办”, and add or fix tags with update when the user renames a group.",
+			"Use get with a todo_id when you need the full description or completion notes; list and update only return truncated descriptions.",
 			"Mark a todo in_progress when work on it actually starts and completed only when the work is done and verified — never to look finished.",
 			"The todo list belongs to the user: do not delete or reprioritize their entries unless they asked for it.",
 		],
@@ -226,6 +229,17 @@ export function createTodoToolDefinition(): ToolDefinition<typeof todoSchema, To
 							total: todos.length,
 							availableTags: existingTags(snapshot),
 						},
+					};
+				}
+
+				if (input.action === "get") {
+					if (!input.todo_id) throw new Error("get requires todo_id");
+					// Full record: the list path truncates description and drops completionNotes,
+					// so the model can only see them here.
+					const todo = store.get(input.todo_id);
+					return {
+						content: [{ type: "text" as const, text: JSON.stringify({ todo }, null, 2) }],
+						details: { action: input.action, status: "ok" as const, todo },
 					};
 				}
 
