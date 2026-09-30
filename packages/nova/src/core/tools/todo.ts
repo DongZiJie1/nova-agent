@@ -79,7 +79,7 @@ export interface TodoToolDetails {
 }
 
 /** Descriptions can be long; the model only needs enough to recognize the item. */
-function todoSummary(todo: TodoItem) {
+export function todoSummary(todo: TodoItem) {
 	return {
 		id: todo.id,
 		title: todo.title,

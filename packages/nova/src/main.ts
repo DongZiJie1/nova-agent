@@ -40,6 +40,7 @@ import {
 import { assertValidSessionId, SessionManager } from "./core/session-manager.ts";
 import { SettingsManager } from "./core/settings-manager.ts";
 import { printTimings, resetTimings, time } from "./core/timings.ts";
+import { todoPrompt } from "./core/todo-prompt.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
 import { UserMemoryStore } from "./core/user-memory.ts";
 import { builtInExtensions } from "./extensions/index.ts";
@@ -701,7 +702,8 @@ export async function main(args: string[], options?: MainOptions) {
 			resourceLoaderOptions: {
 				appendSystemPromptOverride: (base) => {
 					const userMemory = new UserMemoryStore(agentDir).toPrompt();
-					return userMemory ? [...base, userMemory] : base;
+					const todos = todoPrompt(agentDir);
+					return [...base, ...(userMemory ? [userMemory] : []), ...(todos ? [todos] : [])];
 				},
 				additionalExtensionPaths: resolvedExtensionPaths,
 				additionalSkillPaths: resolvedSkillPaths,
