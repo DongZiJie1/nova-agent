@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -49,6 +49,7 @@ describe("scheduled-task-store", () => {
 		expect(raw.items[0].permissionMode).toBe("edits");
 		expect(raw.items[0].nextRunAt).toBeTruthy();
 		expect(raw.items[0].worktreeEnabled).toBe(false);
+		expect(raw.items[0].sessionMode).toBe("reuse");
 		// Atomic write leaves 0600 on unix.
 		if (process.platform !== "win32") {
 			expect(statSync(s.path).mode & 0o777).toBe(0o600);
@@ -88,6 +89,26 @@ describe("scheduled-task-store", () => {
 		s.delete(task.id);
 		expect(s.list()).toHaveLength(0);
 		expect(() => s.get(task.id)).toThrow(/not found/i);
+	});
+
+	test("sessionMode defaults to reuse for new tasks and fresh for legacy records", () => {
+		const s = store();
+		const created = s.create({
+			title: "调研",
+			prompt: "调研 RL 岗位",
+			projectPath: "/tmp/p",
+			schedule: { kind: "recurring", recurrence: "daily", timeOfDay: "09:00" },
+		});
+		expect(created.sessionMode).toBe("reuse");
+		expect(created.sessionFile).toBeUndefined();
+
+		expect(s.update(created.id, { sessionMode: "fresh" }).sessionMode).toBe("fresh");
+		expect(() => s.update(created.id, { sessionMode: "nope" as never })).toThrow(/session mode/i);
+
+		const raw = JSON.parse(readFileSync(s.path, "utf8"));
+		delete raw.items[0].sessionMode;
+		writeFileSync(s.path, JSON.stringify(raw));
+		expect(s.get(created.id).sessionMode).toBe("fresh");
 	});
 
 	test("validates rules like the Studio Rust writer", () => {
