@@ -17,6 +17,13 @@ export type TodoStatus = "pending" | "in_progress" | "completed";
 export type TodoPriority = "low" | "medium" | "high";
 export type TodoSource = "user" | "agent";
 
+export interface TodoHistoryEntry {
+	type: "due_at_changed" | "status_changed";
+	from: string | null;
+	to: string | null;
+	changedAt: string;
+}
+
 export interface TodoItem {
 	id: string;
 	title: string;
@@ -35,6 +42,7 @@ export interface TodoItem {
 	createdAt: string;
 	updatedAt: string;
 	completedAt?: string;
+	history: TodoHistoryEntry[];
 	order: number;
 }
 
@@ -161,6 +169,18 @@ function parseTodoItem(value: unknown): TodoItem | undefined {
 		createdAt: typeof item.createdAt === "string" ? item.createdAt : timestamp,
 		updatedAt: timestamp,
 		completedAt: typeof item.completedAt === "string" ? item.completedAt : undefined,
+		history: Array.isArray(item.history)
+			? item.history.filter((entry): entry is TodoHistoryEntry =>
+					Boolean(
+						entry &&
+							typeof entry === "object" &&
+							(entry.type === "due_at_changed" || entry.type === "status_changed") &&
+							(entry.from === null || typeof entry.from === "string") &&
+							(entry.to === null || typeof entry.to === "string") &&
+							typeof entry.changedAt === "string",
+					),
+				)
+			: [],
 		order: typeof item.order === "number" ? item.order : 0,
 	};
 }
@@ -200,6 +220,12 @@ export class TodoStore {
 		return status ? items.filter((item) => item.status === status) : items;
 	}
 
+	get(id: string): TodoItem {
+		const todo = this.read().items.find((item) => item.id === id);
+		if (!todo) throw new Error(`Todo not found: ${id}`);
+		return todo;
+	}
+
 	create(input: CreateTodoInput): TodoItem {
 		const state = this.read();
 		const now = new Date().toISOString();
@@ -221,6 +247,7 @@ export class TodoStore {
 			sessionId: normalizeOptional(input.sessionId),
 			createdAt: now,
 			updatedAt: now,
+			history: [],
 			order: nextOrder,
 		};
 		state.items.push(todo);
@@ -241,13 +268,23 @@ export class TodoStore {
 			todo.priority = input.priority;
 		}
 		if (input.projectPath !== undefined) todo.projectPath = normalizeOptional(input.projectPath);
-		if (input.dueAt !== undefined) todo.dueAt = normalizeTodoDueAt(input.dueAt);
+		const changedAt = new Date().toISOString();
+		if (input.dueAt !== undefined) {
+			const nextDueAt = normalizeTodoDueAt(input.dueAt);
+			if (nextDueAt !== todo.dueAt) {
+				todo.history.push({ type: "due_at_changed", from: todo.dueAt ?? null, to: nextDueAt ?? null, changedAt });
+				todo.dueAt = nextDueAt;
+			}
+		}
 		if (input.status !== undefined) {
 			if (!isTodoStatus(input.status)) throw new Error(`Invalid todo status: ${input.status}`);
-			todo.status = input.status;
-			todo.completedAt = input.status === "completed" ? new Date().toISOString() : undefined;
+			if (input.status !== todo.status) {
+				todo.history.push({ type: "status_changed", from: todo.status, to: input.status, changedAt });
+				todo.status = input.status;
+				todo.completedAt = input.status === "completed" ? changedAt : undefined;
+			}
 		}
-		todo.updatedAt = new Date().toISOString();
+		todo.updatedAt = changedAt;
 		this.write(state);
 		return todo;
 	}

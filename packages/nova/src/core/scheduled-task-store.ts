@@ -20,6 +20,11 @@ export type ScheduleKind = "once" | "recurring";
 export type RecurrenceKind = "daily" | "weekly" | "monthly" | "cron";
 export type ScheduleRunStatus = "running" | "completed" | "error" | "missed" | "skipped";
 export type AutomationPermissionMode = "ask" | "edits" | "allow";
+/**
+ * Session continuity for scheduled runs: `fresh` starts a new Nova session on
+ * every fire, `reuse` keeps appending to the task's stored session file.
+ */
+export type AutomationSessionMode = "fresh" | "reuse";
 
 export interface ScheduleRule {
 	kind: ScheduleKind;
@@ -56,6 +61,8 @@ export interface ScheduledTask {
 	permissionMode: AutomationPermissionMode;
 	model?: string;
 	provider?: string;
+	sessionMode: AutomationSessionMode;
+	sessionFile?: string;
 	worktreeEnabled: boolean;
 	lastRunAt?: string;
 	lastRunStatus?: ScheduleRunStatus;
@@ -83,6 +90,7 @@ export interface CreateScheduledTaskInput {
 	permissionMode?: AutomationPermissionMode;
 	model?: string;
 	provider?: string;
+	sessionMode?: AutomationSessionMode;
 	worktreeEnabled?: boolean;
 	enabled?: boolean;
 }
@@ -96,6 +104,7 @@ export interface UpdateScheduledTaskInput {
 	permissionMode?: AutomationPermissionMode;
 	model?: string;
 	provider?: string;
+	sessionMode?: AutomationSessionMode;
 	worktreeEnabled?: boolean;
 	enabled?: boolean;
 }
@@ -107,6 +116,7 @@ export const SCHEDULE_RUNS_CAP = 20;
 const SCHEDULE_KINDS: readonly ScheduleKind[] = ["once", "recurring"];
 const RECURRENCE_KINDS: readonly RecurrenceKind[] = ["daily", "weekly", "monthly", "cron"];
 const PERMISSION_MODES: readonly AutomationPermissionMode[] = ["ask", "edits", "allow"];
+const SESSION_MODES: readonly AutomationSessionMode[] = ["fresh", "reuse"];
 const RUN_STATUSES: readonly ScheduleRunStatus[] = ["running", "completed", "error", "missed", "skipped"];
 
 export function isScheduleKind(value: string): value is ScheduleKind {
@@ -119,6 +129,10 @@ export function isRecurrenceKind(value: string): value is RecurrenceKind {
 
 export function isAutomationPermissionMode(value: string): value is AutomationPermissionMode {
 	return (PERMISSION_MODES as readonly string[]).includes(value);
+}
+
+export function isAutomationSessionMode(value: string): value is AutomationSessionMode {
+	return (SESSION_MODES as readonly string[]).includes(value);
 }
 
 export function isScheduleRunStatus(value: string): value is ScheduleRunStatus {
@@ -339,6 +353,11 @@ function parseScheduledTask(value: unknown): ScheduledTask | undefined {
 		typeof item.lastRunStatus === "string" && isScheduleRunStatus(item.lastRunStatus)
 			? item.lastRunStatus
 			: undefined;
+	const sessionMode =
+		typeof item.sessionMode === "string" && isAutomationSessionMode(item.sessionMode)
+			? item.sessionMode
+			: // Stored tasks without the field predate session reuse and keep firing fresh.
+				"fresh";
 	return {
 		id: item.id,
 		title: item.title,
@@ -350,6 +369,8 @@ function parseScheduledTask(value: unknown): ScheduledTask | undefined {
 		permissionMode,
 		model: typeof item.model === "string" ? item.model : undefined,
 		provider: typeof item.provider === "string" ? item.provider : undefined,
+		sessionMode,
+		sessionFile: typeof item.sessionFile === "string" ? item.sessionFile : undefined,
 		worktreeEnabled: item.worktreeEnabled === true,
 		lastRunAt: typeof item.lastRunAt === "string" ? item.lastRunAt : undefined,
 		lastRunStatus,
@@ -405,6 +426,10 @@ export class ScheduledTaskStore {
 		if (!projectPath) throw new Error("projectPath is required for scheduled tasks");
 		const permissionMode = input.permissionMode ?? "ask";
 		if (!isAutomationPermissionMode(permissionMode)) throw new Error(`Invalid permission mode: ${permissionMode}`);
+		// New tasks continue one conversation by default; stored legacy tasks
+		// without the field stay on fresh sessions until the user flips it.
+		const sessionMode = input.sessionMode ?? "reuse";
+		if (!isAutomationSessionMode(sessionMode)) throw new Error(`Invalid session mode: ${sessionMode}`);
 		const task: ScheduledTask = {
 			id: `sch_${randomUUID()}`,
 			title: normalizeScheduleTitle(input.title),
@@ -416,6 +441,7 @@ export class ScheduledTaskStore {
 			permissionMode,
 			model: normalizeOptional(input.model),
 			provider: normalizeOptional(input.provider),
+			sessionMode,
 			worktreeEnabled: input.worktreeEnabled === true,
 			missedCount: 0,
 			runs: [],
@@ -442,6 +468,11 @@ export class ScheduledTaskStore {
 		if (input.projectPath !== undefined) {
 			const projectPath = input.projectPath.trim();
 			if (!projectPath) throw new Error("projectPath is required for scheduled tasks");
+			if (task.projectPath !== projectPath) {
+				// Sessions belong to one project; never continue the old one here.
+				task.sessionFile = undefined;
+				task.lastSessionId = undefined;
+			}
 			task.projectPath = projectPath;
 		}
 		if (input.schedule !== undefined) {
@@ -456,6 +487,10 @@ export class ScheduledTaskStore {
 		}
 		if (input.model !== undefined) task.model = normalizeOptional(input.model);
 		if (input.provider !== undefined) task.provider = normalizeOptional(input.provider);
+		if (input.sessionMode !== undefined) {
+			if (!isAutomationSessionMode(input.sessionMode)) throw new Error(`Invalid session mode: ${input.sessionMode}`);
+			task.sessionMode = input.sessionMode;
+		}
 		if (input.worktreeEnabled !== undefined) task.worktreeEnabled = input.worktreeEnabled === true;
 		if (input.enabled !== undefined && task.enabled !== input.enabled) {
 			task.enabled = input.enabled === true;
@@ -497,6 +532,8 @@ export function scheduledTaskSummary(task: ScheduledTask) {
 		title: task.title,
 		enabled: task.enabled,
 		permissionMode: task.permissionMode,
+		sessionMode: task.sessionMode,
+		sessionFile: task.sessionFile,
 		projectPath: task.projectPath,
 		schedule: task.schedule,
 		nextRunAt: task.nextRunAt,
@@ -516,8 +553,10 @@ export function scheduledTaskSummary(task: ScheduledTask) {
 			startedAt: run.startedAt,
 			finishedAt: run.finishedAt,
 			agentId: run.agentId,
+			sessionId: run.sessionId,
 			catchUp: run.catchUp,
 			error: run.error,
+			summary: run.summary,
 		})),
 		createdAt: task.createdAt,
 		updatedAt: task.updatedAt,

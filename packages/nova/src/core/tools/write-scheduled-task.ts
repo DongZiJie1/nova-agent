@@ -81,6 +81,12 @@ const writeScheduledTaskSchema = Type.Object({
 	),
 	model: Type.Optional(Type.String({ description: "Optional model id override at fire time" })),
 	provider: Type.Optional(Type.String({ description: "Optional provider id override at fire time" })),
+	session_mode: Type.Optional(
+		Type.Union([Type.Literal("fresh"), Type.Literal("reuse")], {
+			description:
+				"fresh starts a new Nova session on every fire; reuse (default for new tasks) keeps appending to one session so earlier context, e.g. research notes, stays available.",
+		}),
+	),
 	worktree_enabled: Type.Optional(
 		Type.Boolean({ description: "Run the fired agent in an isolated git worktree when the project is a git repo" }),
 	),
@@ -158,6 +164,7 @@ export function createWriteScheduledTaskToolDefinition(): ToolDefinition<
 			"create requires title, prompt, project_path, and kind. once needs run_at (RFC 3339). recurring needs recurrence (daily/weekly/monthly/cron) plus time_of_day or cron.",
 			"The prompt is what Nova receives at fire time — put the full job description and acceptance criteria there, not just a title.",
 			"permission_mode defaults to ask and will block unattended runs on tool confirmations; suggest edits or allow when the user wants fully automatic execution.",
+			"session_mode defaults to reuse so recurring research keeps its earlier context; use fresh when each run should start from a clean conversation.",
 			"Use set_enabled to pause or resume without deleting. Use delete only when the user asked to remove the automation.",
 			"Automations are separate from todos: do not use write_scheduled_task for ordinary deliverables, and do not use the todo tool for timed automations.",
 		],
@@ -181,6 +188,7 @@ export function createWriteScheduledTaskToolDefinition(): ToolDefinition<
 						permissionMode: input.permission_mode as AutomationPermissionMode | undefined,
 						model: input.model,
 						provider: input.provider,
+						sessionMode: input.session_mode,
 						worktreeEnabled: input.worktree_enabled,
 						enabled: input.enabled,
 					});
@@ -238,6 +246,7 @@ export function createWriteScheduledTaskToolDefinition(): ToolDefinition<
 					permissionMode: input.permission_mode as AutomationPermissionMode | undefined,
 					model: input.model,
 					provider: input.provider,
+					sessionMode: input.session_mode,
 					worktreeEnabled: input.worktree_enabled,
 					enabled: input.enabled,
 				});

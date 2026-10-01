@@ -290,7 +290,7 @@ ${chalk.bold("Options:")}
   --exclude-tools, -xt <tools>   Comma-separated denylist of tool names to disable
                                  Applies to built-in, extension, and custom tools
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh, max
-  --permission-mode <mode>       Tool permission mode: ask (default), edits, allow
+  --permission-mode <mode>       Tool permission mode: allow (default), ask, edits
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
   --skill <path>                 Load a skill file or directory (can be used multiple times)

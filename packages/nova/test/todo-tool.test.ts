@@ -146,6 +146,16 @@ describe("todo tool", () => {
 		expect(state.items[1]).toMatchObject({ order: 4, projectPath: "/project/beta" });
 	});
 
+	it("includes stored change history in list results", async () => {
+		seedStudioTodo({
+			history: [{ type: "due_at_changed", from: "2026-09-30", to: "2026-10-05", changedAt: "2026-09-29T00:00:00Z" }],
+		});
+		const result = await tool.execute("list-history", { action: "list" }, undefined, undefined, context());
+		expect(JSON.parse(resultText(result)).todos[0].history).toEqual([
+			{ type: "due_at_changed", from: "2026-09-30", to: "2026-10-05", changedAt: "2026-09-29T00:00:00Z" },
+		]);
+	});
+
 	it("does not link a todo to Nova's own scratch checkout", async () => {
 		const worktree = await tool.execute(
 			"create-worktree",
@@ -344,6 +354,38 @@ describe("todo tool", () => {
 		expect(existsSync(todoFile())).toBe(false);
 	});
 
+	it("returns the full record for get, including description and completion notes", async () => {
+		const longDescription = `Acceptance criteria: ${"x".repeat(700)}`;
+		seedStudioTodo({
+			id: "todo_detail",
+			description: longDescription,
+			completionNotes: "Verified against the studio checklist.",
+		});
+
+		const listed = await tool.execute("get-list", { action: "list" }, undefined, undefined, context());
+		const listedDescription = JSON.parse(resultText(listed)).todos[0].description as string;
+		expect(listedDescription.endsWith("…")).toBe(true);
+		expect(listedDescription.length).toBeLessThan(longDescription.length);
+		expect(JSON.parse(resultText(listed)).todos[0].completionNotes).toBeUndefined();
+
+		const got = await tool.execute(
+			"get-1",
+			{ action: "get", todo_id: "todo_detail" },
+			undefined,
+			undefined,
+			context(),
+		);
+		expect(got.details).toMatchObject({ action: "get", status: "ok" });
+		const todo = JSON.parse(resultText(got)).todo;
+		expect(todo.description).toBe(longDescription);
+		expect(todo.completionNotes).toBe("Verified against the studio checklist.");
+		expect((got.details as TodoToolDetails).todo).toMatchObject({
+			id: "todo_detail",
+			description: longDescription,
+			completionNotes: "Verified against the studio checklist.",
+		});
+	});
+
 	it("requires the fields each action depends on", async () => {
 		const missingTitle = await tool.execute("bad-4", { action: "create" }, undefined, undefined, context());
 		const missingId = await tool.execute(
@@ -360,10 +402,20 @@ describe("todo tool", () => {
 			undefined,
 			context(),
 		);
+		const getMissingId = await tool.execute("bad-8", { action: "get" }, undefined, undefined, context());
+		const getUnknownId = await tool.execute(
+			"bad-9",
+			{ action: "get", todo_id: "todo_missing" },
+			undefined,
+			undefined,
+			context(),
+		);
 
 		expect(missingTitle.details.error).toContain("title");
 		expect(missingId.details.error).toContain("todo_id");
 		expect(unknownId.details.error).toContain("Todo not found");
+		expect(getMissingId.details.error).toContain("get requires todo_id");
+		expect(getUnknownId.details.error).toContain("Todo not found");
 	});
 
 	it("fails loudly when the store cannot be parsed", async () => {
