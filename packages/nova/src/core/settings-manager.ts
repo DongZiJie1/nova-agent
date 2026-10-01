@@ -8,6 +8,7 @@ import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { getNovaEnv } from "../utils/env-compat.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
+import type { WebSearchSettings } from "./search/config.ts";
 import type { ToolPermissionMode } from "./tool-permission-manager.ts";
 import { DEFAULT_BASH_TIMEOUT_SECONDS, DEFAULT_MAX_CONCURRENT_BASH } from "./tools/limits.ts";
 
@@ -139,6 +140,8 @@ export interface Settings {
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
+	/** Built-in web search: provider, API key, base URL, result count, timeout. */
+	search?: WebSearchSettings;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */

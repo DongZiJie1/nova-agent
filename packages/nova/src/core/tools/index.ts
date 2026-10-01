@@ -23,6 +23,12 @@ export {
 	type EditToolInput,
 	type EditToolOptions,
 } from "./edit.ts";
+export {
+	createFetchUrlToolDefinition,
+	type FetchUrlDetails,
+	type FetchUrlInput,
+	type FetchUrlToolOptions,
+} from "./fetch-url.ts";
 export { withFileMutationQueue } from "./file-mutation-queue.ts";
 export {
 	createFindTool,
@@ -94,6 +100,12 @@ export {
 	truncateTail,
 } from "./truncate.ts";
 export {
+	createWebSearchToolDefinition,
+	type WebSearchDetails,
+	type WebSearchInput,
+	type WebSearchToolOptions,
+} from "./web-search.ts";
+export {
 	createWriteTool,
 	createWriteToolDefinition,
 	type WriteOperations,
@@ -112,6 +124,7 @@ import type { ToolDefinition } from "../extensions/types.ts";
 import { createAskUserQuestionToolDefinition } from "./ask-user-question.ts";
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.ts";
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.ts";
+import { createFetchUrlToolDefinition } from "./fetch-url.ts";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.ts";
 import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.ts";
 import { createHubDelegateTaskToolDefinition, createHubListAgentsToolDefinition } from "./hub.ts";
@@ -121,6 +134,7 @@ import { createQueryScheduledTasksToolDefinition } from "./query-scheduled-tasks
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
 import { createTodoToolDefinition } from "./todo.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
+import { createWebSearchToolDefinition } from "./web-search.ts";
 import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.ts";
 import { createWriteScheduledTaskToolDefinition } from "./write-scheduled-task.ts";
 import { createWriteUserMemoryToolDefinition } from "./write-user-memory.ts";
@@ -142,7 +156,9 @@ export type ToolName =
 	| "ask_user_question"
 	| "hub_list_agents"
 	| "hub_delegate_task"
-	| "write_user_memory";
+	| "write_user_memory"
+	| "web_search"
+	| "fetch_url";
 export const allToolNames: Set<ToolName> = new Set([
 	"read",
 	"bash",
@@ -159,6 +175,8 @@ export const allToolNames: Set<ToolName> = new Set([
 	"hub_list_agents",
 	"hub_delegate_task",
 	"write_user_memory",
+	"web_search",
+	"fetch_url",
 ]);
 
 export interface ToolsOptions {
@@ -203,6 +221,10 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createHubDelegateTaskToolDefinition();
 		case "write_user_memory":
 			return createWriteUserMemoryToolDefinition();
+		case "web_search":
+			return createWebSearchToolDefinition();
+		case "fetch_url":
+			return createFetchUrlToolDefinition();
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -240,6 +262,10 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return wrapToolDefinition(createHubDelegateTaskToolDefinition());
 		case "write_user_memory":
 			return wrapToolDefinition(createWriteUserMemoryToolDefinition());
+		case "web_search":
+			return wrapToolDefinition(createWebSearchToolDefinition());
+		case "fetch_url":
+			return wrapToolDefinition(createFetchUrlToolDefinition());
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -280,6 +306,8 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		hub_list_agents: createHubListAgentsToolDefinition(),
 		hub_delegate_task: createHubDelegateTaskToolDefinition(),
 		write_user_memory: createWriteUserMemoryToolDefinition(),
+		web_search: createWebSearchToolDefinition(),
+		fetch_url: createFetchUrlToolDefinition(),
 	};
 }
 
@@ -318,6 +346,8 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		hub_list_agents: wrapToolDefinition(createHubListAgentsToolDefinition()),
 		hub_delegate_task: wrapToolDefinition(createHubDelegateTaskToolDefinition()),
 		write_user_memory: wrapToolDefinition(createWriteUserMemoryToolDefinition()),
+		web_search: wrapToolDefinition(createWebSearchToolDefinition()),
+		fetch_url: wrapToolDefinition(createFetchUrlToolDefinition()),
 	};
 }
 
@@ -338,6 +368,8 @@ export function createDefaultActiveToolNames(): ToolName[] {
 		"query_scheduled_tasks",
 		"write_scheduled_task",
 		"write_user_memory",
+		"web_search",
+		"fetch_url",
 	];
 	if (process.env.NOVA_HUB_URL) {
 		names.push("hub_list_agents", "hub_delegate_task");

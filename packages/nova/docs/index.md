@@ -40,6 +40,7 @@ For the full first-run flow, see [Quickstart](quickstart.md).
 
 - [Quickstart](quickstart.md) - install, authenticate, and run a first session.
 - [Using Nova](usage.md) - interactive mode, slash commands, context files, and CLI reference.
+- [Web search](web-search.md) - built-in web_search/fetch_url tools, providers, and configuration.
 - [Providers](providers.md) - subscription and API-key setup for built-in providers.
 - [llama.cpp](llama-cpp.md) - run a local router and manage models with `/llama`.
 - [Security](security.md) - project trust, sandbox boundaries, and vulnerability reporting.

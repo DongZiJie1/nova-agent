@@ -14,6 +14,20 @@ Provider API-key variables are documented separately in [Providers](providers.md
 
 The CLI and RPC entry points set `NOVA_CODING_AGENT=true`. Child processes inherit it and can use it to detect that they run inside Nova. The legacy `PI_CODING_AGENT=true` is also set for older child processes. It is not session-specific and is not set automatically when Nova is embedded through the SDK.
 
+## Web Search
+
+The built-in `web_search` / `fetch_url` tools read these variables; environment variables override the `search` section of `settings.json`:
+
+| Variable | Description |
+|----------|-------------|
+| `NOVA_SEARCH_PROVIDER` | Provider: `so` (default), `duckduckgo`, `bing`, `brave`, `tavily`, or `searxng` |
+| `NOVA_SEARCH_API_KEY` | API key for `brave` or `tavily` |
+| `NOVA_SEARCH_BASE_URL` | Base URL of a `searxng` instance |
+| `NOVA_SEARCH_MAX_RESULTS` | Results to request, 1–10 (default 5) |
+| `NOVA_SEARCH_TIMEOUT_MS` | Per-request timeout in milliseconds, 1000–60000 (default 20000) |
+
+`BRAVE_API_KEY`, `TAVILY_API_KEY`, and `SEARXNG_URL` are accepted as provider-specific fallbacks. See [Web search](web-search.md).
+
 ## Bash Tool Session Environment
 
 Commands run by the bash tool receive the current Nova session state:

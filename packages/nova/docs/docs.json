@@ -16,6 +16,10 @@
           "path": "usage.md"
         },
         {
+          "title": "Web search",
+          "path": "web-search.md"
+        },
+        {
           "title": "Providers",
           "path": "providers.md"
         },

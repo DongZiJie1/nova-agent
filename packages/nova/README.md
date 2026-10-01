@@ -67,7 +67,7 @@ nova
 /login  # Then select provider
 ```
 
-Then just talk to Nova. By default, Nova gives the model four tools: `read`, `write`, `edit`, and `bash`. The model uses these to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [Nova Packages](#nova-packages).
+Then just talk to Nova. Built-in tools cover file reads/writes (`read`, `write`, `edit`), shell access (`bash`), content search (`grep`, `find`), web search (`web_search`, `fetch_url`, see [Web search](docs/web-search.md)), todos, memory, and scheduled tasks. Add more capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [Nova Packages](#nova-packages).
 
 **Platform notes:** [Windows](docs/windows.md) | [Termux (Android)](docs/termux.md) | [tmux](docs/tmux.md) | [Terminal setup](docs/terminal-setup.md) | [Shell aliases](docs/shell-aliases.md)
 
