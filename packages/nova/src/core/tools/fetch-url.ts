@@ -1,8 +1,8 @@
 import { type Static, Type } from "typebox";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";
-import { loadWebSearchSettings, resolveWebSearchConfig } from "../search/config.ts";
+import { loadWebSearchSettings, resolveWebSearchTimeoutMs } from "../search/config.ts";
 import { extractHtmlTitle, htmlToMarkdown } from "../search/html.ts";
-import { DESKTOP_USER_AGENT, requestSignal } from "../search/http.ts";
+import { DESKTOP_USER_AGENT, readBodyTextWithLimit, requestSignal } from "../search/http.ts";
 
 const DEFAULT_MAX_CHARS = 20_000;
 const MIN_MAX_CHARS = 1_000;
@@ -72,7 +72,10 @@ export function createFetchUrlToolDefinition(
 					throw new Error("fetch_url only supports http(s) URLs");
 				}
 
-				const config = resolveWebSearchConfig({
+				// Only the request timeout matters here. Do not resolve the full search
+				// config: a misconfigured provider (missing API key, …) must not break
+				// fetch_url, which never talks to the search API.
+				const timeoutMs = resolveWebSearchTimeoutMs({
 					settings: loadWebSearchSettings({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted() }),
 				});
 				const maxChars = Math.min(Math.max(input.maxChars ?? DEFAULT_MAX_CHARS, MIN_MAX_CHARS), MAX_MAX_CHARS);
@@ -83,20 +86,14 @@ export function createFetchUrlToolDefinition(
 						accept: "text/html,application/xhtml+xml,application/json;q=0.9,text/plain;q=0.8,*/*;q=0.5",
 					},
 					redirect: "follow",
-					signal: requestSignal(signal, config.timeoutMs),
+					signal: requestSignal(signal, timeoutMs),
 				});
 				if (!response.ok) {
 					throw new Error(`Fetch failed: HTTP ${response.status} ${response.statusText}`.trim());
 				}
-				const declaredLength = Number(response.headers.get("content-length") ?? Number.NaN);
-				if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
-					throw new Error(
-						`Response is too large (${Math.round(declaredLength / 1000)} KB); fetch a more specific URL instead.`,
-					);
-				}
 
 				const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
-				const raw = await response.text();
+				const raw = await readBodyTextWithLimit(response, MAX_RESPONSE_BYTES);
 				let title: string | undefined;
 				let content: string;
 				if (contentType.includes("json")) {

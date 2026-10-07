@@ -63,6 +63,24 @@ function parseInteger(value: unknown, fallback: number, min: number, max: number
 }
 
 /**
+ * Resolve the per-request timeout only. Unlike {@link resolveWebSearchConfig}
+ * this never validates the provider — `fetch_url` needs a timeout but must keep
+ * working when the search provider is misconfigured (missing API key, etc.).
+ */
+export function resolveWebSearchTimeoutMs(
+	options: { env?: Record<string, string | undefined>; settings?: WebSearchSettings } = {},
+): number {
+	const env = options.env ?? process.env;
+	const settings = options.settings ?? {};
+	return parseInteger(
+		env.NOVA_SEARCH_TIMEOUT_MS ?? settings.timeoutMs,
+		DEFAULT_SEARCH_TIMEOUT_MS,
+		MIN_TIMEOUT_MS,
+		MAX_TIMEOUT_MS,
+	);
+}
+
+/**
  * Resolve the effective search configuration.
  *
  * Precedence: environment variables > settings.json values > defaults. The
@@ -116,12 +134,7 @@ export function resolveWebSearchConfig(
 			1,
 			MAX_RESULTS_LIMIT,
 		),
-		timeoutMs: parseInteger(
-			env.NOVA_SEARCH_TIMEOUT_MS ?? settings.timeoutMs,
-			DEFAULT_SEARCH_TIMEOUT_MS,
-			MIN_TIMEOUT_MS,
-			MAX_TIMEOUT_MS,
-		),
+		timeoutMs: resolveWebSearchTimeoutMs({ env, settings }),
 	};
 }
 

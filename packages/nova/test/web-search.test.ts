@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ExtensionContext } from "../src/core/extensions/types.ts";
-import { resolveWebSearchConfig } from "../src/core/search/config.ts";
+import { resolveWebSearchConfig, resolveWebSearchTimeoutMs } from "../src/core/search/config.ts";
 import { decodeHtmlEntities, extractHtmlTitle, htmlToMarkdown } from "../src/core/search/html.ts";
+import { readBodyTextWithLimit } from "../src/core/search/http.ts";
 import { runWebSearch } from "../src/core/search/providers.ts";
 import { createFetchUrlToolDefinition } from "../src/core/tools/fetch-url.ts";
 import { createWebSearchToolDefinition } from "../src/core/tools/web-search.ts";
@@ -66,6 +67,13 @@ describe("web search config", () => {
 		});
 		expect(config.maxResults).toBe(10);
 		expect(config.timeoutMs).toBe(1_000);
+	});
+
+	it("resolves timeout without validating the provider", () => {
+		expect(resolveWebSearchTimeoutMs({ env: {} })).toBe(20_000);
+		expect(resolveWebSearchTimeoutMs({ env: { NOVA_SEARCH_TIMEOUT_MS: "1500" } })).toBe(1_500);
+		// Missing brave key must not throw here — fetch_url depends only on timeout.
+		expect(() => resolveWebSearchTimeoutMs({ env: { NOVA_SEARCH_PROVIDER: "brave" } })).not.toThrow();
 	});
 });
 
@@ -270,5 +278,83 @@ describe("web tools", () => {
 		const result = await tool.execute("t1", { url: "file:///etc/passwd" }, undefined, undefined, ctx);
 		expect(result.details.status).toBe("error");
 		expect(textOf(result)).toContain("http(s)");
+	});
+
+	it("fetch_url keeps working when the search provider is misconfigured", async () => {
+		const previous = process.env.NOVA_SEARCH_PROVIDER;
+		const previousKey = process.env.BRAVE_API_KEY;
+		process.env.NOVA_SEARCH_PROVIDER = "brave";
+		delete process.env.BRAVE_API_KEY;
+		delete process.env.NOVA_SEARCH_API_KEY;
+		try {
+			const html = `<html><head><title>Still works</title></head><body><p>Body</p></body></html>`;
+			const { fn } = stubFetch(() => new Response(html, { status: 200, headers: { "content-type": "text/html" } }));
+			const tool = createFetchUrlToolDefinition({ fetch: fn });
+			const result = await tool.execute("t1", { url: "https://example.com/post" }, undefined, undefined, ctx);
+			expect(result.details.status).toBe("ok");
+			expect(textOf(result)).toContain("# Still works");
+		} finally {
+			if (previous === undefined) delete process.env.NOVA_SEARCH_PROVIDER;
+			else process.env.NOVA_SEARCH_PROVIDER = previous;
+			if (previousKey !== undefined) process.env.BRAVE_API_KEY = previousKey;
+		}
+	});
+
+	it("fetch_url rejects responses with a too-large Content-Length", async () => {
+		const big = new Uint8Array(6 * 1024 * 1024);
+		const { fn } = stubFetch(
+			() =>
+				new Response(big, {
+					status: 200,
+					headers: { "content-type": "text/html", "content-length": String(big.byteLength) },
+				}),
+		);
+		const tool = createFetchUrlToolDefinition({ fetch: fn });
+		const result = await tool.execute("t1", { url: "https://example.com/big" }, undefined, undefined, ctx);
+		expect(result.details.status).toBe("error");
+		expect(textOf(result)).toContain("too large");
+	});
+
+	it("fetch_url rejects chunked bodies that exceed the limit mid-stream", async () => {
+		// No Content-Length: the limit must be enforced while reading, not by the header.
+		const chunk = new Uint8Array(1024 * 1024);
+		let sent = 0;
+		const stream = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				if (sent >= 8 * 1024 * 1024) {
+					controller.close();
+					return;
+				}
+				controller.enqueue(chunk);
+				sent += chunk.byteLength;
+			},
+		});
+		const { fn } = stubFetch(() => new Response(stream, { status: 200, headers: { "content-type": "text/html" } }));
+		const tool = createFetchUrlToolDefinition({ fetch: fn });
+		const result = await tool.execute("t1", { url: "https://example.com/chunked" }, undefined, undefined, ctx);
+		expect(result.details.status).toBe("error");
+		expect(textOf(result)).toContain("too large");
+	});
+});
+
+describe("readBodyTextWithLimit", () => {
+	it("returns short bodies and preserves utf-8 text", async () => {
+		const response = new Response("héllo 世界", { status: 200 });
+		await expect(readBodyTextWithLimit(response, 1000)).resolves.toBe("héllo 世界");
+	});
+
+	it("aborts as soon as the streamed size crosses the limit", async () => {
+		const chunk = new Uint8Array(64 * 1024);
+		let reads = 0;
+		const stream = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				reads += 1;
+				controller.enqueue(chunk);
+			},
+		});
+		const response = new Response(stream, { status: 200 });
+		await expect(readBodyTextWithLimit(response, 100 * 1024)).rejects.toThrow(/too large/);
+		// 64KB chunks over a 100KB limit must stop at the second chunk, not drain the stream.
+		expect(reads).toBeLessThanOrEqual(3);
 	});
 });
