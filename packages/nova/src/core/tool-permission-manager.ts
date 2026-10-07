@@ -30,6 +30,10 @@ export interface ToolPermissionManagerOptions {
  * only write Nova's own agent-dir stores (`todos.json` / `scheduled-tasks.json`),
  * which the user can edit or delete in Studio, and they never touch project
  * files.
+ *
+ * `web_search` is read-only (a query leaves the machine, no page content is
+ * read back); `fetch_url` stays gated because the URL itself can carry data
+ * out of the machine.
  */
 const AUTO_APPROVED_TOOLS = new Set([
 	"read",
@@ -43,6 +47,7 @@ const AUTO_APPROVED_TOOLS = new Set([
 	"todo",
 	"query_scheduled_tasks",
 	"write_scheduled_task",
+	"web_search",
 ]);
 
 const EDIT_TOOLS = new Set(["edit", "write"]);

@@ -42,7 +42,7 @@ nova --thinking high "解决这个复杂问题"
 ## 核心功能
 
 - **多模型支持** — OpenAI、Anthropic、Google Gemini、DeepSeek、Groq 等
-- **内置工具** — 文件读写、代码编辑、Bash 执行、内容搜索
+- **内置工具** — 文件读写、代码编辑、Bash 执行、内容搜索、联网搜索（`web_search` / `fetch_url`）
 - **会话管理** — 自动保存会话，支持恢复和 fork
 - **扩展系统** — 通过 TypeScript 扩展自定义工具和行为
 - **RPC 模式** — 支持 JSON-RPC 协议，可对接 Web 前端

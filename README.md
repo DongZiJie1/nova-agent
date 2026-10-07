@@ -39,7 +39,7 @@ nova --continue
 ## Features
 
 - **Multi-model support** — OpenAI, Anthropic, Google Gemini, DeepSeek, Groq, and more
-- **Built-in tools** — File read/write, code editing, Bash execution, content search
+- **Built-in tools** — File read/write, code editing, Bash execution, content search, and web search (`web_search` / `fetch_url`)
 - **Session management** — Auto-save sessions, resume and fork support
 - **Extension system** — Customize tools and behavior via TypeScript extensions
 - **RPC mode** — JSON-RPC protocol support for Web frontend integration
