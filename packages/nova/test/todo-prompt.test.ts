@@ -18,7 +18,21 @@ describe("todoPrompt", () => {
 			id: `todo_${index}`,
 			title: `Task ${index}`,
 			description: "x".repeat(700),
-			completionNotes: "private completion note",
+			progress: [
+				{
+					id: `progress_${index}_a`,
+					at: "2026-09-01T00:00:00.000Z",
+					content: "private full checkpoint",
+					source: "user",
+				},
+				{
+					id: `progress_${index}_b`,
+					at: "2026-09-02T00:00:00.000Z",
+					content: `latest checkpoint ${index} ${"y".repeat(300)}`,
+					source: "agent",
+					percent: 50,
+				},
+			],
 			status: "pending",
 			priority: "medium",
 			source: "user",
@@ -32,7 +46,10 @@ describe("todoPrompt", () => {
 		expect(prompt).toContain("todo_50");
 		expect(prompt).not.toContain('"id":"todo_0"');
 		expect(prompt).toContain(`${"x".repeat(600)}…`);
-		expect(prompt).not.toContain("private completion note");
+		// Only the latest checkpoint snippet is preloaded; the full timeline needs todo get.
+		expect(prompt).not.toContain("private full checkpoint");
+		expect(prompt).toContain("latest checkpoint");
+		expect(prompt).toContain("progressCount");
 	});
 
 	it("omits an empty todo list", () => {

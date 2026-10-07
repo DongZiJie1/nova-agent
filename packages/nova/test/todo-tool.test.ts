@@ -36,6 +36,20 @@ function storedState(): {
 	return JSON.parse(readFileSync(todoFile(), "utf8"));
 }
 
+type StoredProgressEntry = {
+	id: string;
+	at: string;
+	content: string;
+	source: string;
+	percent?: number;
+	editedAt?: string;
+};
+
+function storedProgress(index = 0): StoredProgressEntry[] {
+	const progress = storedState().items[index].progress;
+	return Array.isArray(progress) ? (progress as StoredProgressEntry[]) : [];
+}
+
 function seedStudioTodo(overrides: Record<string, unknown> = {}): void {
 	mkdirSync(process.env.NOVA_CODING_AGENT_DIR ?? "", { recursive: true });
 	writeFileSync(
@@ -354,19 +368,38 @@ describe("todo tool", () => {
 		expect(existsSync(todoFile())).toBe(false);
 	});
 
-	it("returns the full record for get, including description and completion notes", async () => {
+	it("returns the full record for get, including description and the full progress timeline", async () => {
 		const longDescription = `Acceptance criteria: ${"x".repeat(700)}`;
+		const longCheckpoint = `Verified against the studio checklist. ${"z".repeat(300)}`;
 		seedStudioTodo({
 			id: "todo_detail",
 			description: longDescription,
-			completionNotes: "Verified against the studio checklist.",
+			progress: [
+				{
+					id: "progress_a",
+					at: "2026-09-01T00:00:00.000Z",
+					content: "Earlier checkpoint kept for history.",
+					source: "user",
+				},
+				{
+					id: "progress_b",
+					at: "2026-09-02T00:00:00.000Z",
+					content: longCheckpoint,
+					source: "agent",
+					percent: 60,
+				},
+			],
 		});
 
 		const listed = await tool.execute("get-list", { action: "list" }, undefined, undefined, context());
-		const listedDescription = JSON.parse(resultText(listed)).todos[0].description as string;
+		const listedTodo = JSON.parse(resultText(listed)).todos[0];
+		const listedDescription = listedTodo.description as string;
 		expect(listedDescription.endsWith("…")).toBe(true);
 		expect(listedDescription.length).toBeLessThan(longDescription.length);
-		expect(JSON.parse(resultText(listed)).todos[0].completionNotes).toBeUndefined();
+		expect(listedTodo.progressCount).toBe(2);
+		expect(listedTodo.latestProgress.content.endsWith("…")).toBe(true);
+		expect(listedTodo.latestProgress.percent).toBe(60);
+		expect(listedTodo.latestProgress.content).not.toContain("Earlier checkpoint");
 
 		const got = await tool.execute(
 			"get-1",
@@ -378,12 +411,106 @@ describe("todo tool", () => {
 		expect(got.details).toMatchObject({ action: "get", status: "ok" });
 		const todo = JSON.parse(resultText(got)).todo;
 		expect(todo.description).toBe(longDescription);
-		expect(todo.completionNotes).toBe("Verified against the studio checklist.");
+		expect(todo.progress).toHaveLength(2);
+		expect(todo.progress[0].content).toBe("Earlier checkpoint kept for history.");
+		expect(todo.progress[1].content).toBe(longCheckpoint);
 		expect((got.details as TodoToolDetails).todo).toMatchObject({
 			id: "todo_detail",
 			description: longDescription,
+		});
+	});
+
+	it("appends progress checkpoints like git commits without rewriting earlier ones", async () => {
+		seedStudioTodo({ id: "todo_timeline", progress: [] });
+
+		const first = await tool.execute(
+			"append-1",
+			{ action: "append_progress", todo_id: "todo_timeline", content: "10月1日完成方案设计", percent: 30 },
+			undefined,
+			undefined,
+			context(),
+		);
+		const second = await tool.execute(
+			"append-2",
+			{
+				action: "append_progress",
+				todo_id: "todo_timeline",
+				content: "10月15日完成联调",
+				percent: 60,
+			},
+			undefined,
+			undefined,
+			context(),
+		);
+
+		expect(first.details).toMatchObject({ action: "append_progress", status: "ok" });
+		const entry = (first.details as TodoToolDetails).entry;
+		expect(entry).toMatchObject({ content: "10月1日完成方案设计", percent: 30, source: "agent" });
+
+		const progress = storedProgress();
+		expect(progress).toHaveLength(2);
+		expect(progress[0].content).toBe("10月1日完成方案设计");
+		expect(progress[1].content).toBe("10月15日完成联调");
+		expect(progress[1].percent).toBe(60);
+		expect(progress[1].source).toBe("agent");
+		expect(JSON.parse(resultText(second)).todo.progressCount).toBe(2);
+	});
+
+	it("edits and deletes a single progress checkpoint via the tool", async () => {
+		seedStudioTodo({
+			id: "todo_edit",
+			progress: [
+				{ id: "progress_keep", at: "2026-10-01T00:00:00.000Z", content: "keep me", source: "user" },
+				{ id: "progress_edit", at: "2026-10-02T00:00:00.000Z", content: "typo", source: "agent" },
+				{ id: "progress_drop", at: "2026-10-03T00:00:00.000Z", content: "drop me", source: "agent" },
+			],
+		});
+
+		await tool.execute(
+			"edit-1",
+			{
+				action: "edit_progress",
+				todo_id: "todo_edit",
+				entry_id: "progress_edit",
+				content: "fixed",
+				percent: 40,
+			},
+			undefined,
+			undefined,
+			context(),
+		);
+		await tool.execute(
+			"delete-1",
+			{ action: "delete_progress", todo_id: "todo_edit", entry_id: "progress_drop" },
+			undefined,
+			undefined,
+			context(),
+		);
+
+		const progress = storedProgress();
+		expect(progress).toHaveLength(2);
+		expect(progress[0].content).toBe("keep me");
+		expect(progress[1]).toMatchObject({ id: "progress_edit", content: "fixed", percent: 40 });
+		expect(progress[1].editedAt).toBeTruthy();
+	});
+
+	it("converts legacy completionNotes into the first checkpoint", async () => {
+		seedStudioTodo({
+			id: "todo_legacy",
 			completionNotes: "Verified against the studio checklist.",
 		});
+
+		const got = await tool.execute(
+			"get-legacy",
+			{ action: "get", todo_id: "todo_legacy" },
+			undefined,
+			undefined,
+			context(),
+		);
+		const todo = JSON.parse(resultText(got)).todo;
+		expect(todo.progress).toHaveLength(1);
+		expect(todo.progress[0].content).toBe("Verified against the studio checklist.");
+		expect(todo.progress[0].source).toBe("user");
 	});
 
 	it("requires the fields each action depends on", async () => {
@@ -410,12 +537,36 @@ describe("todo tool", () => {
 			undefined,
 			context(),
 		);
+		const appendMissingContent = await tool.execute(
+			"bad-10",
+			{ action: "append_progress", todo_id: "todo_missing" },
+			undefined,
+			undefined,
+			context(),
+		);
+		const editMissingEntry = await tool.execute(
+			"bad-11",
+			{ action: "edit_progress", todo_id: "todo_missing", content: "x" },
+			undefined,
+			undefined,
+			context(),
+		);
+		const deleteMissingEntry = await tool.execute(
+			"bad-12",
+			{ action: "delete_progress", todo_id: "todo_missing" },
+			undefined,
+			undefined,
+			context(),
+		);
 
 		expect(missingTitle.details.error).toContain("title");
 		expect(missingId.details.error).toContain("todo_id");
 		expect(unknownId.details.error).toContain("Todo not found");
 		expect(getMissingId.details.error).toContain("get requires todo_id");
 		expect(getUnknownId.details.error).toContain("Todo not found");
+		expect(appendMissingContent.details.error).toContain("content");
+		expect(editMissingEntry.details.error).toContain("entry_id");
+		expect(deleteMissingEntry.details.error).toContain("entry_id");
 	});
 
 	it("fails loudly when the store cannot be parsed", async () => {

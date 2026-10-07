@@ -1,9 +1,17 @@
 import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "../extensions/types.ts";
-import { type TodoItem, type TodoPriority, type TodoStatus, TodoStore, todoTopic } from "../todo-store.ts";
+import {
+	type ProgressEntry,
+	type TodoItem,
+	type TodoPriority,
+	type TodoStatus,
+	TodoStore,
+	todoTopic,
+} from "../todo-store.ts";
 
 const MAX_LIST = 50;
 const MAX_DESCRIPTION_CHARS = 600;
+const MAX_PROGRESS_CHARS = 280;
 const MAX_TAGS_LISTED = 24;
 
 const todoSchema = Type.Object({
@@ -15,10 +23,21 @@ const todoSchema = Type.Object({
 	offset: Type.Optional(
 		Type.Integer({ minimum: 0, description: "List pagination offset; use with limit to read the entire list." }),
 	),
-	action: Type.Union([Type.Literal("create"), Type.Literal("list"), Type.Literal("update"), Type.Literal("get")], {
-		description:
-			"Todo operation: create adds one, list returns summaries with change history (paged), update edits status/fields, get returns one todo's full record including complete description and completion notes",
-	}),
+	action: Type.Union(
+		[
+			Type.Literal("create"),
+			Type.Literal("list"),
+			Type.Literal("update"),
+			Type.Literal("get"),
+			Type.Literal("append_progress"),
+			Type.Literal("edit_progress"),
+			Type.Literal("delete_progress"),
+		],
+		{
+			description:
+				"Todo operation: create adds one, list returns summaries with change history (paged), update edits status/fields, get returns one todo's full record including description and the full progress timeline. append_progress / edit_progress / delete_progress manage the git-commit-like completion timeline (append is the normal path)",
+		},
+	),
 	title: Type.Optional(
 		Type.String({
 			minLength: 1,
@@ -51,7 +70,10 @@ const todoSchema = Type.Object({
 	),
 	due_at: Type.Optional(Type.String({ description: "Due date as YYYY-MM-DD, or an RFC 3339 timestamp" })),
 	todo_id: Type.Optional(
-		Type.String({ description: "Required for update and get: exact id returned by an earlier create or list call" }),
+		Type.String({
+			description:
+				"Required for update, get, append_progress, edit_progress, delete_progress: exact id returned by an earlier create or list call",
+		}),
 	),
 	status: Type.Optional(
 		Type.Union([Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed")], {
@@ -64,6 +86,24 @@ const todoSchema = Type.Object({
 		}),
 	),
 	limit: Type.Optional(Type.Number({ minimum: 1, maximum: MAX_LIST, description: "Maximum todos to list" })),
+	content: Type.Optional(
+		Type.String({
+			description:
+				"Progress timeline text: required for append_progress and edit_progress. Write what was completed, what is left, and any result — one checkpoint per call, like a git commit message",
+		}),
+	),
+	percent: Type.Optional(
+		Type.Integer({
+			minimum: 0,
+			maximum: 100,
+			description: "Optional 0–100 completion at this checkpoint; drives the todo's progress bar",
+		}),
+	),
+	entry_id: Type.Optional(
+		Type.String({
+			description: "Required for edit_progress and delete_progress: id of the progress entry to change",
+		}),
+	),
 });
 
 export type TodoToolInput = Static<typeof todoSchema>;
@@ -75,7 +115,23 @@ export interface TodoToolDetails {
 	todos?: TodoItem[];
 	total?: number;
 	availableTags?: string[];
+	entry?: ProgressEntry;
 	error?: string;
+}
+
+function latestProgressSummary(todo: TodoItem) {
+	const latest = todo.progress[todo.progress.length - 1];
+	if (!latest) return undefined;
+	return {
+		id: latest.id,
+		at: latest.at,
+		source: latest.source,
+		percent: latest.percent,
+		content:
+			latest.content.length > MAX_PROGRESS_CHARS
+				? `${latest.content.slice(0, MAX_PROGRESS_CHARS)}…`
+				: latest.content,
+	};
 }
 
 /** Descriptions can be long; the model only needs enough to recognize the item. */
@@ -94,6 +150,8 @@ export function todoSummary(todo: TodoItem) {
 			todo.description.length > MAX_DESCRIPTION_CHARS
 				? `${todo.description.slice(0, MAX_DESCRIPTION_CHARS)}…`
 				: todo.description,
+		progressCount: todo.progress.length,
+		latestProgress: latestProgressSummary(todo),
 		createdAt: todo.createdAt,
 		updatedAt: todo.updatedAt,
 		completedAt: todo.completedAt,
@@ -144,7 +202,7 @@ export function createTodoToolDefinition(): ToolDefinition<typeof todoSchema, To
 		name: "todo",
 		label: "todo",
 		description:
-			"Nova's todo list — the items the user sees on the 待办 page of Nova Studio. Use it to record work that should outlive this conversation, keep an existing item's status current, and read a stored item's full details. Create one todo per deliverable, list before creating to avoid duplicates, and update the same todo while working on it instead of creating another one. Always tag a new todo so the user can group the list later. list/create/update include change history but truncate descriptions and omit completion notes; call get with a todo_id when you need the full description or the user's completion notes.",
+			"Nova's todo list — the items the user sees on the 待办 page of Nova Studio. Use it to record work that should outlive this conversation, keep an existing item's status current, log progress checkpoints, and read a stored item's full details. Create one todo per deliverable, list before creating to avoid duplicates, and update the same todo while working on it instead of creating another one. Always tag a new todo so the user can group the list later. list/create/update include change history but truncate descriptions and only show the latest progress snippet; call get with a todo_id for the full description and the whole progress timeline. Use append_progress to record a completed slice of work (like a git commit), with an optional percent 0–100.",
 		promptSnippet: "Record, update, and read items on the user's Nova todo list.",
 		promptGuidelines: [
 			"Every todo belongs to a topic that defaults to its first tag. List first to obtain IDs, and keep related work in the same topic so the page stays grouped.",
@@ -154,7 +212,9 @@ export function createTodoToolDefinition(): ToolDefinition<typeof todoSchema, To
 			"Tag every todo you create or touch when its kind is obvious: 论文 for reading/summarizing papers, 实验 for training or code experiments, 工程 for repo/tooling work, 学习 for study plans, 求职 for career work. One to three tags is usually enough.",
 			"Prefer the tags already listed in availableTags over new synonyms (论文, not 文献/Paper/阅读); only add a new tag when the existing ones genuinely do not fit.",
 			"Use list with tag to answer questions like “还有哪些论文待办”, and add or fix tags with update when the user renames a group.",
-			"Use get with a todo_id when you need the full description or completion notes; list and update only return truncated descriptions.",
+			"Use get with a todo_id when you need the full description or the whole progress timeline; list and update only return truncated descriptions and the latest progress snippet.",
+			"When you finish a meaningful slice of work on a todo, call append_progress with a short checkpoint (what got done, what is left) and the new percent — like a git commit. Do not append noise for every small step; one checkpoint per meaningful slice is enough.",
+			"Prefer append_progress over rewriting text: earlier checkpoints are history the user wants to keep. Only use edit_progress for typos and delete_progress when the user asks to remove one.",
 			"Mark a todo in_progress when work on it actually starts and completed only when the work is done and verified — never to look finished.",
 			"The todo list belongs to the user: do not delete or reprioritize their entries unless they asked for it.",
 		],
@@ -235,11 +295,59 @@ export function createTodoToolDefinition(): ToolDefinition<typeof todoSchema, To
 
 				if (input.action === "get") {
 					if (!input.todo_id) throw new Error("get requires todo_id");
-					// Full record: the list path truncates description and drops completionNotes,
-					// so the model can only see them here.
+					// Full record: the list path truncates description and only shows
+					// the latest progress snippet, so the full timeline is here.
 					const todo = store.get(input.todo_id);
 					return {
 						content: [{ type: "text" as const, text: JSON.stringify({ todo }, null, 2) }],
+						details: { action: input.action, status: "ok" as const, todo },
+					};
+				}
+
+				if (input.action === "append_progress") {
+					if (!input.todo_id) throw new Error("append_progress requires todo_id");
+					if (!input.content) throw new Error("append_progress requires content");
+					// Checkpoints are user-visible history on the 待办 page; tag them agent
+					// so the UI can show "Nova" next to the percent badge.
+					const entry = store.appendProgress(input.todo_id, {
+						content: input.content,
+						percent: input.percent,
+						source: "agent",
+					});
+					const todo = store.get(input.todo_id);
+					return {
+						content: [
+							{ type: "text" as const, text: JSON.stringify({ entry, todo: todoSummary(todo) }, null, 2) },
+						],
+						details: { action: input.action, status: "ok" as const, todo, entry },
+					};
+				}
+
+				if (input.action === "edit_progress") {
+					if (!input.todo_id) throw new Error("edit_progress requires todo_id");
+					if (!input.entry_id) throw new Error("edit_progress requires entry_id");
+					if (!input.content) throw new Error("edit_progress requires content");
+					const entry = store.editProgress(input.todo_id, {
+						entryId: input.entry_id,
+						content: input.content,
+						percent: input.percent,
+					});
+					const todo = store.get(input.todo_id);
+					return {
+						content: [
+							{ type: "text" as const, text: JSON.stringify({ entry, todo: todoSummary(todo) }, null, 2) },
+						],
+						details: { action: input.action, status: "ok" as const, todo, entry },
+					};
+				}
+
+				if (input.action === "delete_progress") {
+					if (!input.todo_id) throw new Error("delete_progress requires todo_id");
+					if (!input.entry_id) throw new Error("delete_progress requires entry_id");
+					store.deleteProgress(input.todo_id, input.entry_id);
+					const todo = store.get(input.todo_id);
+					return {
+						content: [{ type: "text" as const, text: JSON.stringify({ todo: todoSummary(todo) }, null, 2) }],
 						details: { action: input.action, status: "ok" as const, todo },
 					};
 				}
