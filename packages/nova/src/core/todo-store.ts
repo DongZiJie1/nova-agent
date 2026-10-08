@@ -24,12 +24,29 @@ export interface TodoHistoryEntry {
 	changedAt: string;
 }
 
+/**
+ * One checkpoint on a todo's completion timeline — a git-commit-like record of
+ * "what got done at this moment". Entries are append-only in normal use; edit
+ * and delete exist for typos and retracting a bad note, not for rewriting history.
+ */
+export interface ProgressEntry {
+	id: string;
+	/** When this checkpoint was recorded (ISO). */
+	at: string;
+	content: string;
+	source: TodoSource;
+	/** Optional 0–100 completion at this checkpoint; drives the progress bar. */
+	percent?: number;
+	/** Set only when the entry was corrected after being recorded. */
+	editedAt?: string;
+}
+
 export interface TodoItem {
 	id: string;
 	title: string;
 	description: string;
-	/** User-authored completion notes from Nova Studio; preserved on agent writes. */
-	completionNotes?: string;
+	/** Completion timeline, oldest → newest. */
+	progress: ProgressEntry[];
 	tags: string[];
 	topic?: string;
 	status: TodoStatus;
@@ -74,10 +91,24 @@ export interface UpdateTodoInput {
 	dueAt?: string;
 }
 
+export interface AppendProgressInput {
+	content: string;
+	percent?: number;
+	source?: TodoSource;
+}
+
+export interface EditProgressInput {
+	entryId: string;
+	content: string;
+	percent?: number;
+}
+
 export const TODO_TITLE_MAX = 120;
 export const TODO_DESCRIPTION_MAX = 50_000;
 export const TODO_TAG_MAX = 24;
 export const TODO_TAGS_MAX = 5;
+export const TODO_PROGRESS_CONTENT_MAX = 5_000;
+export const TODO_PROGRESS_PERCENT_MAX = 100;
 
 const TODO_STATUSES: readonly TodoStatus[] = ["pending", "in_progress", "completed"];
 const TODO_PRIORITIES: readonly TodoPriority[] = ["low", "medium", "high"];
@@ -135,6 +166,68 @@ export function normalizeTodoDueAt(value: string | undefined): string | undefine
 	return dueAt;
 }
 
+export function normalizeProgressContent(value: string): string {
+	const content = (value ?? "").trim();
+	if (!content) throw new Error("Progress content is required");
+	if ([...content].length > TODO_PROGRESS_CONTENT_MAX)
+		throw new Error(`Progress content must not exceed ${TODO_PROGRESS_CONTENT_MAX} characters`);
+	return content;
+}
+
+export function normalizeProgressPercent(value: number | undefined): number | undefined {
+	if (value === undefined || value === null || Number.isNaN(value)) return undefined;
+	if (!Number.isInteger(value) || value < 0 || value > TODO_PROGRESS_PERCENT_MAX)
+		throw new Error(`Progress percent must be an integer between 0 and ${TODO_PROGRESS_PERCENT_MAX}`);
+	return value;
+}
+
+function normalizeProgressSource(value: string | undefined): TodoSource {
+	return value === "agent" ? "agent" : "user";
+}
+
+function newProgressId(): string {
+	return `progress_${randomUUID()}`;
+}
+
+function parseProgressEntry(value: unknown): ProgressEntry | undefined {
+	if (!value || typeof value !== "object") return undefined;
+	const entry = value as Partial<ProgressEntry>;
+	if (typeof entry.id !== "string" || typeof entry.content !== "string") return undefined;
+	const at = typeof entry.at === "string" ? entry.at : undefined;
+	if (!at) return undefined;
+	return {
+		id: entry.id,
+		at,
+		content: entry.content,
+		source: normalizeProgressSource(entry.source),
+		percent: typeof entry.percent === "number" ? normalizeProgressPercent(entry.percent) : undefined,
+		editedAt: typeof entry.editedAt === "string" ? entry.editedAt : undefined,
+	};
+}
+
+/**
+ * Prefer the `progress` timeline. Older `todos.json` rows kept a single
+ * `completionNotes` string — wrap that as the first checkpoint so hard-cutting
+ * the field does not drop the user's notes. The field is never written back.
+ */
+function parseProgress(value: unknown, legacyNotes: unknown, fallbackAt: string): ProgressEntry[] {
+	const entries = Array.isArray(value)
+		? value.map(parseProgressEntry).filter((entry): entry is ProgressEntry => entry !== undefined)
+		: [];
+	if (entries.length > 0) return entries;
+	if (typeof legacyNotes === "string" && legacyNotes.trim()) {
+		return [
+			{
+				id: newProgressId(),
+				at: fallbackAt,
+				content: legacyNotes.trim(),
+				source: "user",
+			},
+		];
+	}
+	return [];
+}
+
 function normalizeOptional(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
 	return trimmed ? trimmed : undefined;
@@ -145,7 +238,7 @@ const emptyState = (): TodoState => ({ version: 1, items: [] });
 /** Drops unreadable rows instead of failing the whole list, matching the Rust reader's tolerance. */
 function parseTodoItem(value: unknown): TodoItem | undefined {
 	if (!value || typeof value !== "object") return undefined;
-	const item = value as Partial<TodoItem>;
+	const item = value as Partial<TodoItem> & { completionNotes?: unknown; progress?: unknown };
 	if (typeof item.id !== "string" || typeof item.title !== "string") return undefined;
 	const status = typeof item.status === "string" && isTodoStatus(item.status) ? item.status : "pending";
 	const priority = typeof item.priority === "string" && isTodoPriority(item.priority) ? item.priority : "medium";
@@ -155,7 +248,7 @@ function parseTodoItem(value: unknown): TodoItem | undefined {
 		topic: typeof item.topic === "string" ? normalizeOptional(item.topic) : undefined,
 		title: item.title,
 		description: typeof item.description === "string" ? item.description : "",
-		completionNotes: typeof item.completionNotes === "string" ? item.completionNotes : "",
+		progress: parseProgress(item.progress, item.completionNotes, timestamp),
 		tags: Array.isArray(item.tags)
 			? item.tags.filter((tag): tag is string => typeof tag === "string").slice(0, TODO_TAGS_MAX)
 			: [],
@@ -237,6 +330,7 @@ export class TodoStore {
 			id: `todo_${randomUUID()}`,
 			title: normalizeTodoTitle(input.title),
 			description: normalizeTodoDescription(input.description),
+			progress: [],
 			tags: normalizeTodoTags(input.tags),
 			status: "pending",
 			priority,
@@ -287,6 +381,50 @@ export class TodoStore {
 		todo.updatedAt = changedAt;
 		this.write(state);
 		return todo;
+	}
+
+	/** Append one checkpoint to the completion timeline. Never rewrites earlier entries. */
+	appendProgress(id: string, input: AppendProgressInput): ProgressEntry {
+		const state = this.read();
+		const todo = state.items.find((item) => item.id === id);
+		if (!todo) throw new Error(`Todo not found: ${id}`);
+		const entry: ProgressEntry = {
+			id: newProgressId(),
+			at: new Date().toISOString(),
+			content: normalizeProgressContent(input.content),
+			source: normalizeProgressSource(input.source),
+			percent: normalizeProgressPercent(input.percent),
+		};
+		todo.progress.push(entry);
+		todo.updatedAt = entry.at;
+		this.write(state);
+		return entry;
+	}
+
+	editProgress(id: string, input: EditProgressInput): ProgressEntry {
+		const state = this.read();
+		const todo = state.items.find((item) => item.id === id);
+		if (!todo) throw new Error(`Todo not found: ${id}`);
+		const entry = todo.progress.find((item) => item.id === input.entryId);
+		if (!entry) throw new Error(`Progress entry not found: ${input.entryId}`);
+		const changedAt = new Date().toISOString();
+		entry.content = normalizeProgressContent(input.content);
+		if (input.percent !== undefined) entry.percent = normalizeProgressPercent(input.percent);
+		entry.editedAt = changedAt;
+		todo.updatedAt = changedAt;
+		this.write(state);
+		return entry;
+	}
+
+	deleteProgress(id: string, entryId: string): void {
+		const state = this.read();
+		const todo = state.items.find((item) => item.id === id);
+		if (!todo) throw new Error(`Todo not found: ${id}`);
+		const before = todo.progress.length;
+		todo.progress = todo.progress.filter((item) => item.id !== entryId);
+		if (todo.progress.length === before) throw new Error(`Progress entry not found: ${entryId}`);
+		todo.updatedAt = new Date().toISOString();
+		this.write(state);
 	}
 
 	private write(state: TodoState): void {
