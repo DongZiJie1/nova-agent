@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 describe("todoPrompt", () => {
-	it("loads only the first 50 in list order and truncates descriptions like todo list", () => {
+	it("loads all todos in list order and truncates descriptions like todo list", () => {
 		const directory = mkdtempSync(join(tmpdir(), "nova-todo-prompt-"));
 		directories.push(directory);
 		const items = Array.from({ length: 51 }, (_, index) => ({
@@ -42,9 +42,9 @@ describe("todoPrompt", () => {
 		}));
 		writeFileSync(join(directory, "todos.json"), JSON.stringify({ version: 1, items }));
 		const prompt = todoPrompt(directory);
-		expect(prompt).toContain("first 50 of 51 todos");
+		expect(prompt).toContain("all 51 todos");
 		expect(prompt).toContain("todo_50");
-		expect(prompt).not.toContain('"id":"todo_0"');
+		expect(prompt).toContain('"id":"todo_0"');
 		expect(prompt).toContain(`${"x".repeat(600)}…`);
 		// Only the latest checkpoint snippet is preloaded; the full timeline needs todo get.
 		expect(prompt).not.toContain("private full checkpoint");
