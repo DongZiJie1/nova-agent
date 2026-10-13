@@ -341,6 +341,24 @@ describe("todo tool", () => {
 		);
 		expect(reopened.details.status).toBe("ok");
 		expect(storedState().items[0].completedAt).toBeUndefined();
+
+		const abandoned = await tool.execute(
+			"update-4",
+			{ action: "update", todo_id: "todo_target", status: "abandoned" },
+			undefined,
+			undefined,
+			context(),
+		);
+		expect(abandoned.details).toMatchObject({ status: "ok", todo: { status: "abandoned" } });
+		expect(storedState().items[0].completedAt).toBeUndefined();
+		const listed = await tool.execute(
+			"list-5",
+			{ action: "list", status: "abandoned" },
+			undefined,
+			undefined,
+			context(),
+		);
+		expect(listed.details.todos).toEqual([expect.objectContaining({ id: "todo_target", status: "abandoned" })]);
 	});
 
 	it("reports invalid input instead of writing", async () => {

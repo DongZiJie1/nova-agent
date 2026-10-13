@@ -13,7 +13,7 @@ import { getAgentDir } from "../config.ts";
  * or the two writers will disagree about what a stored todo looks like.
  */
 
-export type TodoStatus = "pending" | "in_progress" | "completed";
+export type TodoStatus = "pending" | "in_progress" | "completed" | "abandoned";
 export type TodoPriority = "low" | "medium" | "high";
 export type TodoSource = "user" | "agent";
 
@@ -110,7 +110,7 @@ export const TODO_TAGS_MAX = 5;
 export const TODO_PROGRESS_CONTENT_MAX = 5_000;
 export const TODO_PROGRESS_PERCENT_MAX = 100;
 
-const TODO_STATUSES: readonly TodoStatus[] = ["pending", "in_progress", "completed"];
+const TODO_STATUSES: readonly TodoStatus[] = ["pending", "in_progress", "completed", "abandoned"];
 const TODO_PRIORITIES: readonly TodoPriority[] = ["low", "medium", "high"];
 
 export function isTodoStatus(value: string): value is TodoStatus {
