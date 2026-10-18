@@ -54,7 +54,7 @@ const todoSchema = Type.Object({
 		Type.Array(Type.String(), {
 			maxItems: 5,
 			description:
-				"Up to 5 short labels for later grouping, e.g. 论文 / 实验 / 工程 / 学习. Create: the todo's tags. Update: replaces the whole list (pass an empty array to clear). Reuse a tag that already exists instead of inventing a near-duplicate.",
+				"Up to 5 user-defined labels. Create: the todo's tags. Update: replaces the whole list (pass an empty array to clear). Only set or change tags when the user explicitly asks; otherwise leave them alone.",
 		}),
 	),
 	priority: Type.Optional(
@@ -76,9 +76,12 @@ const todoSchema = Type.Object({
 		}),
 	),
 	status: Type.Optional(
-		Type.Union([Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed")], {
-			description: "New status for update, or a filter for list",
-		}),
+		Type.Union(
+			[Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed"), Type.Literal("abandoned")],
+			{
+				description: "New status for update, or a filter for list",
+			},
+		),
 	),
 	tag: Type.Optional(
 		Type.String({
@@ -202,20 +205,20 @@ export function createTodoToolDefinition(): ToolDefinition<typeof todoSchema, To
 		name: "todo",
 		label: "todo",
 		description:
-			"Nova's todo list — the items the user sees on the 待办 page of Nova Studio. Use it to record work that should outlive this conversation, keep an existing item's status current, log progress checkpoints, and read a stored item's full details. Create one todo per deliverable, list before creating to avoid duplicates, and update the same todo while working on it instead of creating another one. Always tag a new todo so the user can group the list later. list/create/update include change history but truncate descriptions and only show the latest progress snippet; call get with a todo_id for the full description and the whole progress timeline. Use append_progress to record a completed slice of work (like a git commit), with an optional percent 0–100.",
+			"Nova's todo list — the items the user sees on the 待办 page of Nova Studio. Use it to record work that should outlive this conversation, keep an existing item's status current, log progress checkpoints, and read a stored item's full details. Create one todo per deliverable, list before creating to avoid duplicates, and update the same todo while working on it instead of creating another one. Tags are managed by the user; only add or change them when explicitly requested. list/create/update include change history but truncate descriptions and only show the latest progress snippet; call get with a todo_id for the full description and the whole progress timeline. Use append_progress to record a completed slice of work (like a git commit), with an optional percent 0–100.",
 		promptSnippet: "Record, update, and read items on the user's Nova todo list.",
 		promptGuidelines: [
 			"Every todo belongs to a topic that defaults to its first tag. List first to obtain IDs, and keep related work in the same topic so the page stays grouped.",
 			"When the user requests a plan, create its actionable steps. Use offset to read subsequent pages when truncated is true.",
 			"Record user-requested plans and deliverables. Do not fill the user's list with your internal scratch work.",
 			"Call todo with action list before creating, so an already-tracked item is updated instead of duplicated.",
-			"Tag every todo you create or touch when its kind is obvious: 论文 for reading/summarizing papers, 实验 for training or code experiments, 工程 for repo/tooling work, 学习 for study plans, 求职 for career work. One to three tags is usually enough.",
-			"Prefer the tags already listed in availableTags over new synonyms (论文, not 文献/Paper/阅读); only add a new tag when the existing ones genuinely do not fit.",
+			"Leave tags empty when creating a todo unless the user asks for tags. Preserve existing tags on update unless the user explicitly asks to edit them.",
+			"The user creates their own tag vocabulary. Never infer or generate tags from a todo's title, topic, or project.",
 			"Use list with tag to answer questions like “还有哪些论文待办”, and add or fix tags with update when the user renames a group.",
 			"Use get with a todo_id when you need the full description or the whole progress timeline; list and update only return truncated descriptions and the latest progress snippet.",
 			"When you finish a meaningful slice of work on a todo, call append_progress with a short checkpoint (what got done, what is left) and the new percent — like a git commit. Do not append noise for every small step; one checkpoint per meaningful slice is enough.",
 			"Prefer append_progress over rewriting text: earlier checkpoints are history the user wants to keep. Only use edit_progress for typos and delete_progress when the user asks to remove one.",
-			"Mark a todo in_progress when work on it actually starts and completed only when the work is done and verified — never to look finished.",
+			"Mark a todo in_progress when work on it actually starts and completed only when the work is done and verified — never to look finished. Use abandoned only when the user explicitly decides to stop pursuing it.",
 			"The todo list belongs to the user: do not delete or reprioritize their entries unless they asked for it.",
 		],
 		parameters: todoSchema,
