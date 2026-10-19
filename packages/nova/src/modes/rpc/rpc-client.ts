@@ -10,6 +10,14 @@ import type { ImageContent } from "@dongzijie1/pi-ai";
 import type { AgentSessionEvent, SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
+import type { FactApplicability } from "../../core/memory/fact-schema.ts";
+import type {
+	MemoryFactAction,
+	MemoryFactsResult,
+	MemorySuggestionResolution,
+	MemorySuggestionsResult,
+} from "../../core/memory/memory-rpc.ts";
+import type { SuggestionStatus } from "../../core/memory/suggestion-store.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import type { ToolPermissionMode } from "../../core/tool-permission-manager.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
@@ -472,6 +480,42 @@ export class RpcClient {
 	async getCommands(): Promise<RpcSlashCommand[]> {
 		const response = await this.send({ type: "get_commands" });
 		return this.getData<{ commands: RpcSlashCommand[] }>(response).commands;
+	}
+
+	/**
+	 * Get stored memory facts plus active/archived/pending-suggestion counters.
+	 * `applicability` only filters the returned facts; the counters cover the whole store.
+	 */
+	async getMemoryFacts(applicability?: FactApplicability): Promise<MemoryFactsResult> {
+		const response = await this.send({ type: "get_memory_facts", applicability });
+		return this.getData<MemoryFactsResult>(response);
+	}
+
+	/**
+	 * Get memory profile suggestions, pending ones by default.
+	 */
+	async getMemorySuggestions(status?: SuggestionStatus): Promise<MemorySuggestionsResult> {
+		const response = await this.send({ type: "get_memory_suggestions", status });
+		return this.getData<MemorySuggestionsResult>(response);
+	}
+
+	/**
+	 * Pin, unpin, archive, or delete a fact. `delete` is a soft delete (archive with reason "manual").
+	 */
+	async updateMemoryFact(factId: string, action: MemoryFactAction): Promise<{ ok: true }> {
+		const response = await this.send({ type: "memory_fact_update", factId, action });
+		return this.getData<{ ok: true }>(response);
+	}
+
+	/**
+	 * Accept or reject a memory suggestion. Accepting returns the profile section id it wrote to.
+	 */
+	async resolveMemorySuggestion(
+		suggestionId: string,
+		action: MemorySuggestionResolution,
+	): Promise<{ ok: true; sectionId?: string }> {
+		const response = await this.send({ type: "memory_suggestion_resolve", suggestionId, action });
+		return this.getData<{ ok: true; sectionId?: string }>(response);
 	}
 
 	// =========================================================================

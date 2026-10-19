@@ -8,6 +8,7 @@ import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { getNovaEnv } from "../utils/env-compat.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
+import { type MemorySettings, type ResolvedMemorySettings, resolveMemorySettings } from "./memory/memory-settings.ts";
 import type { WebSearchSettings } from "./search/config.ts";
 import type { ToolPermissionMode } from "./tool-permission-manager.ts";
 import { DEFAULT_BASH_TIMEOUT_SECONDS, DEFAULT_MAX_CONCURRENT_BASH } from "./tools/limits.ts";
@@ -142,6 +143,8 @@ export interface Settings {
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
 	/** Built-in web search: provider, API key, base URL, result count, timeout. */
 	search?: WebSearchSettings;
+	/** Long-term memory: fact extraction, prompt injection and recall. */
+	memory?: MemorySettings;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -1271,6 +1274,11 @@ export class SettingsManager {
 
 	getCodeBlockIndent(): string {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
+	}
+
+	/** Memory settings resolved from the merged settings; defaults are never persisted. */
+	getMemorySettings(): ResolvedMemorySettings {
+		return resolveMemorySettings(this.settings.memory);
 	}
 
 	getWarnings(): WarningSettings {

@@ -92,11 +92,13 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 			"nova_data",
 			"query_scheduled_tasks",
 			"read",
+			"read_memory",
+			"remember",
+			"search_memory",
 			"todo",
 			"web_search",
 			"write",
 			"write_scheduled_task",
-			"write_user_memory",
 		]);
 		expect(session.getActiveToolNames()).toEqual(["dynamic_tool"]);
 		// Tool snippets are intentionally NOT in the system prompt.

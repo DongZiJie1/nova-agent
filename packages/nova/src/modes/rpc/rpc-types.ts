@@ -11,6 +11,15 @@ import type { SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { ExecutionTrace, ExecutionTraceCategory } from "../../core/execution-traces.ts";
+import type { FactApplicability } from "../../core/memory/fact-schema.ts";
+import type { MemoryChangedEvent } from "../../core/memory/memory-events.ts";
+import type {
+	MemoryFactAction,
+	MemoryFactsResult,
+	MemorySuggestionResolution,
+	MemorySuggestionsResult,
+} from "../../core/memory/memory-rpc.ts";
+import type { SuggestionStatus } from "../../core/memory/suggestion-store.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import type { ToolPermissionMode } from "../../core/tool-permission-manager.ts";
@@ -18,6 +27,7 @@ import type { AgentLifecycleSnapshot } from "./agent-lifecycle.ts";
 import type { RpcFileReference } from "./file-references.ts";
 
 export type { AgentLifecycleSnapshot, AgentSessionStatus, AgentTaskStatus } from "./agent-lifecycle.ts";
+export type { MemoryChangedEvent };
 
 export interface RpcCollaborationContext {
 	requestId: string;
@@ -116,6 +126,12 @@ type RpcSessionCommand =
 
 	// Messages
 	| { id?: string; type: "get_messages" }
+
+	// Memory
+	| { id?: string; type: "get_memory_facts"; applicability?: FactApplicability }
+	| { id?: string; type: "get_memory_suggestions"; status?: SuggestionStatus }
+	| { id?: string; type: "memory_fact_update"; factId: string; action: MemoryFactAction }
+	| { id?: string; type: "memory_suggestion_resolve"; suggestionId: string; action: MemorySuggestionResolution }
 
 	// Commands (available for invocation via prompt)
 	| { id?: string; type: "get_commands" };
@@ -352,6 +368,30 @@ export type RpcResponse =
 
 	// Messages
 	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
+
+	// Memory
+	| {
+			id?: string;
+			type: "response";
+			command: "get_memory_facts";
+			success: true;
+			data: MemoryFactsResult;
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_memory_suggestions";
+			success: true;
+			data: MemorySuggestionsResult;
+	  }
+	| { id?: string; type: "response"; command: "memory_fact_update"; success: true; data: { ok: true } }
+	| {
+			id?: string;
+			type: "response";
+			command: "memory_suggestion_resolve";
+			success: true;
+			data: { ok: true; sectionId?: string };
+	  }
 
 	// Commands
 	| {

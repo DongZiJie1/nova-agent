@@ -73,6 +73,11 @@ function hasLiveOwner(sessionFile: string): boolean {
 	return false;
 }
 
+/** Whether another process (or this one) currently owns the session file. */
+export function hasLiveSessionOwner(sessionFile: string): boolean {
+	return hasLiveOwner(sessionFile);
+}
+
 function removeStaleMarkers(sessionFile: string): void {
 	for (const marker of activeMarkerFiles(sessionFile)) {
 		const pid = readMarkerPid(marker);

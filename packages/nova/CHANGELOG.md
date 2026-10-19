@@ -7,10 +7,12 @@
 - Added internal ordered lifecycle hooks with per-handler timeouts and error isolation, session timing/tool/memory statistics, and local end records with startup recovery for interrupted sessions.
 - Added tags and topics to the `todo` tool: `topic` defaults to the first tag (or 未分类), the list can filter by tag or topic, and `offset` with `limit` pages through the rest. Todos written before tags existed keep their grouping without any rewrite.
 - Added the `todo` tool for recording and updating items on Nova's todo list (`todos.json` in the agent directory), the same store the 待办 page of Nova Studio reads. Items created by the agent are attributed to it and stay linked to the session that wrote them.
+- Added long-term fact memory: cross-session extraction with startup compensation for killed sessions, budgeted `<user_facts>` system-prompt injection, the `remember`/`search_memory`/`read_memory` tools, and the `nova memory` CLI for listing and curating stored facts. See [docs/memory.md](docs/memory.md).
 
 ### Changed
 
 - Changed the default tool permission mode from `ask` to `allow` (全部放行). Tools run without confirmation unless the user selects `ask`/`edits` via `--permission-mode`, settings, or `/permission`.
+- Changed the model to stop writing the user profile directly. Profile edits now go through the settings interface or the review flow, so the model can no longer rewrite what the user stored about themselves.
 
 ## [1.5.0] - 2026-09-14
 
