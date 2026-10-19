@@ -1,8 +1,17 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+	appendFileSync,
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fauxAssistantMessage } from "@dongzijie1/pi-ai/compat";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LifecycleHooks, lifecycleHooks } from "../../src/core/lifecycle-hooks.ts";
@@ -31,6 +40,14 @@ function directory() {
 
 function readRecord(path: string): SessionRecord {
 	return JSON.parse(readFileSync(sessionRecordPath(path), "utf8"));
+}
+
+function activeMarkers(path: string): string[] {
+	const directory = dirname(path);
+	const prefix = `${basename(path)}.active.`;
+	return readdirSync(directory)
+		.filter((name) => name.startsWith(prefix) && name.endsWith(".json"))
+		.map((name) => join(directory, name));
 }
 
 describe("internal lifecycle hooks", () => {
@@ -234,7 +251,7 @@ describe("local session records", () => {
 		expect(statSync(sessionRecordPath(path)).mode & 0o777).toBe(0o600);
 		reconcileSessionRecords(root);
 		expect(readRecord(path)).toEqual(expected);
-		expect(existsSync(`${path}.active.json`)).toBe(false);
+		expect(activeMarkers(path)).toEqual([]);
 	});
 
 	it("recovers a truncated final entry without rewriting the session or accepting empty files", async () => {
@@ -270,12 +287,12 @@ describe("local session records", () => {
 			child.kill("SIGKILL");
 		});
 		await once(child, "spawn");
-		writeFileSync(`${path}.active.json`, JSON.stringify({ pid: child.pid }));
+		writeFileSync(`${path}.active.${child.pid}.json`, JSON.stringify({ pid: child.pid }));
 		// Fresh roots model separate startups while keeping once-per-directory scan semantics.
 		const liveRoot = directory();
 		const livePath = join(liveRoot, "live.jsonl");
 		writeFileSync(livePath, readFileSync(path));
-		writeFileSync(`${livePath}.active.json`, JSON.stringify({ pid: child.pid }));
+		writeFileSync(`${livePath}.active.${child.pid}.json`, JSON.stringify({ pid: child.pid }));
 		reconcileSessionRecords(liveRoot);
 		expect(existsSync(sessionRecordPath(livePath))).toBe(false);
 		const exit = once(child, "exit");
@@ -283,6 +300,36 @@ describe("local session records", () => {
 		await exit;
 		reconcileSessionRecords(manager.getSessionDir());
 		expect(readRecord(path).abnormalEnd).toBe(true);
-		expect(existsSync(`${path}.active.json`)).toBe(false);
+		expect(activeMarkers(path)).toEqual([]);
+	});
+
+	it("does not write a record for a session that never had a message", () => {
+		const root = directory();
+		const manager = SessionManager.create(root, root);
+		beginSessionRecord(manager);
+		finishSessionRecord(manager, "quit", new Date().toISOString());
+		expect(existsSync(sessionRecordPath(manager.getSessionFile()!))).toBe(false);
+		expect(activeMarkers(manager.getSessionFile()!)).toEqual([]);
+	});
+
+	it("does not record a header-only session as crashed", () => {
+		const root = directory();
+		const path = join(root, "header-only.jsonl");
+		writeFileSync(
+			path,
+			`${JSON.stringify({ type: "session", version: 3, id: "header-only", timestamp: new Date().toISOString(), cwd: root })}\n`,
+		);
+		reconcileSessionRecords(root);
+		expect(existsSync(sessionRecordPath(path))).toBe(false);
+	});
+
+	it("leaves another process's ownership marker alone", async () => {
+		const { manager, path } = await persisted();
+		beginSessionRecord(manager);
+		const foreign = `${path}.active.999999.json`;
+		writeFileSync(foreign, JSON.stringify({ pid: 999999 }));
+		finishSessionRecord(manager, "quit", new Date().toISOString());
+		expect(existsSync(foreign)).toBe(true);
+		rmSync(foreign, { force: true });
 	});
 });

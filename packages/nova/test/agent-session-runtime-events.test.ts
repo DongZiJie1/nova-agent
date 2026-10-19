@@ -146,6 +146,8 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		});
 		await runtimeHost.session.bindExtensions({});
 		const secondSessionFile = runtimeHost.session.sessionFile;
+		// A session with no messages is intentionally not recorded, so give it one.
+		await runtimeHost.session.prompt("again");
 		expect(events).toEqual([
 			{ type: "session_before_switch", reason: "new", targetSessionFile: undefined },
 			{ type: "session_shutdown", reason: "new", targetSessionFile: secondSessionFile },
