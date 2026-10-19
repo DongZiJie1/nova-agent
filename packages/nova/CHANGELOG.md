@@ -14,6 +14,10 @@
 - Changed the default tool permission mode from `ask` to `allow` (全部放行). Tools run without confirmation unless the user selects `ask`/`edits` via `--permission-mode`, settings, or `/permission`.
 - Changed the model to stop writing the user profile directly. Profile edits now go through the settings interface or the review flow, so the model can no longer rewrite what the user stored about themselves.
 
+### Fixed
+
+- Fixed startup memory compensation replaying entire historical sessions into facts. It now only resumes sessions that already have an extraction marker with messages after it, and it always skips the session the process opened, so merely opening an old conversation no longer adds facts.
+
 ## [1.5.0] - 2026-09-14
 
 ### Added

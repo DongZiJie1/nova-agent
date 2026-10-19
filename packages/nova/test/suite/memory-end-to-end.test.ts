@@ -253,13 +253,20 @@ describe("memory end-to-end", () => {
 		expect(ws.store.list()).toHaveLength(1);
 	});
 
-	it("E. 强杀后启动补偿补抽未标记的会话，再跑一次不重复", async () => {
+	it("E. 强杀后启动补偿只补抽标记之后的尾巴，再跑一次不重复", async () => {
 		const ws = workspace();
 		const manager = persistentSession(ws);
 		const sessionFile = manager.getSessionFile();
 		if (sessionFile === undefined) throw new Error("session file was not created");
-		// 强杀后的状态：消息已落盘，但还没有任何抽取标记。
-		expect(readExtractionMarker(SessionManager.open(sessionFile)).marker).toBeUndefined();
+		// 第一次抽取正常完成：标记覆盖到第二轮回复。
+		const first = await runExtraction(extractionOptions(manager, ws, fixedCompletion(BUILD_ONLY_REPLY)));
+		expect(first.created).toBe(1);
+
+		// 强杀之前又追加了一轮对话，没来得及抽取。
+		const TAIL_FACT = "发布一律使用离线构建产物";
+		manager.appendMessage({ role: "user", content: "那就这样发布", timestamp: Date.now() });
+		const tailAssistantId = manager.appendMessage(assistantEntry("已记录"));
+		expect(readExtractionMarker(SessionManager.open(sessionFile)).marker?.throughEntryId).not.toBe(tailAssistantId);
 		expect(findSessionsNeedingExtraction({ sessionDir: ws.sessionDir })).toHaveLength(1);
 
 		const options = {
@@ -267,22 +274,49 @@ describe("memory end-to-end", () => {
 			sessionDir: ws.sessionDir,
 			settings: settings(),
 			store: ws.store,
-			complete: fixedCompletion(BUILD_ONLY_REPLY),
+			complete: fixedCompletion(JSON.stringify({ facts: [extractedFactJson(TAIL_FACT)] })),
 		};
 		const compensated = await runStartupCompensation(options);
 
 		expect(compensated).toEqual({ processed: 1, created: 1, failed: 0 });
 		const facts = ws.store.active();
-		expect(facts.map((fact) => fact.text)).toEqual([BUILD_FACT]);
+		expect(facts.map((fact) => fact.text).sort()).toEqual([BUILD_FACT, TAIL_FACT].sort());
 		const marker = readExtractionMarker(SessionManager.open(sessionFile)).marker;
 		expect(marker?.model).toBe("startup");
-		expect(marker?.factIds).toEqual([facts[0].id]);
+		expect(marker?.throughEntryId).toBe(tailAssistantId);
 
 		// 标记覆盖全部消息：扫描不再有候选，再跑一次补偿也不会新增事实。
 		expect(findSessionsNeedingExtraction({ sessionDir: ws.sessionDir })).toEqual([]);
 		const again = await runStartupCompensation(options);
 		expect(again).toEqual({ processed: 0, created: 0, failed: 0 });
-		expect(ws.store.list()).toHaveLength(1);
+		expect(ws.store.list()).toHaveLength(2);
+	});
+
+	it("G. 从未抽取过的历史会话不会被启动补偿重新抽成事实", async () => {
+		const ws = workspace();
+		const manager = persistentSession(ws);
+		const sessionFile = manager.getSessionFile();
+		if (sessionFile === undefined) throw new Error("session file was not created");
+		// 记忆功能上线前的会话：消息齐全，但没有抽取标记。
+		expect(readExtractionMarker(SessionManager.open(sessionFile)).marker).toBeUndefined();
+
+		let calls = 0;
+		const complete: ExtractionCompletion = async () => {
+			calls += 1;
+			return BUILD_ONLY_REPLY;
+		};
+
+		const result = await runStartupCompensation({
+			agentDir: ws.agentDir,
+			sessionDir: ws.sessionDir,
+			settings: settings(),
+			store: ws.store,
+			complete,
+		});
+
+		expect(result).toEqual({ processed: 0, created: 0, failed: 0 });
+		expect(calls).toBe(0);
+		expect(ws.store.list()).toHaveLength(0);
 	});
 
 	it("F. remember 工具写入的事实出现在同一 agentDir 的注入块里", async () => {

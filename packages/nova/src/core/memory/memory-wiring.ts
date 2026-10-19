@@ -127,7 +127,8 @@ export interface MemoryCompensationWiringOptions {
  *
  * 包装掉"解析设置 → 用当前会话模型构造抽取调用 → 建事实库"这三步，调用方只需一行。
  * 永远不抛错，也永远不阻塞启动：拿不到设置或模型就直接返回，扫描与抽取失败只记日志。
- * 扫描本身每个 `sessionDir` 每进程只做一次（见 `runStartupCompensation`）；
+ * 扫描本身每个 `sessionDir` 每进程只做一次（见 `runStartupCompensation`），
+ * 且只补抽"已经抽取过、但标记之后还有消息"的会话；当前会话由 `excludeSessionFile` 排除。
  * 会话结束时取消还在跑的补偿，避免一次性命令为后台请求等待退出。
  */
 export async function startMemoryCompensation(options: MemoryCompensationWiringOptions): Promise<void> {
@@ -156,6 +157,8 @@ export async function startMemoryCompensation(options: MemoryCompensationWiringO
 			store,
 			complete,
 			maxSessions: options.maxSessions,
+			// 调用方自己的会话可能刚建好、归属标记还没落盘，显式排除比依赖竞态更可靠。
+			excludeSessionFile: options.session.sessionManager.getSessionFile() ?? undefined,
 			onDiagnostic: options.onDiagnostic,
 			signal: controller.signal,
 		});

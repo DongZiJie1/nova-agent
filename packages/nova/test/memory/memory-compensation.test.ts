@@ -99,6 +99,23 @@ function createSession(
 	return { path, userId, assistantId };
 }
 
+function writeMarker(sessionFile: string, throughEntryId: string): void {
+	appendExtractionMarker(
+		{ sessionManager: SessionManager.open(sessionFile) },
+		{ throughEntryId, at: new Date().toISOString(), factIds: [] },
+	);
+}
+
+/**
+ * 被强杀的会话：抽取跑过一次（标记停在 user 消息），assistant 回复没来得及抽取。
+ * 这正是启动补偿唯一应该处理的形态。
+ */
+function createInterruptedSession(ws: Workspace, options: { sessionDir?: string } = {}): SessionFixture {
+	const fixture = createSession(ws, options);
+	writeMarker(fixture.path, fixture.userId);
+	return fixture;
+}
+
 function compensationOptions(ws: Workspace, complete: ExtractionCompletion): CompensationOptions {
 	return {
 		agentDir: ws.agentDir,
@@ -114,40 +131,67 @@ function markerThrough(sessionFile: string): string | undefined {
 }
 
 describe("findSessionsNeedingExtraction", () => {
-	it("reports sessions that still have unextracted messages", () => {
+	it("reports sessions whose marker no longer covers the last message", () => {
 		const ws = workspace();
-		const { path } = createSession(ws);
+		const { path } = createInterruptedSession(ws);
 
 		const candidates = findSessionsNeedingExtraction({ sessionDir: ws.sessionDir });
 
 		expect(candidates).toHaveLength(1);
 		expect(candidates[0].sessionFile).toBe(path);
-		expect(candidates[0].pendingMessages).toBe(2);
+		expect(candidates[0].pendingMessages).toBe(1);
 		expect(Number.isNaN(Date.parse(candidates[0].lastActivityAt))).toBe(false);
+	});
+
+	it("skips a session that was never extracted", () => {
+		const ws = workspace();
+		// 记忆功能上线前的历史会话：有消息、没有标记。补抽它会把整段旧任务重新变成事实。
+		createSession(ws);
+
+		expect(findSessionsNeedingExtraction({ sessionDir: ws.sessionDir })).toEqual([]);
 	});
 
 	it("skips a session whose marker already covers the last message", () => {
 		const ws = workspace();
 		const { path, assistantId } = createSession(ws);
-		appendExtractionMarker(
-			{ sessionManager: SessionManager.open(path) },
-			{ throughEntryId: assistantId, at: new Date().toISOString(), factIds: [] },
-		);
+		writeMarker(path, assistantId);
 
+		expect(findSessionsNeedingExtraction({ sessionDir: ws.sessionDir })).toEqual([]);
+	});
+
+	it("skips a session whose marker points at an entry that no longer exists", () => {
+		const ws = workspace();
+		const { path } = createSession(ws);
+		writeMarker(path, "missing-entry-id");
+
+		// fork 或裁剪之后标记会成为孤儿；退回从头抽取等于重新抽取整段历史。
 		expect(findSessionsNeedingExtraction({ sessionDir: ws.sessionDir })).toEqual([]);
 	});
 
 	it("skips a session owned by a live process", () => {
 		const ws = workspace();
-		const { path } = createSession(ws);
+		const { path } = createInterruptedSession(ws);
 		writeFileSync(`${path}.active.${process.pid}.json`, JSON.stringify({ pid: process.pid }));
 
 		expect(findSessionsNeedingExtraction({ sessionDir: ws.sessionDir })).toEqual([]);
 	});
 
+	it("excludes the caller's own session file", () => {
+		const ws = workspace();
+		const own = createInterruptedSession(ws);
+		const other = createInterruptedSession(ws);
+
+		const candidates = findSessionsNeedingExtraction({
+			sessionDir: ws.sessionDir,
+			excludeSessionFile: own.path,
+		});
+
+		expect(candidates.map((candidate) => candidate.sessionFile)).toEqual([other.path]);
+	});
+
 	it("ignores record files, ownership markers and non-jsonl files", () => {
 		const ws = workspace();
-		const { path } = createSession(ws);
+		const { path } = createInterruptedSession(ws);
 		const content = readFileSync(path, "utf8");
 		writeFileSync(join(ws.sessionDir, "old.jsonl.record.json"), content);
 		writeFileSync(join(ws.sessionDir, "other.jsonl.active.424242.json"), content);
@@ -161,17 +205,18 @@ describe("findSessionsNeedingExtraction", () => {
 	it("scans nested directories and tolerates a missing directory", () => {
 		const ws = workspace();
 		const nested = join(ws.sessionDir, "nested", "deeper");
-		const { path } = createSession(ws, { sessionDir: nested });
+		mkdirSync(nested, { recursive: true });
+		const top = createInterruptedSession(ws);
+		const deep = createInterruptedSession(ws, { sessionDir: nested });
 
-		expect(findSessionsNeedingExtraction({ sessionDir: ws.sessionDir }).map((item) => item.sessionFile)).toEqual([
-			path,
-		]);
+		const found = findSessionsNeedingExtraction({ sessionDir: ws.sessionDir }).map((item) => item.sessionFile);
+		expect(found.sort()).toEqual([top.path, deep.path].sort());
 		expect(findSessionsNeedingExtraction({ sessionDir: join(ws.root, "missing") })).toEqual([]);
 	});
 
 	it("returns nothing for an empty session directory (`--no-session`)", () => {
 		const ws = workspace();
-		createSession(ws);
+		createInterruptedSession(ws);
 
 		expect(findSessionsNeedingExtraction({ sessionDir: "" })).toEqual([]);
 		expect(findSessionsNeedingExtraction({ sessionDir: ws.sessionDir, maxSessions: 0 })).toEqual([]);
@@ -179,9 +224,9 @@ describe("findSessionsNeedingExtraction", () => {
 
 	it("keeps only the newest sessions up to maxSessions", () => {
 		const ws = workspace();
-		const oldest = createSession(ws);
-		const middle = createSession(ws);
-		const newest = createSession(ws);
+		const oldest = createInterruptedSession(ws);
+		const middle = createInterruptedSession(ws);
+		const newest = createInterruptedSession(ws);
 		const base = Math.floor(Date.now() / 1000) - 1000;
 		utimesSync(oldest.path, base - 300, base - 300);
 		utimesSync(middle.path, base - 200, base - 200);
@@ -198,7 +243,7 @@ describe("findSessionsNeedingExtraction", () => {
 describe("runStartupCompensation", () => {
 	it("extracts a killed session and appends only the marker entry", async () => {
 		const ws = workspace();
-		const { path, assistantId } = createSession(ws);
+		const { path, assistantId } = createInterruptedSession(ws);
 		const before = readFileSync(path, "utf8");
 
 		const result = await runStartupCompensation(compensationOptions(ws, completionReturning(FACT_TEXT)));
@@ -220,13 +265,27 @@ describe("runStartupCompensation", () => {
 		expect(markerThrough(path)).toBe(assistantId);
 	});
 
+	it("never extracts a session that was never extracted", async () => {
+		const ws = workspace();
+		const { path } = createSession(ws);
+		let calls = 0;
+		const complete: ExtractionCompletion = async () => {
+			calls += 1;
+			return JSON.stringify({ facts: [factPayload(FACT_TEXT)] });
+		};
+
+		const result = await runStartupCompensation(compensationOptions(ws, complete));
+
+		expect(result).toEqual({ processed: 0, created: 0, failed: 0 });
+		expect(calls).toBe(0);
+		expect(ws.store.active()).toHaveLength(0);
+		expect(markerThrough(path)).toBeUndefined();
+	});
+
 	it("does not touch a session whose marker is already up to date", async () => {
 		const ws = workspace();
 		const { path, assistantId } = createSession(ws);
-		appendExtractionMarker(
-			{ sessionManager: SessionManager.open(path) },
-			{ throughEntryId: assistantId, at: new Date().toISOString(), factIds: [] },
-		);
+		writeMarker(path, assistantId);
 		let calls = 0;
 		const complete: ExtractionCompletion = async () => {
 			calls += 1;
@@ -242,7 +301,7 @@ describe("runStartupCompensation", () => {
 
 	it("skips sessions with a live ownership marker", async () => {
 		const ws = workspace();
-		const { path } = createSession(ws);
+		const { path, userId } = createInterruptedSession(ws);
 		writeFileSync(`${path}.active.${process.pid}.json`, JSON.stringify({ pid: process.pid }));
 		let calls = 0;
 		const complete: ExtractionCompletion = async () => {
@@ -254,14 +313,28 @@ describe("runStartupCompensation", () => {
 
 		expect(result).toEqual({ processed: 0, created: 0, failed: 0 });
 		expect(calls).toBe(0);
-		expect(markerThrough(path)).toBeUndefined();
+		expect(markerThrough(path)).toBe(userId);
 	});
 
-	it("counts a corrupt session as failed and keeps processing the rest", async () => {
+	it("skips the caller's own session file", async () => {
 		const ws = workspace();
-		const { path, assistantId } = createSession(ws);
-		const broken = join(ws.sessionDir, "broken.jsonl");
-		writeFileSync(broken, '{"type":"session","version":3,"id":');
+		const own = createInterruptedSession(ws);
+		const other = createInterruptedSession(ws);
+
+		const result = await runStartupCompensation({
+			...compensationOptions(ws, completionReturning(FACT_TEXT)),
+			excludeSessionFile: own.path,
+		});
+
+		expect(result).toEqual({ processed: 1, created: 1, failed: 0 });
+		expect(markerThrough(other.path)).toBe(other.assistantId);
+		expect(markerThrough(own.path)).toBe(own.userId);
+	});
+
+	it("ignores a corrupt session file", async () => {
+		const ws = workspace();
+		const { path, assistantId } = createInterruptedSession(ws);
+		writeFileSync(join(ws.sessionDir, "broken.jsonl"), '{"type":"session","version":3,"id":');
 		const diagnostics: string[] = [];
 
 		const result = await runStartupCompensation({
@@ -269,19 +342,17 @@ describe("runStartupCompensation", () => {
 			onDiagnostic: (message: string) => diagnostics.push(message),
 		});
 
-		expect(result).toEqual({ processed: 1, created: 1, failed: 1 });
-		expect(diagnostics).toHaveLength(1);
-		expect(diagnostics[0]).toContain("broken.jsonl");
-		// 有效会话不受损坏文件影响。
+		expect(result).toEqual({ processed: 1, created: 1, failed: 0 });
+		expect(diagnostics).toEqual([]);
 		expect(markerThrough(path)).toBe(assistantId);
 		expect(ws.store.active()).toHaveLength(1);
 	});
 
 	it("processes only the newest sessions when maxSessions is set", async () => {
 		const ws = workspace();
-		const oldest = createSession(ws);
-		const middle = createSession(ws);
-		const newest = createSession(ws);
+		const oldest = createInterruptedSession(ws);
+		const middle = createInterruptedSession(ws);
+		const newest = createInterruptedSession(ws);
 		const base = Math.floor(Date.now() / 1000) - 1000;
 		utimesSync(oldest.path, base - 300, base - 300);
 		utimesSync(middle.path, base - 200, base - 200);
@@ -296,12 +367,13 @@ describe("runStartupCompensation", () => {
 		expect(result.failed).toBe(0);
 		expect(markerThrough(middle.path)).toBe(middle.assistantId);
 		expect(markerThrough(newest.path)).toBe(newest.assistantId);
-		expect(markerThrough(oldest.path)).toBeUndefined();
+		// 最旧的会话保持原样：标记停在 user 消息，没有被补抽。
+		expect(markerThrough(oldest.path)).toBe(oldest.userId);
 	});
 
 	it("scans each session directory only once per process", async () => {
 		const ws = workspace();
-		createSession(ws);
+		createInterruptedSession(ws);
 		let calls = 0;
 		const complete: ExtractionCompletion = async () => {
 			calls += 1;
@@ -319,7 +391,7 @@ describe("runStartupCompensation", () => {
 
 	it("stops without counting failures once the signal is aborted", async () => {
 		const ws = workspace();
-		const { path } = createSession(ws);
+		const { path, userId } = createInterruptedSession(ws);
 		const controller = new AbortController();
 		controller.abort();
 
@@ -329,6 +401,6 @@ describe("runStartupCompensation", () => {
 		});
 
 		expect(result).toEqual({ processed: 0, created: 0, failed: 0 });
-		expect(markerThrough(path)).toBeUndefined();
+		expect(markerThrough(path)).toBe(userId);
 	});
 });

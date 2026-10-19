@@ -1,9 +1,13 @@
 /**
  * 启动补偿：补抽被强杀、断电或应急退出会话的尾巴。
  *
- * 进程启动时扫一遍会话目录，找出"有消息但没有抽取标记，或标记之后还有消息"的非活跃会话，
+ * 进程启动时扫一遍会话目录，找出"有抽取标记、但标记之后还有消息"的非活跃会话，
  * 用 `SessionManager.open` 打开后复用 `runExtraction` 补抽；当前版本不改写已有条目，
  * 版本过旧时会走既有的会话迁移逻辑（与恢复旧会话一致）。
+ *
+ * 没有标记的会话一律不补抽：标记缺失意味着这个会话从未抽取过（记忆功能上线前的历史会话，
+ * 或者第一轮就被强杀），补抽它等于把整段旧任务重新变成事实。用户只是打开一个历史会话，
+ * 不该看到事实库增长，所以补偿只处理"抽过、尾巴丢了"的会话。
  *
  * 三条不变量：
  * - 只追加自定义标记条目，已有消息条目原样保留。
@@ -71,8 +75,8 @@ function collectSessionFiles(directory: string, files: string[]): void {
 
 /**
  * 判断单个会话是否需要补抽。
- * 非空却解析不出任何条目 → 视为损坏文件并保留为候选，让 `runStartupCompensation` 把它记成失败；
- * `SessionManager.open` 会拒绝打开这类文件。只有头部、没有消息的会话照常跳过。
+ * 只有"抽过、但标记之后还有消息"的会话才算候选；标记指向的条目已经不存在（fork、裁剪）时
+ * 同样跳过，而不是退回从头抽取整段历史。
  */
 function scanSession(sessionFile: string): ScannedSession | undefined {
 	let stats: Stats;
@@ -83,9 +87,12 @@ function scanSession(sessionFile: string): ScannedSession | undefined {
 	}
 	const loaded = loadEntriesFromFile(sessionFile);
 	const entries: SessionEntry[] = loaded.filter((entry) => entry.type !== "session");
-	const pending = selectPendingEntries(entries, readExtractionMarker({ getEntries: () => entries }));
-	const unreadable = loaded.length === 0 && stats.size > 0;
-	if (pending.length === 0 && !unreadable) return undefined;
+	const markerState = readExtractionMarker({ getEntries: () => entries });
+	const throughEntryId = markerState.marker?.throughEntryId;
+	if (throughEntryId === undefined) return undefined;
+	if (!entries.some((entry) => entry.id === throughEntryId)) return undefined;
+	const pending = selectPendingEntries(entries, markerState);
+	if (pending.length === 0) return undefined;
 	return {
 		candidate: {
 			sessionFile,
@@ -98,11 +105,13 @@ function scanSession(sessionFile: string): ScannedSession | undefined {
 
 /**
  * 列出需要补抽的会话，按文件修改时间倒序，最多 `maxSessions` 个（默认 20）。
- * 有活跃归属标记（还有别的进程开着）的会话跳过。
+ * 有活跃归属标记（还有别的进程开着）的会话跳过；`excludeSessionFile` 用于排除调用方自己
+ * 正在使用的会话，避免刚打开的会话被补偿逻辑重复抽取。
  */
 export function findSessionsNeedingExtraction(options: {
 	sessionDir: string;
 	maxSessions?: number;
+	excludeSessionFile?: string;
 }): CompensationCandidate[] {
 	const limit = options.maxSessions ?? DEFAULT_MAX_SESSIONS;
 	if (!(limit > 0)) return [];
@@ -110,11 +119,13 @@ export function findSessionsNeedingExtraction(options: {
 	// 把普通 .jsonl 文件当会话读，只会得到一堆假失败。
 	if (options.sessionDir === "") return [];
 
+	const excluded = options.excludeSessionFile === undefined ? undefined : resolve(options.excludeSessionFile);
 	const files: string[] = [];
 	collectSessionFiles(options.sessionDir, files);
 
 	const scanned: ScannedSession[] = [];
 	for (const sessionFile of files) {
+		if (excluded !== undefined && resolve(sessionFile) === excluded) continue;
 		if (hasLiveSessionOwner(sessionFile)) continue;
 		try {
 			const result = scanSession(sessionFile);
@@ -149,6 +160,7 @@ export async function runStartupCompensation(options: {
 	store: FactStore;
 	complete: ExtractionCompletion;
 	maxSessions?: number;
+	excludeSessionFile?: string;
 	onDiagnostic?: (message: string) => void;
 	signal?: AbortSignal;
 }): Promise<StartupCompensationResult> {
@@ -165,6 +177,7 @@ export async function runStartupCompensation(options: {
 		candidates = findSessionsNeedingExtraction({
 			sessionDir: options.sessionDir,
 			maxSessions: options.maxSessions,
+			excludeSessionFile: options.excludeSessionFile,
 		});
 	} catch (error) {
 		result.failed += 1;

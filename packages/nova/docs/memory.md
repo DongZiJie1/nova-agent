@@ -21,7 +21,7 @@ Writes dedupe by normalized text hash, merge near-duplicates, report contradicti
 
 ## Extraction
 
-Extraction runs in the background and never blocks a turn. It fires when the agent idles for `idleMinutes`, every `checkpointTurns` turns, and before compaction. The session-end hook does not extract by itself: it waits up to `sessionEndFlushMs` for an in-flight extraction and then disposes the service. On startup, sessions that were killed mid-conversation are re-extracted once (startup compensation, maximum 20 sessions per start).
+Extraction runs in the background and never blocks a turn. It fires when the agent idles for `idleMinutes`, every `checkpointTurns` turns, and before compaction. The session-end hook does not extract by itself: it waits up to `sessionEndFlushMs` for an in-flight extraction and then disposes the service. On startup, sessions that were killed mid-conversation are re-extracted once (startup compensation, maximum 20 sessions per start). Compensation only resumes sessions that already carry an extraction marker with messages after it; a session that never extracted anything, such as one recorded before this feature existed, is left untouched instead of being replayed into facts.
 
 Each successful extraction appends one custom session entry of type `nova.memory_extraction` recording `throughEntryId`, `at`, `model`, and the fact ids it produced. That marker never enters the model context; it only delimits the unextracted range, so later extractions and forked sessions skip what was already processed. Failed extractions do not advance the marker.
 
