@@ -13,6 +13,7 @@
 
 - Changed the default tool permission mode from `ask` to `allow` (全部放行). Tools run without confirmation unless the user selects `ask`/`edits` via `--permission-mode`, settings, or `/permission`.
 - Changed the model to stop writing the user profile directly. Profile edits now go through the settings interface or the review flow, so the model can no longer rewrite what the user stored about themselves.
+- Changed memory extraction to record only the user's side of a conversation: what they asked for, decided, preferred, rejected, or corrected. What the assistant changed, ran, searched, or found, unaccepted proposals, repository state, and task summaries are no longer stored as facts; feedback on the assistant's behaviour becomes a rule for future sessions.
 
 ### Fixed
 

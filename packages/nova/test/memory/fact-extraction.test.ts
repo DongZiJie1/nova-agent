@@ -421,6 +421,24 @@ describe("extractFacts", () => {
 		expect(prompt.slice(start, end).length).toBeLessThanOrEqual(260);
 	});
 
+	it("tells the model to record the user, not the assistant's work", async () => {
+		const { complete, prompts } = makeComplete('{"facts":[]}');
+		await extractFacts({
+			entries: [userEntry("以后先给结论，再解释理由。")],
+			context: makeContext(),
+			settings: makeSettings(),
+			complete,
+		});
+		const systemPrompt = prompts[0]?.systemPrompt ?? "";
+		const userPrompt = prompts[0]?.userPrompt ?? "";
+		// 记忆的主体必须是用户：助手的改动、检索结果和任务总结都不是长期记忆。
+		expect(systemPrompt).toContain("Every fact must be about the user");
+		expect(systemPrompt).toContain("Never record what the assistant did");
+		expect(userPrompt).toContain("never the assistant, the repository, or the task");
+		expect(userPrompt).toContain("anything the assistant did or produced");
+		expect(userPrompt).toContain("An assistant turn the user did not react to usually yields no fact");
+	});
+
 	it("does not call the model when there are no messages", async () => {
 		let calls = 0;
 		const complete: ExtractionCompletion = async () => {

@@ -29,7 +29,7 @@ const MAX_CONTENT_CHARS = 4000;
 
 const REVIEW_SYSTEM_PROMPT = `You review a coding assistant's long-term memory and propose changes to the user's durable profile.
 Reply with a single JSON object and nothing else: no prose, no markdown fences, no comments, no trailing text.
-Propose only stable, durable, cross-project information: identity, working style, standing preferences, and conventions that should apply in every future session.
+Propose only stable, durable, cross-project information about the user: identity, working style, standing preferences, and conventions they set that should apply in every future session. Keep the profile about the user, not about what the assistant did in past sessions.
 Never propose secrets, credentials, file contents, transient debugging details, or guesses. Never mention this review or the fact ids in the proposed content itself.`;
 
 export interface ReviewOptions {

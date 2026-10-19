@@ -83,8 +83,9 @@ const GREETING_PATTERN = /^(?:你好|您好|hi\b|hello\b|在吗|谢谢|好的|ok
 
 const FACT_KINDS: readonly FactKind[] = ["decision", "preference", "constraint", "project", "commitment", "event"];
 
-const EXTRACTION_SYSTEM_PROMPT = `You extract durable, reusable facts from conversations with a coding assistant.
+const EXTRACTION_SYSTEM_PROMPT = `You distill long-term memory about the user from conversations with a coding assistant.
 Reply with a single JSON object and nothing else: no prose, no markdown fences, no comments, no trailing text.
+Every fact must be about the user: what they said, asked for, decided, preferred, rejected, corrected, or required. Never record what the assistant did, built, ran, searched, or found; when the user accepted an assistant proposal, record the user's decision, not the assistant's work.
 Extract only facts that stay useful after this session ends. Never extract secrets (API keys, tokens, passwords, private keys, credentials) and never guess or invent facts.
 Each fact must be one self-contained sentence of at most ${MAX_FACT_TEXT_CHARS} characters.
 "kind" must be one of: decision, preference, constraint, project, commitment, event.
@@ -206,8 +207,12 @@ function buildExtractionUserPrompt(
 	const maxFacts = settings.extraction.maxFactsPerBatch;
 	const rules = [
 		"Rules:",
-		"- Keep: durable decisions, user preferences, hard constraints, project conventions, commitments, and notable events that affect future work.",
-		"- Drop: greetings, small talk, acknowledgements, questions, transient debugging output, tool output, restatements of this conversation, and anything only true for a moment.",
+		"- Subject: every fact describes the user - their words, decisions, preferences, rules, corrections, plans, or environment they stated themselves - never the assistant, the repository, or the task.",
+		"- Keep: what the user asked for or decided; standing preferences; constraints and rules the user set or confirmed; feedback and corrections the user gave about the assistant's behavior or output; commitments, goals and deadlines the user took on.",
+		"- Drop: anything the assistant did or produced (edits, commits, commands, searches, tool output, debugging findings, summaries of the work), proposals the user never accepted, repository and task state (commits, branches, file changes, code details), greetings, small talk, acknowledgements, questions, and anything only true for a moment.",
+		'- Write feedback as a rule for next time: "用户要求先给结论再给理由", not "助手这次先给了理由".',
+		'- Project conventions are facts only when the user stated or agreed to them: "本项目统一使用 X", not "仓库里配置了 X".',
+		"- An assistant turn the user did not react to usually yields no fact. Extract nothing rather than recording assistant work.",
 		"- Write each fact as one self-contained sentence with concrete names instead of pronouns.",
 		"- importance: 5 = must never be forgotten, 4 = important convention, 3 = useful context, 2 = minor but durable, 1 = trivia (do not emit).",
 		'- applicability: "universal" applies in every project; "transferable" was learned here but applies elsewhere; "project" applies only to the project key above.',

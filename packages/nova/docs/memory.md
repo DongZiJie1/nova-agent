@@ -1,6 +1,6 @@
 # Long-term Memory
 
-Nova distills durable facts from conversations (decisions, preferences, constraints, commitments) and injects the relevant ones into later sessions. Facts are independent of the hand-curated user profile in `user-memory.json`; the model never writes the profile directly.
+Nova distills durable facts about the user from conversations: what they asked for, decided, preferred, rejected, and corrected about the assistant's output. Facts are independent of the hand-curated user profile in `user-memory.json`; the model never writes the profile directly.
 
 **Source files** ([nova-agent](https://github.com/DongZiJie1/nova-agent)):
 - [`packages/nova/src/core/memory/fact-store.ts`](https://github.com/DongZiJie1/nova-agent/blob/main/packages/nova/src/core/memory/fact-store.ts) - storage, dedupe, supersede, archive
@@ -23,6 +23,8 @@ Writes dedupe by normalized text hash, merge near-duplicates, report contradicti
 
 Extraction runs in the background and never blocks a turn. It fires when the agent idles for `idleMinutes`, every `checkpointTurns` turns, and before compaction. The session-end hook does not extract by itself: it waits up to `sessionEndFlushMs` for an in-flight extraction and then disposes the service. On startup, sessions that were killed mid-conversation are re-extracted once (startup compensation, maximum 20 sessions per start). Compensation only resumes sessions that already carry an extraction marker with messages after it; a session that never extracted anything, such as one recorded before this feature existed, is left untouched instead of being replayed into facts.
 
+Every fact is about the user, never about the assistant's work. The prompt keeps what the user asked for, decided, preferred, rejected, or corrected; feedback on the assistant's behaviour becomes a rule for next time. What the assistant changed, ran, searched, or found, unaccepted proposals, repository state, and task summaries are dropped, so an assistant turn the user did not react to yields no fact. Project conventions are stored only when the user stated or agreed to them.
+
 Each successful extraction appends one custom session entry of type `nova.memory_extraction` recording `throughEntryId`, `at`, `model`, and the fact ids it produced. That marker never enters the model context; it only delimits the unextracted range, so later extractions and forked sessions skip what was already processed. Failed extractions do not advance the marker.
 
 ## Review and Promotion
@@ -41,7 +43,7 @@ Selection is scored by recency, importance, usage, project match, and topics. Pi
 
 | Tool | Purpose |
 |------|---------|
-| `remember` | Store one durable fact. It takes effect from the next session, and a session may write at most 20 facts. |
+| `remember` | Store one durable fact about the user. It takes effect from the next session, and a session may write at most 20 facts. |
 | `search_memory` | BM25 search over facts plus profile sections; returns ids and snippets. Other projects' `project` facts stay hidden unless `includeOtherProjects` is set. |
 | `read_memory` | Full text and source of one `fact_*` or `section_*` id, with related facts. Hits bump the usage counters. |
 

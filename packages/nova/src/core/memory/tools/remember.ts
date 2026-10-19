@@ -100,10 +100,11 @@ export function createRememberToolDefinition(
 		name: "remember",
 		label: "remember",
 		description:
-			"Store one durable fact in the user's long-term memory. The fact is injected into the system prompt of the next session (写入下次会话生效), so it does not change this conversation. Use it only when the user explicitly asks to remember something, corrects an earlier fact, or states a long-term preference or constraint. One fact per call; pass the ids of facts this statement replaces in supersedes. Duplicate, near-duplicate and conflicting statements are reported instead of silently overwritten.",
-		promptSnippet: "Remember one durable fact for future sessions.",
+			"Store one durable fact about the user in their long-term memory. Record what the user said, decided, preferred, or corrected; never record what you did in this session. The fact is injected into the system prompt of the next session (写入下次会话生效), so it does not change this conversation. Use it only when the user explicitly asks to remember something, corrects an earlier fact, or states a long-term preference or constraint. One fact per call; pass the ids of facts this statement replaces in supersedes. Duplicate, near-duplicate and conflicting statements are reported instead of silently overwritten.",
+		promptSnippet: "Remember one durable fact about the user for future sessions.",
 		promptGuidelines: [
 			"Use remember only when the user explicitly asks you to remember something, corrects a fact you stored or just stated, or states a durable preference, decision, or constraint. Never infer facts from context.",
+			"Record the user's side: what they said, decided, preferred, rejected, or corrected about your behavior. Do not record what you did, changed, ran, searched, or found in this session.",
 			"Write facts that take effect from the next session (写入下次会话生效); do not expect this conversation to change after calling remember.",
 			"Do not record greetings, temporary task details, anything already written in the repository's docs or code, guesses about the user, or secrets such as credentials, tokens, and personal identifiers.",
 			"Store one fact per call: a single self-contained sentence that names the project or object it talks about, at most 200 characters.",
