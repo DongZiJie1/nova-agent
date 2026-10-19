@@ -105,6 +105,7 @@ import {
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import { type RevertFileChangeOptions, revertFileChange } from "./file-change-reverter.ts";
+import { lifecycleHooks } from "./lifecycle-hooks.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
@@ -112,6 +113,8 @@ import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
 import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
+import { beginSessionRecord, finishSessionRecord } from "./session-records.ts";
+import { collectSessionStats, MEMORY_WRITE_CUSTOM_TYPE } from "./session-statistics.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
@@ -120,7 +123,6 @@ import { ToolPermissionManager, type ToolPermissionMode } from "./tool-permissio
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
 import { createAllToolDefinitions, createDefaultActiveToolNames } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
-import { addUsageToTotals, createUsageTotals } from "./usage-totals.ts";
 
 // ============================================================================
 // Skill Block Parsing
@@ -291,6 +293,13 @@ export interface ModelCycleResult {
 export interface SessionStats {
 	sessionFile: string | undefined;
 	sessionId: string;
+	startedAt: string;
+	endedAt?: string;
+	durationMs: number;
+	turns: number;
+	lastActivityAt: string;
+	toolCallDistribution: Record<string, number>;
+	memoryWrites: number;
 	userMessages: number;
 	assistantMessages: number;
 	toolCalls: number;
@@ -351,6 +360,35 @@ function normalizeAgentDisplayName(raw: string): string {
 }
 
 export class AgentSession {
+	private _lifecycleStart?: Promise<void>;
+	private _lifecycleEnd?: Promise<void>;
+	private _endedAt?: string;
+
+	/** Internal entry point; independent of extension binding and reload. */
+	startLifecycle(): Promise<void> {
+		this._lifecycleStart ??= (async () => {
+			beginSessionRecord(this.sessionManager);
+			await lifecycleHooks.emit("session_start", this, this._sessionStartEvent.reason);
+		})();
+		return this._lifecycleStart;
+	}
+
+	endLifecycle(reason: string): Promise<void> {
+		this._lifecycleEnd ??= (async () => {
+			await this.startLifecycle();
+			await this.abort();
+			await lifecycleHooks.emit("session_end", this, reason);
+			this._endedAt = new Date().toISOString();
+			finishSessionRecord(this.sessionManager, reason, this._endedAt);
+		})();
+		return this._lifecycleEnd;
+	}
+
+	/** Call only after a built-in memory write has succeeded. */
+	recordMemoryWrite(): void {
+		this.sessionManager.appendCustomEntry(MEMORY_WRITE_CUSTOM_TYPE, {});
+	}
+
 	readonly agent: Agent;
 	readonly sessionManager: SessionManager;
 	readonly settingsManager: SettingsManager;
@@ -682,6 +720,7 @@ export class AgentSession {
 	private async _emitAgentSettled(): Promise<void> {
 		this._isAgentRunActive = false;
 		try {
+			await lifecycleHooks.emit("agent_idle", this);
 			await this._extensionRunner.emit({ type: "agent_settled" });
 			this._emit({ type: "agent_settled" });
 		} finally {
@@ -878,6 +917,7 @@ export class AgentSession {
 				});
 				this._activeTurnTrace = undefined;
 			}
+			await lifecycleHooks.emit("turn_end", this);
 		}
 	};
 
@@ -1400,6 +1440,7 @@ export class AgentSession {
 	 * @throws Error if no model selected or no API key available (when not streaming)
 	 */
 	async prompt(text: string, options?: PromptOptions): Promise<void> {
+		await this.startLifecycle();
 		const expandPromptTemplates = options?.expandPromptTemplates ?? true;
 		const preflightResult = options?.preflightResult;
 		let messages: AgentMessage[] | undefined;
@@ -2272,6 +2313,8 @@ export class AgentSession {
 				throw new Error("Nothing to compact (session too small)");
 			}
 
+			await lifecycleHooks.emit("before_compaction", this, "manual");
+
 			let extensionCompaction: CompactionResult | undefined;
 			let fromExtension = false;
 
@@ -2539,6 +2582,8 @@ export class AgentSession {
 			this._autoCompactionAbortController = new AbortController();
 			started = true;
 
+			await lifecycleHooks.emit("before_compaction", this, reason);
+
 			let extensionCompaction: CompactionResult | undefined;
 			let fromExtension = false;
 
@@ -2693,6 +2738,7 @@ export class AgentSession {
 	}
 
 	async bindExtensions(bindings: ExtensionBindings): Promise<void> {
+		await this.startLifecycle();
 		if (bindings.uiContext !== undefined) {
 			this._extensionUIContext = bindings.uiContext;
 		}
@@ -3573,55 +3619,7 @@ export class AgentSession {
 	 * actually billed across the session.
 	 */
 	getSessionStats(): SessionStats {
-		let userMessages = 0;
-		let assistantMessages = 0;
-		let toolResults = 0;
-		let totalMessages = 0;
-		let toolCalls = 0;
-		const usageTotals = createUsageTotals();
-
-		for (const entry of this.sessionManager.getEntries()) {
-			if ((entry.type === "branch_summary" || entry.type === "compaction") && entry.usage) {
-				addUsageToTotals(usageTotals, entry.usage);
-			}
-			if (entry.type !== "message") continue;
-			totalMessages++;
-			const message = entry.message;
-			if (message.role === "user") {
-				userMessages++;
-			} else if (message.role === "toolResult") {
-				toolResults++;
-				if (message.usage) {
-					addUsageToTotals(usageTotals, message.usage);
-				}
-			} else if (message.role === "assistant") {
-				assistantMessages++;
-				const assistantMsg = message as AssistantMessage;
-				if (Array.isArray(assistantMsg.content)) {
-					toolCalls += assistantMsg.content.filter((c) => c.type === "toolCall").length;
-				}
-				addUsageToTotals(usageTotals, assistantMsg.usage);
-			}
-		}
-
-		return {
-			sessionFile: this.sessionFile,
-			sessionId: this.sessionId,
-			userMessages,
-			assistantMessages,
-			toolCalls,
-			toolResults,
-			totalMessages,
-			tokens: {
-				input: usageTotals.input,
-				output: usageTotals.output,
-				cacheRead: usageTotals.cacheRead,
-				cacheWrite: usageTotals.cacheWrite,
-				total: usageTotals.input + usageTotals.output + usageTotals.cacheRead + usageTotals.cacheWrite,
-			},
-			cost: usageTotals.cost,
-			contextUsage: this.getContextUsage(),
-		};
+		return { ...collectSessionStats(this.sessionManager, this._endedAt), contextUsage: this.getContextUsage() };
 	}
 
 	getContextUsage(): ContextUsage | undefined {

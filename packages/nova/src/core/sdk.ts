@@ -14,6 +14,7 @@ import { mergeProviderAttributionHeaders } from "./provider-attribution.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
+import { reconcileSessionRecords } from "./session-records.ts";
 import { SettingsManager } from "./settings-manager.ts";
 import { time } from "./timings.ts";
 import type { ToolPermissionMode } from "./tool-permission-manager.ts";
@@ -181,6 +182,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
+
+	if (sessionManager.isPersisted()) {
+		reconcileSessionRecords(join(agentDir, "sessions"));
+		reconcileSessionRecords(sessionManager.getSessionDir());
+	}
 
 	if (!resourceLoader) {
 		resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
@@ -393,6 +399,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		sessionStartEvent: options.sessionStartEvent,
 		toolPermissionMode: options.toolPermissionMode,
 	});
+	await session.startLifecycle();
 	const extensionsResult = resourceLoader.getExtensions();
 
 	return {

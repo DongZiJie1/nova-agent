@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fauxAssistantMessage, registerFauxProvider } from "@dongzijie1/pi-ai/compat";
@@ -12,6 +12,7 @@ import {
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { ModelRuntime } from "../src/core/model-runtime.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
+import { type SessionRecord, sessionRecordPath } from "../src/core/session-records.ts";
 import type {
 	ExtensionFactory,
 	SessionBeforeForkEvent,
@@ -135,6 +136,14 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 
 		const newSessionResult = await runtimeHost.newSession();
 		expect(newSessionResult.cancelled).toBe(false);
+		const originalRecord: SessionRecord = JSON.parse(readFileSync(sessionRecordPath(originalSessionFile!), "utf8"));
+		expect(originalRecord).toMatchObject({
+			reason: "new",
+			abnormalEnd: false,
+			userMessages: 1,
+			assistantMessages: 1,
+			turns: 1,
+		});
 		await runtimeHost.session.bindExtensions({});
 		const secondSessionFile = runtimeHost.session.sessionFile;
 		expect(events).toEqual([
@@ -148,12 +157,27 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 
 		const switchResult = await runtimeHost.switchSession(originalSessionFile!);
 		expect(switchResult.cancelled).toBe(false);
+		expect(JSON.parse(readFileSync(sessionRecordPath(secondSessionFile!), "utf8"))).toMatchObject({
+			reason: "resume",
+			abnormalEnd: false,
+		});
 		await runtimeHost.session.bindExtensions({});
 		expect(events).toEqual([
 			{ type: "session_before_switch", reason: "resume", targetSessionFile: originalSessionFile },
 			{ type: "session_shutdown", reason: "resume", targetSessionFile: originalSessionFile },
 			{ type: "session_start", reason: "resume", previousSessionFile: secondSessionFile },
 		]);
+	});
+
+	it("records a normal quit once even when disposed twice", async () => {
+		const { runtimeHost } = await createRuntimeHost(() => {});
+		await runtimeHost.session.prompt("hello");
+		const path = sessionRecordPath(runtimeHost.session.sessionFile!);
+		await runtimeHost.dispose();
+		const first = readFileSync(path, "utf8");
+		expect(JSON.parse(first)).toMatchObject({ reason: "quit", abnormalEnd: false, turns: 1 });
+		await runtimeHost.dispose();
+		expect(readFileSync(path, "utf8")).toBe(first);
 	});
 
 	it("honors session_before_switch cancellation", async () => {
@@ -234,6 +258,10 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 
 		const successResult = await runtimeHost.fork(userMessage.entryId);
 		expect(successResult.cancelled).toBe(false);
+		expect(JSON.parse(readFileSync(sessionRecordPath(previousSessionFile!), "utf8"))).toMatchObject({
+			reason: "fork",
+			abnormalEnd: false,
+		});
 		expect(successResult.selectedText).toBe("hello");
 		await runtimeHost.session.bindExtensions({});
 		expect(events).toEqual([
