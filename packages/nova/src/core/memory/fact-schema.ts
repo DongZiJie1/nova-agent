@@ -82,7 +82,7 @@ export function isFactApplicability(value: unknown): value is FactApplicability 
 	return typeof value === "string" && (FACT_APPLICABILITIES as readonly string[]).includes(value);
 }
 
-function isFactKind(value: unknown): value is FactKind {
+export function isFactKind(value: unknown): value is FactKind {
 	return typeof value === "string" && (FACT_KINDS as readonly string[]).includes(value);
 }
 

@@ -11,8 +11,14 @@ import { join } from "node:path";
 import chalk from "chalk";
 import { APP_NAME, getAgentDir } from "./config.ts";
 import { FactIndex } from "./core/memory/fact-index.ts";
-import { type Fact, type FactApplicability, isFactApplicability } from "./core/memory/fact-schema.ts";
-import { FactStore } from "./core/memory/fact-store.ts";
+import {
+	type Fact,
+	type FactApplicability,
+	type FactKind,
+	isFactApplicability,
+	isFactKind,
+} from "./core/memory/fact-schema.ts";
+import { FactStore, type FactUpdatePatch } from "./core/memory/fact-store.ts";
 import { readExtractionMarker, selectPendingEntries } from "./core/memory/memory-marker.ts";
 import { resolveSuggestion } from "./core/memory/memory-review.ts";
 import { type MemorySuggestion, SuggestionStore } from "./core/memory/suggestion-store.ts";
@@ -22,7 +28,7 @@ import { SettingsManager } from "./core/settings-manager.ts";
 const MEMORY_COMMAND = "memory";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RECENT_FACT_DAYS = 7;
-const MEMORY_COMMAND_USAGE = `${APP_NAME} memory <list|search|stat|pin|unpin|archive|delete|sessions|suggestions|promote|reject> [options]`;
+const MEMORY_COMMAND_USAGE = `${APP_NAME} memory <list|search|stat|edit|pin|unpin|archive|delete|sessions|suggestions|promote|reject> [options]`;
 
 export interface MemoryCommandRuntimeOptions {
 	agentDir?: string;
@@ -43,6 +49,11 @@ interface ParsedMemoryArgs {
 	help: boolean;
 	applicability?: FactApplicability;
 	limit?: number;
+	text?: string;
+	kind?: FactKind;
+	importance?: number;
+	topics?: string[];
+	validUntil?: string;
 	unknownOption?: string;
 	missingOptionValue?: string;
 	invalidOptionValue?: string;
@@ -100,6 +111,8 @@ function printMemoryCommandHelp(write: (line: string) => void): void {
   ${APP_NAME} memory list [--applicability <universal|transferable|project>] [--json]
   ${APP_NAME} memory search <query> [--limit <n>] [--json]
   ${APP_NAME} memory stat [--json]
+  ${APP_NAME} memory edit <id> [--text <s>] [--kind <k>] [--importance <1-5>]
+  ${APP_NAME} memory edit <id> [--applicability <universal|transferable|project>] [--topics <a,b>] [--valid-until <iso>]
   ${APP_NAME} memory pin <id>
   ${APP_NAME} memory unpin <id>
   ${APP_NAME} memory archive <id>
@@ -111,17 +124,25 @@ function printMemoryCommandHelp(write: (line: string) => void): void {
 
 List, search and curate the facts stored in <agentDir>/memory/facts.json,
 inspect session extraction progress, and confirm or reject profile promotion
-suggestions produced by the review step. Nothing here calls a model.
+suggestions produced by the review step. Editing updates the fact in place,
+takes effect from the next session, and never creates a second fact.
+Nothing here calls a model.
 
 Options:
-  --applicability <value>  Only list facts with this applicability
+  --applicability <value>  Filter list, or set applicability when editing
   --limit <n>              Maximum number of search hits (default 8, max 20)
+  --text <text>            Replace the fact text (1-200 characters)
+  --kind <kind>            decision|preference|constraint|project|commitment|event
+  --importance <n>         Importance from 1 to 5
+  --topics <a,b>           Comma-separated topics, deduplicated, at most 3
+  --valid-until <iso>      ISO timestamp after which the fact expires
   --json                   Print a single line of JSON without colors
   -h, --help               Show this help
 
 Examples:
   ${APP_NAME} memory list --applicability project
   ${APP_NAME} memory search "tabs" --limit 5
+  ${APP_NAME} memory edit fact_0192f0c4 --text "Team uses pnpm" --importance 4
   ${APP_NAME} memory pin fact_0192f0c4
   ${APP_NAME} memory sessions --json
   ${APP_NAME} memory suggestions --json
@@ -142,7 +163,15 @@ function parseMemoryArgs(args: string[]): ParsedMemoryArgs {
 			parsed.json = true;
 			continue;
 		}
-		if (arg === "--applicability" || arg === "--limit") {
+		if (
+			arg === "--applicability" ||
+			arg === "--limit" ||
+			arg === "--text" ||
+			arg === "--kind" ||
+			arg === "--importance" ||
+			arg === "--topics" ||
+			arg === "--valid-until"
+		) {
 			const value = args[index + 1];
 			if (value === undefined || value.startsWith("-")) {
 				parsed.missingOptionValue = parsed.missingOptionValue ?? arg;
@@ -155,13 +184,37 @@ function parseMemoryArgs(args: string[]): ParsedMemoryArgs {
 				} else {
 					parsed.invalidOptionValue = parsed.invalidOptionValue ?? `Invalid value ${value} for --applicability.`;
 				}
-			} else {
+			} else if (arg === "--limit") {
 				const limit = Number(value);
 				if (Number.isInteger(limit) && limit > 0) {
 					parsed.limit = limit;
 				} else {
 					parsed.invalidOptionValue = parsed.invalidOptionValue ?? `Invalid value ${value} for --limit.`;
 				}
+			} else if (arg === "--text") {
+				parsed.text = value;
+			} else if (arg === "--kind") {
+				if (isFactKind(value)) {
+					parsed.kind = value;
+				} else {
+					parsed.invalidOptionValue = parsed.invalidOptionValue ?? `Invalid value ${value} for --kind.`;
+				}
+			} else if (arg === "--importance") {
+				const importance = Number(value);
+				if (Number.isInteger(importance) && importance >= 1 && importance <= 5) {
+					parsed.importance = importance;
+				} else {
+					parsed.invalidOptionValue = parsed.invalidOptionValue ?? `Invalid value ${value} for --importance.`;
+				}
+			} else if (arg === "--topics") {
+				parsed.topics = value
+					.split(",")
+					.map((topic) => topic.trim())
+					.filter((topic) => topic.length > 0);
+			} else if (Number.isNaN(Date.parse(value))) {
+				parsed.invalidOptionValue = parsed.invalidOptionValue ?? `Invalid value ${value} for --valid-until.`;
+			} else {
+				parsed.validUntil = value;
 			}
 			continue;
 		}
@@ -183,10 +236,25 @@ function validateParsedArgs(parsed: ParsedMemoryArgs): string | undefined {
 	if (parsed.unknownOption !== undefined) return `Unknown option ${parsed.unknownOption} for "memory".`;
 	if (parsed.missingOptionValue !== undefined) return `Missing value for ${parsed.missingOptionValue}.`;
 	if (parsed.invalidOptionValue !== undefined) return parsed.invalidOptionValue;
-	if (parsed.subcommand !== "list" && parsed.applicability !== undefined) {
-		return "--applicability is only valid for list.";
+	const subcommand = parsed.subcommand;
+	if (subcommand !== "list" && subcommand !== "edit" && parsed.applicability !== undefined) {
+		return "--applicability is only valid for list and edit.";
 	}
-	if (parsed.subcommand !== "search" && parsed.limit !== undefined) return "--limit is only valid for search.";
+	if (subcommand !== "search" && parsed.limit !== undefined) return "--limit is only valid for search.";
+	if (subcommand !== "edit") {
+		const editOption = editOnlyOption(parsed);
+		if (editOption !== undefined) return `${editOption} is only valid for edit.`;
+	}
+	return undefined;
+}
+
+/** 只有 `edit` 接受的选项名，用于把误用挡在存储层之前。 */
+function editOnlyOption(parsed: ParsedMemoryArgs): string | undefined {
+	if (parsed.text !== undefined) return "--text";
+	if (parsed.kind !== undefined) return "--kind";
+	if (parsed.importance !== undefined) return "--importance";
+	if (parsed.topics !== undefined) return "--topics";
+	if (parsed.validUntil !== undefined) return "--valid-until";
 	return undefined;
 }
 
@@ -200,6 +268,9 @@ function runMemorySubcommand(subcommand: string, parsed: ParsedMemoryArgs, conte
 			return;
 		case "stat":
 			runStat(parsed, context);
+			return;
+		case "edit":
+			runEdit(parsed, context);
 			return;
 		case "pin":
 			runPinnedAction(parsed, context, true);
@@ -346,6 +417,39 @@ function runStat(parsed: ParsedMemoryArgs, context: MemoryCommandContext): void 
 	context.write(`Retrieval hits: ${hits}`);
 	context.write(`Average importance (active): ${averageImportance}`);
 	context.write(`Added in last ${RECENT_FACT_DAYS} days: ${recent7Days}`);
+}
+
+/** 编辑一条事实：只改显式给出的字段，不新建、不合并。输出文案由桌面端依赖，改动需同步。 */
+function runEdit(parsed: ParsedMemoryArgs, context: MemoryCommandContext): void {
+	const id = requireFactId(parsed, context, "edit");
+	if (id === undefined) return;
+	if (editOnlyOption(parsed) === undefined && parsed.applicability === undefined) {
+		context.write(
+			"Error: edit requires at least one of --text, --kind, --importance, --applicability, --topics, --valid-until",
+		);
+		return;
+	}
+
+	const patch: FactUpdatePatch = {};
+	if (parsed.text !== undefined) patch.text = parsed.text;
+	if (parsed.kind !== undefined) patch.kind = parsed.kind;
+	if (parsed.importance !== undefined) patch.importance = parsed.importance;
+	if (parsed.applicability !== undefined) patch.applicability = parsed.applicability;
+	if (parsed.topics !== undefined) patch.topics = parsed.topics;
+	if (parsed.validUntil !== undefined) patch.validUntil = parsed.validUntil;
+
+	// 未知 id、敏感内容、超长文本等由 store.update 抛错，外层统一打印 `Error: <message>`。
+	const result = new FactStore(context.agentDir).update(id, patch);
+	if (result.action === "duplicate") {
+		context.write(`Error: fact text is already stored as ${result.fact.id}`);
+		return;
+	}
+	if (result.action === "conflict") {
+		const candidateIds = result.candidates.map((fact) => fact.id).join(", ");
+		context.write(`Error: conflicts with existing facts: ${candidateIds}`);
+		return;
+	}
+	context.write(`Updated fact ${id}: ${result.fact.text}`);
 }
 
 function runPinnedAction(parsed: ParsedMemoryArgs, context: MemoryCommandContext, pinned: boolean): void {

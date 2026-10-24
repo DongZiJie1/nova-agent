@@ -11,9 +11,11 @@ import type { AgentSessionEvent, SessionStats } from "../../core/agent-session.t
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { FactApplicability } from "../../core/memory/fact-schema.ts";
+import type { FactUpdatePatch } from "../../core/memory/fact-store.ts";
 import type {
 	MemoryFactAction,
 	MemoryFactsResult,
+	MemoryFactUpdateResult,
 	MemorySuggestionResolution,
 	MemorySuggestionsResult,
 } from "../../core/memory/memory-rpc.ts";
@@ -500,11 +502,16 @@ export class RpcClient {
 	}
 
 	/**
-	 * Pin, unpin, archive, or delete a fact. `delete` is a soft delete (archive with reason "manual").
+	 * Pin, unpin, archive, delete, or edit a fact. `delete` is a soft delete (archive with reason "manual").
+	 * `patch` is required for `edit` and rejected for every other action; editing never creates a fact.
 	 */
-	async updateMemoryFact(factId: string, action: MemoryFactAction): Promise<{ ok: true }> {
-		const response = await this.send({ type: "memory_fact_update", factId, action });
-		return this.getData<{ ok: true }>(response);
+	async updateMemoryFact(
+		factId: string,
+		action: MemoryFactAction,
+		patch?: FactUpdatePatch,
+	): Promise<MemoryFactUpdateResult> {
+		const response = await this.send({ type: "memory_fact_update", factId, action, patch });
+		return this.getData<MemoryFactUpdateResult>(response);
 	}
 
 	/**

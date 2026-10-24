@@ -2,13 +2,14 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Fact, FactSource } from "../../src/core/memory/fact-schema.ts";
+import type { Fact, FactKind, FactSource } from "../../src/core/memory/fact-schema.ts";
 import {
 	type AddFactResult,
 	type FactDraft,
 	FactStore,
 	FactStoreVersionError,
 	SensitiveFactError,
+	type UpdateFactResult,
 } from "../../src/core/memory/fact-store.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -52,6 +53,15 @@ function createdFact(result: AddFactResult): Fact {
 function resultFact(result: AddFactResult): Fact {
 	if (result.action === "conflict") throw new Error("expected a fact result, got conflict");
 	return result.fact;
+}
+
+function updatedFact(result: UpdateFactResult): Fact {
+	if (result.action !== "updated") throw new Error(`expected updated, got ${result.action}`);
+	return result.fact;
+}
+
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isoFrom(base: number, days: number): string {
@@ -375,5 +385,185 @@ describe("FactStore lifecycle", () => {
 			"项目使用 pnpm 管理依赖",
 		]);
 		expect(existsSync(`${first.path}.lock`)).toBe(false);
+	});
+});
+
+describe("FactStore update", () => {
+	it("rewrites the text in place, advances updatedAt, and keeps the original identity", async () => {
+		const agentDir = createAgentDir();
+		const store = createStore(agentDir);
+		const before = createdFact(
+			store.add(makeDraft("项目使用 pnpm 管理依赖", { kind: "decision", importance: 2, topics: ["tooling"] })),
+		);
+		store.setPinned(before.id, true);
+		store.recordRetrieval([before.id]);
+		await delay(5);
+
+		const result = store.update(before.id, { text: "  项目统一使用   pnpm 管理依赖  " });
+
+		const after = updatedFact(result);
+		expect(after.text).toBe("项目统一使用 pnpm 管理依赖");
+		expect(after.id).toBe(before.id);
+		expect(after.createdAt).toBe(before.createdAt);
+		expect(after.updatedAt > before.updatedAt).toBe(true);
+		expect(after.source).toEqual(before.source);
+		expect(after.pinned).toBe(true);
+		expect(after.retrievalCount).toBe(1);
+		expect(after.kind).toBe("decision");
+		expect(after.importance).toBe(2);
+		expect(after.topics).toEqual(["tooling"]);
+
+		const reloaded = createStore(agentDir).read().facts;
+		expect(reloaded).toHaveLength(1);
+		expect(reloaded[0]?.text).toBe("项目统一使用 pnpm 管理依赖");
+		expect(reloaded[0]?.text).not.toBe("项目使用 pnpm 管理依赖");
+	});
+
+	it("hashes the new text so the old text no longer dedupes but the new one does", () => {
+		const store = createStore();
+		const fact = createdFact(store.add(makeDraft("项目使用 pnpm 管理依赖")));
+
+		store.update(fact.id, { text: "项目统一使用 pnpm 管理依赖" });
+
+		// 旧文本已不在库里，重新加入会创建新事实而不是命中旧条目。
+		const oldText = store.add(makeDraft("项目使用 pnpm 管理依赖"));
+		expect(oldText.action).toBe("created");
+
+		const newText = store.add(makeDraft("项目统一使用 pnpm 管理依赖"));
+		expect(newText.action).toBe("duplicate");
+		expect(resultFact(newText).id).toBe(fact.id);
+	});
+
+	it("reports a duplicate when the new text already exists on another active fact", () => {
+		const store = createStore();
+		const first = createdFact(store.add(makeDraft("提交信息用英文")));
+		const second = createdFact(store.add(makeDraft("文档目录放在 docs 下")));
+
+		const result = store.update(second.id, { text: "  提交信息用英文 " });
+
+		expect(result.action).toBe("duplicate");
+		if (result.action !== "duplicate") throw new Error("expected duplicate");
+		expect(result.fact.id).toBe(first.id);
+		expect(store.get(second.id)?.text).toBe("文档目录放在 docs 下");
+	});
+
+	it("ignores the edited fact itself when the text is unchanged", () => {
+		const store = createStore();
+		const fact = createdFact(store.add(makeDraft("提交信息用英文")));
+
+		const result = store.update(fact.id, { text: "提交信息用英文" });
+
+		expect(result.action).toBe("updated");
+		expect(updatedFact(result).id).toBe(fact.id);
+		expect(store.active()).toHaveLength(1);
+	});
+
+	it("reports a conflict for contradicting text instead of overwriting", () => {
+		const store = createStore();
+		const first = createdFact(store.add(makeDraft("项目使用 tab 缩进")));
+		const second = createdFact(store.add(makeDraft("文档目录放在 docs 下")));
+
+		const result = store.update(second.id, { text: "项目不再使用 tab 缩进" });
+
+		expect(result.action).toBe("conflict");
+		if (result.action !== "conflict") throw new Error("expected conflict");
+		expect(result.candidates.map((candidate) => candidate.id)).toEqual([first.id]);
+		expect(store.get(second.id)?.text).toBe("文档目录放在 docs 下");
+		expect(store.get(first.id)?.text).toBe("项目使用 tab 缩进");
+	});
+
+	it("reports a conflict for near-identical text instead of merging into the other fact", () => {
+		const store = createStore();
+		const first = createdFact(store.add(makeDraft("项目使用 tab 缩进并且行宽为 120")));
+		const second = createdFact(store.add(makeDraft("提交信息用英文")));
+
+		const result = store.update(second.id, { text: "项目使用 tab 缩进并且行宽为 120 字符" });
+
+		expect(result.action).toBe("conflict");
+		if (result.action !== "conflict") throw new Error("expected conflict");
+		expect(result.candidates.map((candidate) => candidate.id)).toEqual([first.id]);
+		expect(store.get(first.id)?.text).toBe("项目使用 tab 缩进并且行宽为 120");
+		expect(store.get(second.id)?.text).toBe("提交信息用英文");
+	});
+
+	it("rejects sensitive, empty, and overlong replacement text", () => {
+		const store = createStore();
+		const fact = createdFact(store.add(makeDraft("提交信息用英文")));
+
+		expect(() => store.update(fact.id, { text: "My api key is sk_abcdefghijklmnopqrstuvwx" })).toThrow(
+			SensitiveFactError,
+		);
+		expect(() => store.update(fact.id, { text: "   " })).toThrow(/must not be empty/);
+		expect(() => store.update(fact.id, { text: "a".repeat(201) })).toThrow(/at most 200/);
+		expect(store.get(fact.id)?.text).toBe("提交信息用英文");
+	});
+
+	it("validates kind and importance", () => {
+		const store = createStore();
+		const fact = createdFact(store.add(makeDraft("提交信息用英文")));
+
+		expect(() => store.update(fact.id, { kind: "bogus" as unknown as FactKind })).toThrow(/Unknown fact kind/);
+		expect(() => store.update(fact.id, { importance: 0 })).toThrow(/between 1 and 5/);
+		expect(() => store.update(fact.id, { importance: 6 })).toThrow(/between 1 and 5/);
+		expect(store.get(fact.id)?.importance).toBe(3);
+	});
+
+	it("deduplicates topics and keeps at most three", () => {
+		const store = createStore();
+		const fact = createdFact(store.add(makeDraft("提交信息用英文")));
+
+		const result = store.update(fact.id, { topics: ["style", "style", " ", "docs", "git", "ci"] });
+
+		expect(updatedFact(result).topics).toEqual(["style", "docs", "git"]);
+	});
+
+	it("keeps the review state on non-text edits and resets it on text edits", () => {
+		const store = createStore();
+		const fact = createdFact(store.add(makeDraft("提交信息用英文")));
+		store.setReviewState(fact.id, "kept");
+
+		store.update(fact.id, { importance: 5 });
+		expect(store.get(fact.id)?.reviewState).toBe("kept");
+
+		store.update(fact.id, { text: "提交信息统一用英文" });
+		expect(store.get(fact.id)?.reviewState).toBe("unreviewed");
+	});
+
+	it("requires project links before switching applicability to project", () => {
+		const store = createStore();
+		const universal = createdFact(store.add(makeDraft("部署到 staging 环境")));
+		const scoped = createdFact(
+			store.add(makeDraft("部署到 production 环境", { applicability: "project", projects: ["proj-a"] })),
+		);
+
+		expect(() => store.update(universal.id, { applicability: "project" })).toThrow(/project key/);
+		expect(store.get(universal.id)?.applicability).toBe("universal");
+
+		const switched = updatedFact(store.update(scoped.id, { applicability: "universal" }));
+		expect(switched.applicability).toBe("universal");
+		// 项目关联保留，门控只看 applicability。
+		expect(switched.projects).toEqual(["proj-a"]);
+	});
+
+	it("preserves supersedes links and can set an expiry", () => {
+		const store = createStore();
+		const previous = createdFact(store.add(makeDraft("项目使用 yarn 管理依赖")));
+		const replacement = createdFact(store.add(makeDraft("项目使用 pnpm 管理依赖", { supersedes: [previous.id] })));
+		const validUntil = "2026-12-31T00:00:00.000Z";
+
+		const result = store.update(replacement.id, { text: "项目统一使用 pnpm 管理依赖", validUntil });
+
+		const updated = updatedFact(result);
+		expect(updated.supersedes).toEqual([previous.id]);
+		expect(updated.validUntil).toBe(validUntil);
+		expect(store.get(previous.id)?.supersededBy).toBe(replacement.id);
+	});
+
+	it("rejects an unknown id and an invalid expiry", () => {
+		const store = createStore();
+		const fact = createdFact(store.add(makeDraft("提交信息用英文")));
+
+		expect(() => store.update("fact_missing", { importance: 4 })).toThrow(/Fact not found: fact_missing/);
+		expect(() => store.update(fact.id, { validUntil: "not-a-date" })).toThrow(/Invalid validUntil/);
 	});
 });

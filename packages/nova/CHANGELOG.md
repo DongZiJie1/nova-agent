@@ -8,6 +8,7 @@
 - Added tags and topics to the `todo` tool: `topic` defaults to the first tag (or 未分类), the list can filter by tag or topic, and `offset` with `limit` pages through the rest. Todos written before tags existed keep their grouping without any rewrite.
 - Added the `todo` tool for recording and updating items on Nova's todo list (`todos.json` in the agent directory), the same store the 待办 page of Nova Studio reads. Items created by the agent are attributed to it and stay linked to the session that wrote them.
 - Added long-term fact memory: cross-session extraction with startup compensation for killed sessions, budgeted `<user_facts>` system-prompt injection, the `remember`/`search_memory`/`read_memory` tools, and the `nova memory` CLI for listing and curating stored facts. See [docs/memory.md](docs/memory.md).
+- Added fact editing: `FactStore.update`, `nova memory edit <id>` with `--text`, `--kind`, `--importance`, `--applicability`, `--topics`, and `--valid-until`, and the `memory_fact_update` `edit` action with an optional `patch`. Editing rewrites the existing fact instead of creating a new one, preserves ids, timestamps, source, pin state, usage counters, and project links, re-checks duplicates and conflicts against other active facts, rejects sensitive or overlong text, and takes effect from the next session.
 
 ### Changed
 

@@ -17,7 +17,7 @@ Facts are stored in `<agentDir>/memory/facts.json` (`~/.nova/agent/memory/facts.
 
 The file is `{"version": 1, "facts": [...]}`. Each fact carries `id` (`fact_<uuidv7>`), `text` (one sentence, at most 200 characters), `kind` (`decision`, `preference`, `constraint`, `project`, `commitment`, `event`), `applicability` (`universal`, `transferable`, `project`) with `projects` or `originProject` as needed, `topics`, `importance` 1-5, `confidence`, timestamps, `retrievalCount`, `pinned`, review and archive fields, and `source` (`sessionFile`, `sessionId`, `entryIds`, `extractedAt`, `model`).
 
-Writes dedupe by normalized text hash, merge near-duplicates, report contradictions instead of overwriting them, and archive facts replaced through `supersedes`.
+Writes dedupe by normalized text hash, merge near-duplicates, report contradictions instead of overwriting them, and archive facts replaced through `supersedes`. Editing a fact (`nova memory edit`, or `memory_fact_update` with action `edit`) rewrites it in place: `id`, `createdAt`, `source`, `pinned`, usage counters, and project links stay put, changing the text re-runs the duplicate/conflict check against the other active facts (a near-duplicate is reported, never merged), and a changed text resets the review state to `unreviewed`.
 
 ## Extraction
 
@@ -47,7 +47,7 @@ Selection is scored by recency, importance, usage, project match, and topics. Pi
 | `search_memory` | BM25 search over facts plus profile sections; returns ids and snippets. Other projects' `project` facts stay hidden unless `includeOtherProjects` is set. |
 | `read_memory` | Full text and source of one `fact_*` or `section_*` id, with related facts. Hits bump the usage counters. |
 
-Facts and suggestions can also be curated from the CLI without calling a model: `nova memory list|search|stat|pin|unpin|archive|delete|sessions`, and `nova memory suggestions|promote|reject` for review output.
+Facts and suggestions can also be curated from the CLI without calling a model: `nova memory list|search|stat|edit|pin|unpin|archive|delete|sessions`, and `nova memory suggestions|promote|reject` for review output. `nova memory edit <id>` takes any of `--text`, `--kind`, `--importance`, `--applicability`, `--topics`, and `--valid-until`; it updates the existing fact instead of creating a new one, replays the sensitive-text and length checks, refuses text already stored verbatim or too close to another active fact, and takes effect from the next session because the current session's injected block is already built.
 
 ## Settings
 

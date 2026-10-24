@@ -256,9 +256,78 @@ describe("updateMemoryFact", () => {
 		);
 	});
 
+	it("edits a fact in place and reports the store action", () => {
+		const ws = workspace();
+		const fact = addFact(ws, "提交信息用英文", { importance: 2 });
+
+		const result = updateMemoryFact({
+			agentDir: ws.agentDir,
+			id: fact.id,
+			action: "edit",
+			patch: { text: "提交信息统一用英文", importance: 5 },
+		});
+
+		expect(result).toEqual({
+			ok: true,
+			action: "updated",
+			fact: expect.objectContaining({ id: fact.id, text: "提交信息统一用英文", importance: 5 }),
+		});
+		const reloaded = new FactStore(ws.agentDir).get(fact.id);
+		expect(reloaded?.createdAt).toBe(fact.createdAt);
+		expect(reloaded?.text).toBe("提交信息统一用英文");
+		expect(new FactStore(ws.agentDir).active()).toHaveLength(1);
+	});
+
+	it("reports duplicate and conflict results for an edit", () => {
+		const ws = workspace();
+		const first = addFact(ws, "项目使用 tab 缩进");
+		const second = addFact(ws, "文档目录放在 docs 下");
+
+		const duplicate = updateMemoryFact({
+			agentDir: ws.agentDir,
+			id: second.id,
+			action: "edit",
+			patch: { text: "项目使用 tab 缩进" },
+		});
+		expect(duplicate).toEqual({
+			ok: true,
+			action: "duplicate",
+			fact: expect.objectContaining({ id: first.id }),
+		});
+
+		const conflict = updateMemoryFact({
+			agentDir: ws.agentDir,
+			id: second.id,
+			action: "edit",
+			patch: { text: "项目不再使用 tab 缩进" },
+		});
+		expect(conflict).toEqual({
+			ok: true,
+			action: "conflict",
+			candidates: [expect.objectContaining({ id: first.id })],
+		});
+		expect(new FactStore(ws.agentDir).get(second.id)?.text).toBe("文档目录放在 docs 下");
+	});
+
+	it("requires a patch for edit and rejects patches on other actions", () => {
+		const ws = workspace();
+		const fact = addFact(ws, "提交信息用英文");
+
+		expect(() => updateMemoryFact({ agentDir: ws.agentDir, id: fact.id, action: "edit" })).toThrow(
+			/requires a patch/,
+		);
+		expect(() =>
+			updateMemoryFact({ agentDir: ws.agentDir, id: fact.id, action: "pin", patch: { text: "提交信息统一用英文" } }),
+		).toThrow(/only valid for edit/);
+		expect(() =>
+			updateMemoryFact({ agentDir: ws.agentDir, id: "fact_missing", action: "edit", patch: { importance: 4 } }),
+		).toThrow(/Fact not found: fact_missing/);
+	});
+
 	it("validates actions at runtime", () => {
 		expect(isMemoryFactAction("pin")).toBe(true);
 		expect(isMemoryFactAction("delete")).toBe(true);
+		expect(isMemoryFactAction("edit")).toBe(true);
 		expect(isMemoryFactAction("promote")).toBe(false);
 		expect(isMemoryFactAction(undefined)).toBe(false);
 		expect(isMemorySuggestionResolution("accept")).toBe(true);
@@ -407,6 +476,29 @@ describe("memory change events", () => {
 
 			ws.store.archive(fact.id, "manual");
 			expect(events).toHaveLength(2);
+		} finally {
+			unsubscribe();
+		}
+	});
+
+	it("notifies after a successful edit and stays silent for duplicates and conflicts", () => {
+		const ws = workspace();
+		const first = addFact(ws, "项目使用 tab 缩进");
+		const second = addFact(ws, "文档目录放在 docs 下");
+		const events: MemoryChangedEvent[] = [];
+		const unsubscribe = onMemoryChanged((event) => events.push(event));
+
+		try {
+			ws.store.update(second.id, { importance: 5 });
+			expect(events).toHaveLength(1);
+
+			const duplicate = ws.store.update(second.id, { text: first.text });
+			expect(duplicate.action).toBe("duplicate");
+			expect(events).toHaveLength(1);
+
+			const conflict = ws.store.update(second.id, { text: "项目不再使用 tab 缩进" });
+			expect(conflict.action).toBe("conflict");
+			expect(events).toHaveLength(1);
 		} finally {
 			unsubscribe();
 		}

@@ -12,10 +12,12 @@ import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { ExecutionTrace, ExecutionTraceCategory } from "../../core/execution-traces.ts";
 import type { FactApplicability } from "../../core/memory/fact-schema.ts";
+import type { FactUpdatePatch } from "../../core/memory/fact-store.ts";
 import type { MemoryChangedEvent } from "../../core/memory/memory-events.ts";
 import type {
 	MemoryFactAction,
 	MemoryFactsResult,
+	MemoryFactUpdateResult,
 	MemorySuggestionResolution,
 	MemorySuggestionsResult,
 } from "../../core/memory/memory-rpc.ts";
@@ -130,7 +132,14 @@ type RpcSessionCommand =
 	// Memory
 	| { id?: string; type: "get_memory_facts"; applicability?: FactApplicability }
 	| { id?: string; type: "get_memory_suggestions"; status?: SuggestionStatus }
-	| { id?: string; type: "memory_fact_update"; factId: string; action: MemoryFactAction }
+	| {
+			id?: string;
+			type: "memory_fact_update";
+			factId: string;
+			action: MemoryFactAction;
+			/** Required for `edit`, rejected for every other action. */
+			patch?: FactUpdatePatch;
+	  }
 	| { id?: string; type: "memory_suggestion_resolve"; suggestionId: string; action: MemorySuggestionResolution }
 
 	// Commands (available for invocation via prompt)
@@ -384,7 +393,13 @@ export type RpcResponse =
 			success: true;
 			data: MemorySuggestionsResult;
 	  }
-	| { id?: string; type: "response"; command: "memory_fact_update"; success: true; data: { ok: true } }
+	| {
+			id?: string;
+			type: "response";
+			command: "memory_fact_update";
+			success: true;
+			data: MemoryFactUpdateResult;
+	  }
 	| {
 			id?: string;
 			type: "response";

@@ -1220,11 +1220,13 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (!isMemoryFactAction(command.action)) {
 					return error(id, "memory_fact_update", `Unknown action: ${String(command.action)}`);
 				}
-				// 不存在的 id 由 updateMemoryFact 抛错，命令循环统一转成 error 响应。
+				// 不存在的 id、edit 缺 patch、非 edit 带 patch 都由 updateMemoryFact 抛错，
+				// 命令循环统一转成 error 响应。
 				const updated = updateMemoryFact({
 					agentDir: getAgentDir(),
 					id: command.factId,
 					action: command.action,
+					patch: command.patch,
 				});
 				return success(id, "memory_fact_update", updated);
 			}

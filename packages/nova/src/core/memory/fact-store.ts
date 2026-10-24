@@ -15,6 +15,7 @@ import {
 	type FactSource,
 	type FactState,
 	FactStateVersionError,
+	isFactKind,
 	MAX_FACT_TEXT_CHARS,
 	MAX_TOPICS,
 	parseFactState,
@@ -73,10 +74,25 @@ export interface PruneOptions {
 	staleAfterDays?: number;
 }
 
+export interface FactUpdatePatch {
+	text?: string;
+	kind?: FactKind;
+	importance?: number;
+	applicability?: FactApplicability;
+	topics?: string[];
+	validUntil?: string;
+}
+
 export type AddFactResult =
 	| { action: "created"; fact: Fact }
 	| { action: "duplicate"; fact: Fact }
 	| { action: "merged"; fact: Fact }
+	| { action: "conflict"; candidates: Fact[] };
+
+/** 编辑不新建事实也不合并；只返回被编辑的条目，或挡下它的条目。 */
+export type UpdateFactResult =
+	| { action: "updated"; fact: Fact }
+	| { action: "duplicate"; fact: Fact }
 	| { action: "conflict"; candidates: Fact[] };
 
 interface LockedOutcome<T> {
@@ -117,6 +133,59 @@ function normalizeProjects(projects: string[] | undefined): string[] {
 		result.push(trimmed);
 	}
 	return result;
+}
+
+/** 新增与编辑共用的文本清洗与校验，保证两条入口落盘的是同一种形状。 */
+function cleanFactText(raw: string): string {
+	const text = raw.trim().replace(/\s+/g, " ");
+	if (text.length === 0) throw new Error("Fact text must not be empty");
+	if (charCount(text) > MAX_FACT_TEXT_CHARS)
+		throw new Error(`Fact text must be at most ${MAX_FACT_TEXT_CHARS} characters`);
+	if (isSensitiveText(text)) throw new SensitiveFactError();
+	return text;
+}
+
+/** 编辑是显式操作，非法的 importance 直接拒绝，不像 add 那样静默 clamp。 */
+function requireImportance(value: number): number {
+	const rounded = Math.round(value);
+	if (!Number.isFinite(value) || rounded < 1 || rounded > 5)
+		throw new Error("Fact importance must be an integer between 1 and 5");
+	return rounded;
+}
+
+function requireValidUntil(value: string): string {
+	const trimmed = value.trim();
+	if (trimmed.length === 0 || Number.isNaN(Date.parse(trimmed)))
+		throw new Error(`Invalid validUntil timestamp: ${value}`);
+	return trimmed;
+}
+
+interface SimilarityHit {
+	fact: Fact;
+	similarity: number;
+}
+
+function findDuplicateFact(candidates: Fact[], text: string): Fact | undefined {
+	const hash = factTextHash(text);
+	return candidates.find((fact) => factTextHash(fact.text) === hash);
+}
+
+/** 相似度达到冲突门槛的候选，按相似度倒序。 */
+function rankSimilarFacts(candidates: Fact[], text: string): SimilarityHit[] {
+	return candidates
+		.map((fact) => ({ fact, similarity: factSimilarity(fact.text, text) }))
+		.filter((entry) => entry.similarity >= CONFLICT_SIMILARITY)
+		.sort((left, right) => right.similarity - left.similarity);
+}
+
+/** 新增与编辑共用：最相似的一条若带否定词或数字差异，整批候选都算冲突。 */
+function contradictoryCandidates(hits: SimilarityHit[], text: string): Fact[] | undefined {
+	const best = hits[0];
+	if (best === undefined) return undefined;
+	const conflicting =
+		hasContradictionMarker(text) || hasContradictionMarker(best.fact.text) || numbersDiffer(best.fact.text, text);
+	if (!conflicting) return undefined;
+	return hits.slice(0, MAX_CONFLICT_CANDIDATES).map((entry) => entry.fact);
 }
 
 function hasContradictionMarker(text: string): boolean {
@@ -193,11 +262,7 @@ export class FactStore {
 	}
 
 	add(draft: FactDraft): AddFactResult {
-		const text = draft.text.trim().replace(/\s+/g, " ");
-		if (text.length === 0) throw new Error("Fact text must not be empty");
-		if (charCount(text) > MAX_FACT_TEXT_CHARS)
-			throw new Error(`Fact text must be at most ${MAX_FACT_TEXT_CHARS} characters`);
-		if (isSensitiveText(text)) throw new SensitiveFactError();
+		const text = cleanFactText(draft.text);
 		const applicability = draft.applicability ?? "universal";
 		const projects = normalizeProjects(draft.projects);
 		if (applicability === "project" && projects.length === 0)
@@ -209,22 +274,13 @@ export class FactStore {
 				if (!state.facts.some((fact) => fact.id === id)) throw new Error(`Cannot supersede unknown fact: ${id}`);
 			}
 			const candidates = state.facts.filter((fact) => isActiveFact(fact) && !supersedes.includes(fact.id));
-			const hash = factTextHash(text);
-			const duplicate = candidates.find((fact) => factTextHash(fact.text) === hash);
+			const duplicate = findDuplicateFact(candidates, text);
 			if (duplicate) return { changed: false, result: { action: "duplicate", fact: duplicate } };
 
-			const scored = candidates
-				.map((fact) => ({ fact, similarity: factSimilarity(fact.text, text) }))
-				.filter((entry) => entry.similarity >= CONFLICT_SIMILARITY)
-				.sort((left, right) => right.similarity - left.similarity);
+			const scored = rankSimilarFacts(candidates, text);
 			const best = scored[0];
-			const conflicting =
-				best !== undefined &&
-				(hasContradictionMarker(text) ||
-					hasContradictionMarker(best.fact.text) ||
-					numbersDiffer(best.fact.text, text));
-			if (best !== undefined && conflicting) {
-				const conflictCandidates = scored.slice(0, MAX_CONFLICT_CANDIDATES).map((entry) => entry.fact);
+			const conflictCandidates = contradictoryCandidates(scored, text);
+			if (conflictCandidates) {
 				return { changed: false, result: { action: "conflict", candidates: conflictCandidates } };
 			}
 
@@ -267,6 +323,62 @@ export class FactStore {
 				previous.updatedAt = now;
 			}
 			return { changed: true, result: { action: "created", fact } };
+		});
+	}
+
+	/**
+	 * 编辑一条已存在的事实。
+	 *
+	 * 只改 `FactUpdatePatch` 里的字段；`id`/`createdAt`/`source`/`pinned`/`retrievalCount`/
+	 * `projects`/`originProject`/`supersedes` 一律保留。文本变化时重算去重哈希，
+	 * 与其它活跃事实走和 `add` 相同的重复/冲突判定，但**不合并**：只要归一化文本不完全相同
+	 * 又足够相似，就返回冲突让调用方显式处理。重复与冲突都不写盘、不广播。
+	 */
+	update(id: string, patch: FactUpdatePatch): UpdateFactResult {
+		const text = patch.text === undefined ? undefined : cleanFactText(patch.text);
+		if (patch.kind !== undefined && !isFactKind(patch.kind)) throw new Error(`Unknown fact kind: ${patch.kind}`);
+		const importance = patch.importance === undefined ? undefined : requireImportance(patch.importance);
+		const topics = patch.topics === undefined ? undefined : normalizeTopics(patch.topics);
+		const validUntil = patch.validUntil === undefined ? undefined : requireValidUntil(patch.validUntil);
+
+		return this.withLockedState<UpdateFactResult>((state) => {
+			const fact = state.facts.find((entry) => entry.id === id);
+			if (!fact) throw new Error(`Fact not found: ${id}`);
+			if (patch.applicability === "project" && (fact.projects === undefined || fact.projects.length === 0)) {
+				throw new Error("Project-scoped facts require at least one project key");
+			}
+
+			const textChanged = text !== undefined && text !== fact.text;
+			if (text !== undefined && textChanged) {
+				const candidates = state.facts.filter((entry) => isActiveFact(entry) && entry.id !== fact.id);
+				const duplicate = findDuplicateFact(candidates, text);
+				if (duplicate) return { changed: false, result: { action: "duplicate", fact: duplicate } };
+
+				const scored = rankSimilarFacts(candidates, text);
+				const conflictCandidates = contradictoryCandidates(scored, text);
+				if (conflictCandidates)
+					return { changed: false, result: { action: "conflict", candidates: conflictCandidates } };
+
+				// 近重复在 add 里会被合并；编辑不静默改另一条事实，所以同样报冲突。
+				const nearDuplicates = scored
+					.filter((entry) => entry.similarity >= MERGE_SIMILARITY)
+					.slice(0, MAX_CONFLICT_CANDIDATES)
+					.map((entry) => entry.fact);
+				if (nearDuplicates.length > 0) {
+					return { changed: false, result: { action: "conflict", candidates: nearDuplicates } };
+				}
+			}
+
+			const now = new Date().toISOString();
+			if (text !== undefined) fact.text = text;
+			if (patch.kind !== undefined) fact.kind = patch.kind;
+			if (importance !== undefined) fact.importance = importance;
+			if (patch.applicability !== undefined) fact.applicability = patch.applicability;
+			if (topics !== undefined) fact.topics = topics;
+			if (validUntil !== undefined) fact.validUntil = validUntil;
+			if (textChanged) fact.reviewState = "unreviewed";
+			fact.updatedAt = now;
+			return { changed: true, result: { action: "updated", fact } };
 		});
 	}
 

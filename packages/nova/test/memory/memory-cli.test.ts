@@ -102,6 +102,10 @@ async function runMemory(ws: Workspace, args: string[]): Promise<CliResult> {
 	return { handled, lines, text: lines.join("\n") };
 }
 
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** `--json` 必须是一行，便于脚本消费。 */
 function jsonPayload(result: CliResult): Record<string, unknown> {
 	expect(result.lines).toHaveLength(1);
@@ -496,6 +500,167 @@ describe("archive and delete", () => {
 		const result = await runMemory(ws, ["delete", "fact_missing"]);
 
 		expect(result.text).toContain("Fact not found: fact_missing");
+	});
+});
+
+describe("edit", () => {
+	it("rewrites the text in place and prints the new text", async () => {
+		const ws = workspace();
+		const seed = seedFacts(ws);
+		await delay(5);
+
+		const result = await runMemory(ws, ["edit", seed.tabs.id, "--text", "Team prefers two-space indentation"]);
+
+		expect(result.handled).toBe(true);
+		expect(result.lines).toEqual([`Updated fact ${seed.tabs.id}: Team prefers two-space indentation`]);
+		const updated = ws.store.get(seed.tabs.id);
+		expect(updated?.text).toBe("Team prefers two-space indentation");
+		expect(updated?.createdAt).toBe(seed.tabs.createdAt);
+		expect(updated!.updatedAt > seed.tabs.updatedAt).toBe(true);
+		expect(ws.store.list()).toHaveLength(3);
+	});
+
+	it("updates kind, importance, topics, applicability and expiry", async () => {
+		const ws = workspace();
+		const seed = seedFacts(ws);
+
+		const result = await runMemory(ws, [
+			"edit",
+			seed.tabs.id,
+			"--kind",
+			"decision",
+			"--importance",
+			"5",
+			"--topics",
+			"style,format,style,extra",
+			"--valid-until",
+			"2026-12-31T00:00:00.000Z",
+		]);
+
+		expect(result.lines).toEqual([`Updated fact ${seed.tabs.id}: ${TABS_TEXT}`]);
+		const tabs = ws.store.get(seed.tabs.id);
+		expect(tabs?.kind).toBe("decision");
+		expect(tabs?.importance).toBe(5);
+		expect(tabs?.topics).toEqual(["style", "format", "extra"]);
+		expect(tabs?.validUntil).toBe("2026-12-31T00:00:00.000Z");
+
+		// project 改成 universal 时保留 projects，门控只看 applicability。
+		expect((await runMemory(ws, ["edit", seed.release.id, "--applicability", "universal"])).lines).toEqual([
+			`Updated fact ${seed.release.id}: ${RELEASE_TEXT}`,
+		]);
+		const release = ws.store.get(seed.release.id);
+		expect(release?.applicability).toBe("universal");
+		expect(release?.projects).toEqual(["proj_alpha"]);
+	});
+
+	it("clears topics when --topics is empty", async () => {
+		const ws = workspace();
+		const seed = seedFacts(ws);
+
+		const result = await runMemory(ws, ["edit", seed.tabs.id, "--topics", ""]);
+
+		expect(result.lines).toEqual([`Updated fact ${seed.tabs.id}: ${TABS_TEXT}`]);
+		expect(ws.store.get(seed.tabs.id)?.topics).toEqual([]);
+	});
+
+	it("requires at least one field", async () => {
+		const ws = workspace();
+		const seed = seedFacts(ws);
+
+		const result = await runMemory(ws, ["edit", seed.tabs.id]);
+
+		expect(result.lines).toEqual([
+			"Error: edit requires at least one of --text, --kind, --importance, --applicability, --topics, --valid-until",
+		]);
+	});
+
+	it("reports an unknown id", async () => {
+		const ws = workspace();
+		const result = await runMemory(ws, ["edit", "fact_missing", "--text", "Team prefers pnpm"]);
+
+		expect(result.lines).toEqual(["Error: Fact not found: fact_missing"]);
+	});
+
+	it("rejects text that already exists", async () => {
+		const ws = workspace();
+		const seed = seedFacts(ws);
+
+		const result = await runMemory(ws, ["edit", seed.push.id, "--text", TABS_TEXT]);
+
+		expect(result.lines).toEqual([`Error: fact text is already stored as ${seed.tabs.id}`]);
+		expect(ws.store.get(seed.push.id)?.text).toBe(PUSH_TEXT);
+	});
+
+	it("rejects text that conflicts with an existing fact", async () => {
+		const ws = workspace();
+		const first = addFact(ws.store, "项目使用 tab 缩进并且行宽为 120", { kind: "preference" });
+		const second = addFact(ws.store, "部署到 staging 环境", { kind: "project" });
+
+		const result = await runMemory(ws, ["edit", second.id, "--text", "项目使用 tab 缩进并且行宽为 120 字符"]);
+
+		expect(result.lines).toEqual([`Error: conflicts with existing facts: ${first.id}`]);
+		expect(ws.store.get(second.id)?.text).toBe("部署到 staging 环境");
+	});
+
+	it("rejects sensitive and overlong text", async () => {
+		const ws = workspace();
+		const seed = seedFacts(ws);
+
+		expect((await runMemory(ws, ["edit", seed.tabs.id, "--text", "my password is hunter2"])).text).toContain(
+			"Sensitive information must not be saved as a fact",
+		);
+		expect((await runMemory(ws, ["edit", seed.tabs.id, "--text", "a".repeat(201)])).text).toContain("at most 200");
+		expect(ws.store.get(seed.tabs.id)?.text).toBe(TABS_TEXT);
+	});
+
+	it("requires existing project links before switching to project", async () => {
+		const ws = workspace();
+		const seed = seedFacts(ws);
+
+		const result = await runMemory(ws, ["edit", seed.tabs.id, "--applicability", "project"]);
+
+		expect(result.text).toContain("Project-scoped facts require at least one project key");
+		expect(ws.store.get(seed.tabs.id)?.applicability).toBe("universal");
+	});
+
+	it("rejects edit-only options on other subcommands", async () => {
+		const ws = workspace();
+		const result = await runMemory(ws, ["list", "--text", "x"]);
+
+		expect(result.text).toContain("--text is only valid for edit.");
+	});
+
+	it("validates option values", async () => {
+		const ws = workspace();
+		const seed = seedFacts(ws);
+
+		expect((await runMemory(ws, ["edit", seed.tabs.id, "--kind", "bogus"])).text).toContain(
+			"Invalid value bogus for --kind.",
+		);
+		expect((await runMemory(ws, ["edit", seed.tabs.id, "--importance", "6"])).text).toContain(
+			"Invalid value 6 for --importance.",
+		);
+		expect((await runMemory(ws, ["edit", seed.tabs.id, "--valid-until", "nope"])).text).toContain(
+			"Invalid value nope for --valid-until.",
+		);
+	});
+
+	it("reports a missing id and unexpected arguments", async () => {
+		const ws = workspace();
+		const seed = seedFacts(ws);
+
+		expect((await runMemory(ws, ["edit"])).text).toContain('Missing fact id for "edit"');
+		expect((await runMemory(ws, ["edit", seed.tabs.id, "extra", "--text", "Team prefers pnpm"])).text).toContain(
+			'Unexpected argument extra for "edit"',
+		);
+	});
+
+	it("documents edit in the help text", async () => {
+		const ws = workspace();
+		const result = await runMemory(ws, ["--help"]);
+
+		expect(result.text).toContain("memory edit <id>");
+		expect(result.text).toContain("--valid-until");
 	});
 });
 
