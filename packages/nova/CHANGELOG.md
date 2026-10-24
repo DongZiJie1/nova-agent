@@ -16,7 +16,7 @@
 - Changed the default tool permission mode from `ask` to `allow` (全部放行). Tools run without confirmation unless the user selects `ask`/`edits` via `--permission-mode`, settings, or `/permission`.
 - Changed the model to stop writing the user profile directly. Profile edits now go through the settings interface or the review flow, so the model can no longer rewrite what the user stored about themselves.
 - Changed memory extraction to record only the user's side of a conversation: what they asked for, decided, preferred, rejected, or corrected. What the assistant changed, ran, searched, or found, unaccepted proposals, repository state, and task summaries are no longer stored as facts; feedback on the assistant's behaviour becomes a rule for future sessions.
-- Changed fact injection to run per request instead of at session start: on the first user message Nova pre-screens facts locally, lets the model pick up to 10 relevant ids, and inserts them as a `nova.memory_retrieval` message before the user message (Nova Studio shows it as a collapsed memory card). A failed, timed-out, or unparsable selection falls back to local scoring, and `memory.facts.selection` (default `"query"`) switches back to scoring only.
+- Changed fact injection to run per request instead of at session start: on the first user message Nova pre-screens facts locally, lets the model pick up to 10 relevant ids, and inserts them as a `nova.memory_retrieval` message after the user message (Nova Studio shows it as a collapsed memory card). A failed, timed-out, or unparsable selection falls back to local scoring, and `memory.facts.selection` (default `"query"`) switches back to scoring only.
 
 ### Fixed
 

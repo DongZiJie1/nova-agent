@@ -144,7 +144,7 @@ describe("createMemoryServiceForSession", () => {
 		);
 
 		// 关闭抽取只停掉四个抽取钩子，首条消息的注入钩子仍然注册。
-		expect(registerSpy.mock.calls.map(([event]) => event)).toEqual(["before_prompt"]);
+		expect(registerSpy.mock.calls.map(([event]) => event)).toEqual(["after_user_message"]);
 	});
 
 	it("returns undefined when the session has no model", async () => {
@@ -203,7 +203,7 @@ describe("startMemoryForSession", () => {
 		});
 
 		expect(second).toBe(first);
-		// before_prompt / turn_end / agent_idle / before_compaction / session_end，各一次。
+		// after_user_message / turn_end / agent_idle / before_compaction / session_end，各一次。
 		expect(registerSpy).toHaveBeenCalledTimes(5);
 	});
 });

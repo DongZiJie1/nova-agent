@@ -1,8 +1,8 @@
 /**
  * 记忆服务：注入钩子、抽取执行器、单任务队列与生命周期钩子。
  *
- * 注入走 `before_prompt`：会话收到首条用户消息时按这条消息选一次事实，作为带标签的 custom 消息
- * 插在用户消息之前。只注入一次，之后的轮次不再调用选择模型。
+ * 注入走 `after_user_message`：会话收到首条用户消息时按这条消息选一次事实，作为带标签的 custom 消息
+ * 插在用户消息之后。只注入一次，之后的轮次不再调用选择模型。
  *
  * 执行器 `runExtraction` 把"当前分支上待处理的消息 → 模型 → 事实"封装成一次可独立调用的操作；
  * `MemoryService` 只负责把它挂到生命周期钩子上，钩子一律只入队并立即返回（`session_end` 例外），
@@ -237,7 +237,7 @@ export class MemoryService {
 	}
 
 	/**
-	 * 注册 `before_prompt` 注入钩子；抽取开启时再注册 4 个抽取钩子。
+	 * 注册 `after_user_message` 注入钩子；抽取开启时再注册 4 个抽取钩子。
 	 * 幂等，且记忆或事实关闭时不注册。关闭抽取仍保留注入，这是文档推荐过的组合。
 	 */
 	start(): void {
@@ -247,10 +247,10 @@ export class MemoryService {
 		if (!settings.enabled || !settings.facts.enabled) return;
 		const hooks = this.options.hooks ?? lifecycleHooks;
 		this.unsubscribers.push(
-			hooks.register("before_prompt", {
+			hooks.register("after_user_message", {
 				name: INJECTION_HOOK_NAME,
 				timeoutMs: settings.facts.selectionTimeoutMs + SELECTION_TIMEOUT_MARGIN_MS,
-				handler: (context) => this.onBeforePrompt(context),
+				handler: (context) => this.onAfterUserMessage(context),
 			}),
 		);
 		if (!settings.extraction.enabled) return;
@@ -319,7 +319,7 @@ export class MemoryService {
 	 * 空查询、空结果、别的会话、已经注入过都返回 undefined，调用方据此什么都不插。
 	 * 选择模型失败时 `selectFactsForQuery` 自己回退打分，所以回退结果照常注入。
 	 */
-	private async onBeforePrompt(context: LifecycleContext): Promise<LifecycleHookResult | undefined> {
+	private async onAfterUserMessage(context: LifecycleContext): Promise<LifecycleHookResult | undefined> {
 		if (!this.isCurrentSession(context)) return undefined;
 		if (this.injected) return undefined;
 		this.injected = true;

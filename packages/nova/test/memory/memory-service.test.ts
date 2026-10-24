@@ -568,7 +568,7 @@ describe("MemoryService hooks", () => {
 	});
 });
 
-describe("MemoryService before_prompt injection", () => {
+describe("MemoryService after_user_message injection", () => {
 	/** 12 条互不相似的事实，足够触发选择模型（活跃事实 > 10）。 */
 	const SEEDS = [
 		"Release builds must run the offline script",
@@ -617,7 +617,7 @@ describe("MemoryService before_prompt injection", () => {
 		harness.service.start();
 		const session = harness.session as unknown as AgentSession;
 
-		const messages = await harness.hooks.emitBeforePrompt(session, "Which indentation do we use?");
+		const messages = await harness.hooks.emitAfterUserMessage(session, "Which indentation do we use?");
 
 		expect(messages).toHaveLength(1);
 		expect(messages[0]?.customType).toBe(MEMORY_RETRIEVAL_CUSTOM_TYPE);
@@ -630,26 +630,28 @@ describe("MemoryService before_prompt injection", () => {
 		expect(text).toContain(secondId);
 
 		// 只注入一次：后续轮次不再返回消息。
-		expect(await harness.hooks.emitBeforePrompt(session, "Another question")).toEqual([]);
+		expect(await harness.hooks.emitAfterUserMessage(session, "Another question")).toEqual([]);
 	});
 
 	it("injects nothing for an empty query, another session, or an empty store", async () => {
 		const emptyStore = createHarness({ complete: async () => "{}" });
 		emptyStore.service.start();
-		expect(await emptyStore.hooks.emitBeforePrompt(emptyStore.session as unknown as AgentSession, "hello")).toEqual(
-			[],
-		);
+		expect(
+			await emptyStore.hooks.emitAfterUserMessage(emptyStore.session as unknown as AgentSession, "hello"),
+		).toEqual([]);
 
 		const emptyQuery = createHarness({ complete: async () => "{}" });
 		seedFact(emptyQuery.store, F1);
 		emptyQuery.service.start();
-		expect(await emptyQuery.hooks.emitBeforePrompt(emptyQuery.session as unknown as AgentSession, "   ")).toEqual([]);
+		expect(await emptyQuery.hooks.emitAfterUserMessage(emptyQuery.session as unknown as AgentSession, "   ")).toEqual(
+			[],
+		);
 
 		const harness = createHarness({ complete: async () => "{}" });
 		seedFact(harness.store, F1);
 		harness.service.start();
 		const other = new FakeMemorySession(harness.cwd);
-		expect(await harness.hooks.emitBeforePrompt(other as unknown as AgentSession, "query")).toEqual([]);
+		expect(await harness.hooks.emitAfterUserMessage(other as unknown as AgentSession, "query")).toEqual([]);
 	});
 
 	it("falls back to scored facts when the selection model fails", async () => {
@@ -661,7 +663,7 @@ describe("MemoryService before_prompt injection", () => {
 		for (const seed of SEEDS) seedFact(harness.store, seed);
 		harness.service.start();
 
-		const messages = await harness.hooks.emitBeforePrompt(
+		const messages = await harness.hooks.emitAfterUserMessage(
 			harness.session as unknown as AgentSession,
 			"how should builds run?",
 		);
@@ -681,7 +683,10 @@ describe("MemoryService before_prompt injection", () => {
 		seedFact(harness.store, F1);
 		harness.service.start();
 
-		const messages = await harness.hooks.emitBeforePrompt(harness.session as unknown as AgentSession, "indentation");
+		const messages = await harness.hooks.emitAfterUserMessage(
+			harness.session as unknown as AgentSession,
+			"indentation",
+		);
 
 		expect(messages).toHaveLength(1);
 		expect(messageText(messages[0]!)).toContain(F1);
@@ -695,8 +700,8 @@ describe("MemoryService before_prompt injection", () => {
 		seedFact(harness.store, F1);
 		harness.service.start();
 
-		expect(await harness.hooks.emitBeforePrompt(harness.session as unknown as AgentSession, "indentation")).toEqual(
-			[],
-		);
+		expect(
+			await harness.hooks.emitAfterUserMessage(harness.session as unknown as AgentSession, "indentation"),
+		).toEqual([]);
 	});
 });

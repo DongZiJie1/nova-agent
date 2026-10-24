@@ -2,7 +2,7 @@ import type { AgentSession } from "./agent-session.ts";
 
 export type LifecycleEvent =
 	| "session_start"
-	| "before_prompt"
+	| "after_user_message"
 	| "turn_end"
 	| "agent_idle"
 	| "before_compaction"
@@ -12,12 +12,12 @@ export interface LifecycleContext {
 	event: LifecycleEvent;
 	session: AgentSession;
 	reason?: string;
-	/** Expanded user prompt. Only set for `before_prompt`. */
+	/** Expanded user prompt. Only set for `after_user_message`. */
 	promptText?: string;
 	signal: AbortSignal;
 }
 
-/** A custom message a `before_prompt` handler wants inserted before the user message. */
+/** A custom message a `after_user_message` handler wants inserted after the user message. */
 export interface PromptContextMessage {
 	customType: string;
 	content: Array<{ type: "text"; text: string }>;
@@ -26,7 +26,7 @@ export interface PromptContextMessage {
 }
 
 /**
- * Return value of a lifecycle handler. Only `before_prompt` consumes it;
+ * Return value of a lifecycle handler. Only `after_user_message` consumes it;
  * every other event ignores it, so existing handlers keep working unchanged.
  */
 export interface LifecycleHookResult {
@@ -79,22 +79,22 @@ export class LifecycleHooks {
 	async emit(event: LifecycleEvent, session: AgentSession, reason?: string): Promise<void> {
 		for (const subscription of this.handlers.slice()) {
 			if (subscription.event !== event) continue;
-			// Return values are only meaningful for `before_prompt`, which has its own emitter.
+			// Return values are only meaningful for `after_user_message`, which has its own emitter.
 			await this.invoke(subscription, { event, session, reason });
 		}
 	}
 
 	/**
-	 * Runs the `before_prompt` handlers and flattens the messages they return.
+	 * Runs the `after_user_message` handlers and flattens the messages they return.
 	 * Each handler gets an independent timeout; a failure or timeout is logged and skipped,
 	 * so a broken handler can never block or fail the prompt.
 	 */
-	async emitBeforePrompt(session: AgentSession, promptText: string): Promise<PromptContextMessage[]> {
+	async emitAfterUserMessage(session: AgentSession, promptText: string): Promise<PromptContextMessage[]> {
 		const messages: PromptContextMessage[] = [];
 		for (const subscription of this.handlers.slice()) {
-			if (subscription.event !== "before_prompt") continue;
+			if (subscription.event !== "after_user_message") continue;
 			const result = await this.invoke(subscription, {
-				event: "before_prompt",
+				event: "after_user_message",
 				session,
 				promptText,
 			});

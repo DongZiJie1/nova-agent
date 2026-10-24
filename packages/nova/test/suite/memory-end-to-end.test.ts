@@ -346,11 +346,11 @@ describe("memory end-to-end", () => {
 		expect(stored?.source.entryIds).toEqual([entryId]);
 	});
 
-	it("H. 首条消息的记忆注入排在用户消息之前", async () => {
+	it("H. 首条消息的记忆注入排在用户消息之后", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage("好的")]);
-		const unregister = lifecycleHooks.register("before_prompt", {
+		const unregister = lifecycleHooks.register("after_user_message", {
 			name: "e2e-memory-injection",
 			timeoutMs: 1000,
 			handler: () => ({
@@ -377,6 +377,6 @@ describe("memory end-to-end", () => {
 		);
 		const userIndex = messages.findIndex((message) => message.role === "user");
 		expect(memoryIndex).toBeGreaterThanOrEqual(0);
-		expect(userIndex).toBeGreaterThan(memoryIndex);
+		expect(memoryIndex).toBeGreaterThan(userIndex);
 	});
 });

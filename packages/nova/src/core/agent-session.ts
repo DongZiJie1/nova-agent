@@ -1546,20 +1546,7 @@ export class AgentSession {
 				timestamp: Date.now(),
 			}));
 
-			// Internal hooks (memory injection) attach context to this exact prompt.
-			// The emitter isolates handler failures and timeouts, so this cannot block the prompt.
-			for (const message of await lifecycleHooks.emitBeforePrompt(this, expandedText)) {
-				messages.push({
-					role: "custom",
-					customType: message.customType,
-					content: message.content,
-					display: message.display ?? false,
-					details: message.details,
-					timestamp: Date.now(),
-				});
-			}
-
-			// Add user message
+			// Add user message first: retrieval context reads as context attached to it.
 			const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
 			if (currentImages) {
 				userContent.push(...currentImages);
@@ -1569,6 +1556,20 @@ export class AgentSession {
 				content: userContent,
 				timestamp: Date.now(),
 			});
+
+			// Internal hooks (memory retrieval) attach context to this exact prompt, after
+			// the user message so the transcript reads request → retrieved context → reply.
+			// The emitter isolates handler failures and timeouts, so this cannot block the prompt.
+			for (const message of await lifecycleHooks.emitAfterUserMessage(this, expandedText)) {
+				messages.push({
+					role: "custom",
+					customType: message.customType,
+					content: message.content,
+					display: message.display ?? false,
+					details: message.details,
+					timestamp: Date.now(),
+				});
+			}
 
 			// Generate the display name alongside the first prompt without delaying the main response.
 			if (

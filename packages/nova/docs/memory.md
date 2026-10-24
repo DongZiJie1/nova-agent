@@ -35,7 +35,7 @@ The review returns profile suggestions (`create`, `append`, `update`) that are s
 
 ## Injection
 
-Facts are injected per request, not per session. When the session receives its first user message, Nova selects facts for that message once and inserts them as a `nova.memory_retrieval` custom message immediately before the user message; Nova Studio renders that message as a collapsed memory card. Later turns do not select or inject again, so the block belongs to the request that opened the conversation.
+Facts are injected per request, not per session. When the session receives its first user message, Nova selects facts for that message once and inserts them as a `nova.memory_retrieval` custom message immediately after the user message; Nova Studio renders that message as a collapsed memory card. Later turns do not select or inject again, so the block belongs to the request that opened the conversation.
 
 Selection is a local pre-screen plus one model call. The local side gates facts first (other projects' `project` facts stay hidden unless `gateProjectFacts` is off, expired facts are dropped, and `crossProjectRecall` applies to transferable facts), then ranks up to `selectionCandidates` candidates: BM25 hits first, padded with scored facts when the hits are fewer. The model picks at most 10 ids from that candidate list and anything outside it is ignored. A failed, timed-out, or unparsable reply, or a reply without usable ids, falls back to local scoring, and that fallback is still injected. `selection: "score"` skips the model call entirely.
 
