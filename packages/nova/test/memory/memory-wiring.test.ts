@@ -133,22 +133,18 @@ describe("createMemoryServiceForSession", () => {
 		).toBeUndefined();
 	});
 
-	it("returns undefined when extraction is disabled", async () => {
+	it("keeps injection when extraction is disabled", async () => {
 		const { harness, agentDir, cwd } = await createWiringHarness({
 			settings: { memory: { extraction: { enabled: false } } },
 		});
+		const registerSpy = vi.spyOn(lifecycleHooks, "register");
 
-		const service = createMemoryServiceForSession({
-			session: harness.session,
-			agentDir,
-			cwd,
-			settingsManager: harness.settingsManager,
-		});
-
-		expect(service).toBeUndefined();
-		expect(
+		track(
 			startMemoryForSession({ session: harness.session, agentDir, cwd, settingsManager: harness.settingsManager }),
-		).toBeUndefined();
+		);
+
+		// 关闭抽取只停掉四个抽取钩子，首条消息的注入钩子仍然注册。
+		expect(registerSpy.mock.calls.map(([event]) => event)).toEqual(["before_prompt"]);
 	});
 
 	it("returns undefined when the session has no model", async () => {
@@ -207,7 +203,7 @@ describe("startMemoryForSession", () => {
 		});
 
 		expect(second).toBe(first);
-		// turn_end / agent_idle / before_compaction / session_end，各一次。
-		expect(registerSpy).toHaveBeenCalledTimes(4);
+		// before_prompt / turn_end / agent_idle / before_compaction / session_end，各一次。
+		expect(registerSpy).toHaveBeenCalledTimes(5);
 	});
 });

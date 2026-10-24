@@ -2,9 +2,12 @@
  * 记忆功能设置：接口、默认值与解析。
  *
  * 默认值只在解析时生效，不写入 settings.json。非法值（非有限、负数、要求为正时的 0）
- * 回落到默认值；需要夹取的字段（maxPromptFacts、maxInputChars、timeoutMs、sessionEndFlushMs）
- * 按 CONTRACTS 第 7 节与 STEP-05 的边界处理。
+ * 回落到默认值；需要夹取的字段（maxPromptFacts、maxInputChars、timeoutMs、sessionEndFlushMs、
+ * selectionTimeoutMs、selectionCandidates）按 CONTRACTS 第 7 节与 STEP-05 的边界处理。
  */
+
+/** 按用户消息选择事实的模式：本地打分，或本地预筛后再问一次模型。 */
+export type MemorySelectionMode = "query" | "score";
 
 export interface MemoryPromotionSettings {
 	minHits?: number; // 默认 6
@@ -24,6 +27,9 @@ export interface MemoryFactsSettings {
 	gateProjectFacts?: boolean; // 默认 true
 	archiveAfterDays?: number; // 默认 90
 	maxActiveFacts?: number; // 默认 5000
+	selection?: MemorySelectionMode; // 默认 "query"
+	selectionTimeoutMs?: number; // 默认 1500，夹取到 100-10000
+	selectionCandidates?: number; // 默认 50，夹取到 10-200
 	promotion?: MemoryPromotionSettings;
 }
 
@@ -63,6 +69,9 @@ export interface ResolvedMemoryFactsSettings {
 	gateProjectFacts: boolean;
 	archiveAfterDays: number;
 	maxActiveFacts: number;
+	selection: MemorySelectionMode;
+	selectionTimeoutMs: number;
+	selectionCandidates: number;
 	promotion: ResolvedMemoryPromotionSettings;
 }
 
@@ -97,6 +106,9 @@ export const DEFAULT_MEMORY_SETTINGS: ResolvedMemorySettings = {
 		gateProjectFacts: true,
 		archiveAfterDays: 90,
 		maxActiveFacts: 5000,
+		selection: "query",
+		selectionTimeoutMs: 1500,
+		selectionCandidates: 50,
 		promotion: {
 			minHits: 6,
 			minImportance: 4,
@@ -150,6 +162,11 @@ function resolveModel(value: unknown): string | undefined {
 	return trimmed.length > 0 ? trimmed : undefined;
 }
 
+/** 选择模式只认两个字面值，其余（含大小写不一致、数字、null）回落默认值。 */
+function resolveSelectionMode(value: unknown, fallback: MemorySelectionMode): MemorySelectionMode {
+	return value === "query" || value === "score" ? value : fallback;
+}
+
 /**
  * 把用户配置解析成完整设置。输入 undefined 时返回默认值的深拷贝。
  * 每次调用都构造新对象，修改返回值不会影响 DEFAULT_MEMORY_SETTINGS。
@@ -173,6 +190,19 @@ export function resolveMemorySettings(value: MemorySettings | undefined): Resolv
 			gateProjectFacts: resolveBoolean(facts?.gateProjectFacts, defaults.facts.gateProjectFacts),
 			archiveAfterDays: resolvePositiveInteger(facts?.archiveAfterDays, defaults.facts.archiveAfterDays),
 			maxActiveFacts: resolvePositiveInteger(facts?.maxActiveFacts, defaults.facts.maxActiveFacts),
+			selection: resolveSelectionMode(facts?.selection, defaults.facts.selection),
+			selectionTimeoutMs: resolvePositiveInteger(
+				facts?.selectionTimeoutMs,
+				defaults.facts.selectionTimeoutMs,
+				100,
+				10000,
+			),
+			selectionCandidates: resolvePositiveInteger(
+				facts?.selectionCandidates,
+				defaults.facts.selectionCandidates,
+				10,
+				200,
+			),
 			promotion: {
 				minHits: resolvePositiveInteger(promotion?.minHits, defaults.facts.promotion.minHits),
 				minImportance: resolvePositiveInteger(promotion?.minImportance, defaults.facts.promotion.minImportance),

@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { fauxAssistantMessage } from "@dongzijie1/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ExtensionContext } from "../../src/core/extensions/types.ts";
+import { lifecycleHooks } from "../../src/core/lifecycle-hooks.ts";
 import type { ExtractionCompletion } from "../../src/core/memory/fact-extraction.ts";
 import { loadFactsBlock } from "../../src/core/memory/fact-prompt.ts";
 import { FactStore } from "../../src/core/memory/fact-store.ts";
@@ -343,5 +344,39 @@ describe("memory end-to-end", () => {
 		const stored = new FactStore(ws.agentDir).get(factId);
 		expect(stored?.source.model).toBe("explicit");
 		expect(stored?.source.entryIds).toEqual([entryId]);
+	});
+
+	it("H. 首条消息的记忆注入排在用户消息之前", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("好的")]);
+		const unregister = lifecycleHooks.register("before_prompt", {
+			name: "e2e-memory-injection",
+			timeoutMs: 1000,
+			handler: () => ({
+				messages: [
+					{
+						customType: "test.memory_retrieval",
+						content: [
+							{ type: "text", text: "<retrieved_user_memory>\n- [fact_x] demo\n</retrieved_user_memory>" },
+						],
+						display: false,
+					},
+				],
+			}),
+		});
+		try {
+			await harness.session.prompt("请按记忆里的约定来");
+		} finally {
+			unregister();
+		}
+
+		const messages = harness.session.messages;
+		const memoryIndex = messages.findIndex(
+			(message) => message.role === "custom" && message.customType === "test.memory_retrieval",
+		);
+		const userIndex = messages.findIndex((message) => message.role === "user");
+		expect(memoryIndex).toBeGreaterThanOrEqual(0);
+		expect(userIndex).toBeGreaterThan(memoryIndex);
 	});
 });

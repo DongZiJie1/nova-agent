@@ -108,6 +108,15 @@ describe("FactIndex search", () => {
 		expect(index.search("索引", { limit: 3 })).toHaveLength(3);
 	});
 
+	it("honors a custom limit cap", () => {
+		const facts = Array.from({ length: 25 }, (_, position) => makeFact({ text: `索引压力测试 ${position}` }));
+		const index = new FactIndex(facts, { maxLimit: 50 });
+
+		expect(index.search("索引", { limit: 50 })).toHaveLength(25);
+		expect(index.search("索引")).toHaveLength(8);
+		expect(new FactIndex(facts, { maxLimit: 2 }).search("索引", { limit: 50 })).toHaveLength(2);
+	});
+
 	it("filters by kind", () => {
 		const decision = makeFact({ text: "决定换车", kind: "decision" });
 		const preference = makeFact({ text: "偏好换车", kind: "preference" });

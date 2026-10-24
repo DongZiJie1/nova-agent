@@ -26,7 +26,6 @@ import { formatNoModelsAvailableMessage } from "./core/auth-guidance.ts";
 import { exportFromFile } from "./core/export-html/index.ts";
 import type { InlineExtension } from "./core/extensions/types.ts";
 import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.ts";
-import { loadFactsBlock } from "./core/memory/fact-prompt.ts";
 import { startMemoryCompensation, startMemoryForSession } from "./core/memory/memory-wiring.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
 import type { ModelRuntime } from "./core/model-runtime.ts";
@@ -709,18 +708,8 @@ export async function main(args: string[], options?: MainOptions) {
 			resourceLoaderOptions: {
 				appendSystemPromptOverride: (base) => {
 					const userMemory = new UserMemoryStore(agentDir).toPrompt();
-					const facts = loadFactsBlock({
-						agentDir,
-						cwd,
-						settings: runtimeSettingsManager.getMemorySettings(),
-					});
 					const todos = todoPrompt(agentDir);
-					return [
-						...base,
-						...(userMemory ? [userMemory] : []),
-						...(facts ? [facts] : []),
-						...(todos ? [todos] : []),
-					];
+					return [...base, ...(userMemory ? [userMemory] : []), ...(todos ? [todos] : [])];
 				},
 				additionalExtensionPaths: resolvedExtensionPaths,
 				additionalSkillPaths: resolvedSkillPaths,

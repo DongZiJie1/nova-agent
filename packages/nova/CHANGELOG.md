@@ -7,14 +7,16 @@
 - Added internal ordered lifecycle hooks with per-handler timeouts and error isolation, session timing/tool/memory statistics, and local end records with startup recovery for interrupted sessions.
 - Added tags and topics to the `todo` tool: `topic` defaults to the first tag (or 未分类), the list can filter by tag or topic, and `offset` with `limit` pages through the rest. Todos written before tags existed keep their grouping without any rewrite.
 - Added the `todo` tool for recording and updating items on Nova's todo list (`todos.json` in the agent directory), the same store the 待办 page of Nova Studio reads. Items created by the agent are attributed to it and stay linked to the session that wrote them.
-- Added long-term fact memory: cross-session extraction with startup compensation for killed sessions, budgeted `<user_facts>` system-prompt injection, the `remember`/`search_memory`/`read_memory` tools, and the `nova memory` CLI for listing and curating stored facts. See [docs/memory.md](docs/memory.md).
+- Added long-term fact memory: cross-session extraction with startup compensation for killed sessions, budgeted fact injection selected per user message, the `remember`/`search_memory`/`read_memory` tools, and the `nova memory` CLI for listing and curating stored facts. See [docs/memory.md](docs/memory.md).
 - Added fact editing: `FactStore.update`, `nova memory edit <id>` with `--text`, `--kind`, `--importance`, `--applicability`, `--topics`, and `--valid-until`, and the `memory_fact_update` `edit` action with an optional `patch`. Editing rewrites the existing fact instead of creating a new one, preserves ids, timestamps, source, pin state, usage counters, and project links, re-checks duplicates and conflicts against other active facts, rejects sensitive or overlong text, and takes effect from the next session.
+- Added a `before_prompt` internal lifecycle hook that can return custom context messages, and used it for memory injection.
 
 ### Changed
 
 - Changed the default tool permission mode from `ask` to `allow` (全部放行). Tools run without confirmation unless the user selects `ask`/`edits` via `--permission-mode`, settings, or `/permission`.
 - Changed the model to stop writing the user profile directly. Profile edits now go through the settings interface or the review flow, so the model can no longer rewrite what the user stored about themselves.
 - Changed memory extraction to record only the user's side of a conversation: what they asked for, decided, preferred, rejected, or corrected. What the assistant changed, ran, searched, or found, unaccepted proposals, repository state, and task summaries are no longer stored as facts; feedback on the assistant's behaviour becomes a rule for future sessions.
+- Changed fact injection to run per request instead of at session start: on the first user message Nova pre-screens facts locally, lets the model pick up to 10 relevant ids, and inserts them as a `nova.memory_retrieval` message before the user message (Nova Studio shows it as a collapsed memory card). A failed, timed-out, or unparsable selection falls back to local scoring, and `memory.facts.selection` (default `"query"`) switches back to scoring only.
 
 ### Fixed
 

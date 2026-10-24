@@ -31,6 +31,7 @@ import {
 	resolveMemorySuggestion,
 	updateMemoryFact,
 } from "../../core/memory/memory-rpc.ts";
+import { MEMORY_RETRIEVAL_CUSTOM_TYPE } from "../../core/memory/memory-service.ts";
 import { isSuggestionStatus } from "../../core/memory/suggestion-store.ts";
 import {
 	flushRawStdout,
@@ -1182,9 +1183,25 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "get_messages": {
 				const branch = session.sessionManager.getBranch();
-				const messages = branch
-					.filter((entry) => entry.type === "message")
-					.map((entry) => ({ ...entry.message, entryId: entry.id }));
+				// Fact retrieval is stored as a custom message; replay it so the desktop
+				// transcript can show which memories shaped the reply after a reload.
+				const messages = branch.flatMap((entry) => {
+					if (entry.type === "message") return [{ ...entry.message, entryId: entry.id }];
+					if (entry.type === "custom_message" && entry.customType === MEMORY_RETRIEVAL_CUSTOM_TYPE) {
+						return [
+							{
+								role: "custom" as const,
+								customType: entry.customType,
+								content: entry.content,
+								display: entry.display,
+								details: entry.details,
+								timestamp: Date.parse(entry.timestamp),
+								entryId: entry.id,
+							},
+						];
+					}
+					return [];
+				});
 				const feedback: Record<string, "up" | "down"> = {};
 				for (const entry of branch) {
 					if (entry.type !== "custom" || entry.customType !== "nova_studio.feedback") continue;

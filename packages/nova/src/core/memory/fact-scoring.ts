@@ -105,10 +105,13 @@ function isSameProject(fact: Fact, projectKey: string | undefined): boolean {
 	return fact.originProject?.key === projectKey;
 }
 
-/** 资格：未归档、未被替代、未过期，并通过项目作用域门控。 */
-function isEligible(fact: Fact, context: FactSelectionContext, nowMs: number): boolean {
+/**
+ * 资格：未归档、未被替代、未过期，并通过项目作用域门控。
+ * 选择器（`memory-selection.ts`）也用它筛候选，保证本地预筛与打分回退的门控一致。
+ */
+export function isFactEligible(fact: Fact, context: FactSelectionContext, now: number = Date.now()): boolean {
 	if (fact.archivedAt !== undefined || fact.supersededBy !== undefined) return false;
-	if (isExpired(fact, nowMs)) return false;
+	if (isExpired(fact, now)) return false;
 	const scopedToProject = context.projectKey !== undefined && (fact.projects ?? []).includes(context.projectKey);
 	if (context.gateProjectFacts !== false && fact.applicability === "project" && !scopedToProject) return false;
 	if (context.crossProjectRecall === false) {
@@ -144,7 +147,7 @@ export function selectFacts(facts: Fact[], context: FactSelectionContext = {}): 
 
 	const eligible: ScoredFact[] = [];
 	for (const fact of facts) {
-		if (!isEligible(fact, context, nowMs)) continue;
+		if (!isFactEligible(fact, context, nowMs)) continue;
 		eligible.push({ fact, score: scoreFact(fact, context, nowMs) });
 	}
 

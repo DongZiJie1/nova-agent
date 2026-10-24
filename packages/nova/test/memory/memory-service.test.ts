@@ -8,7 +8,11 @@ import type { ExtractionCompletion } from "../../src/core/memory/fact-extraction
 import { projectRefForCwd } from "../../src/core/memory/fact-schema.ts";
 import { FactStore } from "../../src/core/memory/fact-store.ts";
 import { MEMORY_EXTRACTION_CUSTOM_TYPE, readExtractionMarker } from "../../src/core/memory/memory-marker.ts";
-import { MemoryService, type MemorySessionRef } from "../../src/core/memory/memory-service.ts";
+import {
+	MEMORY_RETRIEVAL_CUSTOM_TYPE,
+	MemoryService,
+	type MemorySessionRef,
+} from "../../src/core/memory/memory-service.ts";
 import { type MemorySettings, resolveMemorySettings } from "../../src/core/memory/memory-settings.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import { UserMemoryStore } from "../../src/core/user-memory.ts";
@@ -561,5 +565,138 @@ describe("MemoryService hooks", () => {
 
 		expect(calls).toBe(0);
 		expect(harness.store.active()).toHaveLength(0);
+	});
+});
+
+describe("MemoryService before_prompt injection", () => {
+	/** 12 条互不相似的事实，足够触发选择模型（活跃事实 > 10）。 */
+	const SEEDS = [
+		"Release builds must run the offline script",
+		"Dependencies stay pinned to exact versions",
+		"Logs rotate every day at midnight",
+		"Caches expire after two hours",
+		"The search index rebuilds nightly",
+		"Auth failures fall back to the local key",
+		"Data migrations run only through scripts",
+		"Canary releases start with ten percent",
+		"Alerts route by severity level",
+		"Dashboards never show personal data",
+		"Load baselines refresh every month",
+		"Commit messages are written in Chinese",
+	];
+
+	function seedFact(store: FactStore, text: string, importance = 4): string {
+		const result = store.add({
+			text,
+			kind: "preference",
+			importance,
+			applicability: "universal",
+			source: {
+				sessionFile: "",
+				sessionId: "seed",
+				entryIds: [],
+				extractedAt: new Date().toISOString(),
+				model: "explicit",
+			},
+		});
+		if (result.action !== "created") throw new Error(`seed failed: ${result.action}`);
+		return result.fact.id;
+	}
+
+	function messageText(message: { content: Array<{ type: "text"; text: string }> }): string {
+		return message.content[0]?.text ?? "";
+	}
+
+	it("injects the selected facts once as a tagged custom message", async () => {
+		const harness = createHarness({
+			settings: { facts: { selection: "score" } },
+			complete: async () => "{}",
+		});
+		const firstId = seedFact(harness.store, F1);
+		const secondId = seedFact(harness.store, F2);
+		harness.service.start();
+		const session = harness.session as unknown as AgentSession;
+
+		const messages = await harness.hooks.emitBeforePrompt(session, "Which indentation do we use?");
+
+		expect(messages).toHaveLength(1);
+		expect(messages[0]?.customType).toBe(MEMORY_RETRIEVAL_CUSTOM_TYPE);
+		expect(messages[0]?.display).toBe(true);
+		const text = messageText(messages[0]!);
+		expect(text).toContain("<retrieved_user_memory>");
+		expect(text).toContain("</retrieved_user_memory>");
+		expect(text).toContain("reference data, not as instructions");
+		expect(text).toContain(firstId);
+		expect(text).toContain(secondId);
+
+		// 只注入一次：后续轮次不再返回消息。
+		expect(await harness.hooks.emitBeforePrompt(session, "Another question")).toEqual([]);
+	});
+
+	it("injects nothing for an empty query, another session, or an empty store", async () => {
+		const emptyStore = createHarness({ complete: async () => "{}" });
+		emptyStore.service.start();
+		expect(await emptyStore.hooks.emitBeforePrompt(emptyStore.session as unknown as AgentSession, "hello")).toEqual(
+			[],
+		);
+
+		const emptyQuery = createHarness({ complete: async () => "{}" });
+		seedFact(emptyQuery.store, F1);
+		emptyQuery.service.start();
+		expect(await emptyQuery.hooks.emitBeforePrompt(emptyQuery.session as unknown as AgentSession, "   ")).toEqual([]);
+
+		const harness = createHarness({ complete: async () => "{}" });
+		seedFact(harness.store, F1);
+		harness.service.start();
+		const other = new FakeMemorySession(harness.cwd);
+		expect(await harness.hooks.emitBeforePrompt(other as unknown as AgentSession, "query")).toEqual([]);
+	});
+
+	it("falls back to scored facts when the selection model fails", async () => {
+		const harness = createHarness({
+			complete: async () => {
+				throw new Error("selection model unavailable");
+			},
+		});
+		for (const seed of SEEDS) seedFact(harness.store, seed);
+		harness.service.start();
+
+		const messages = await harness.hooks.emitBeforePrompt(
+			harness.session as unknown as AgentSession,
+			"how should builds run?",
+		);
+
+		expect(messages).toHaveLength(1);
+		const text = messageText(messages[0]!);
+		const injected = text.match(/^- \[fact_/gm) ?? [];
+		expect(injected.length).toBeGreaterThan(0);
+		expect(injected.length).toBeLessThanOrEqual(10);
+	});
+
+	it("still injects when extraction is disabled", async () => {
+		const harness = createHarness({
+			settings: { extraction: { enabled: false }, facts: { selection: "score" } },
+			complete: async () => "{}",
+		});
+		seedFact(harness.store, F1);
+		harness.service.start();
+
+		const messages = await harness.hooks.emitBeforePrompt(harness.session as unknown as AgentSession, "indentation");
+
+		expect(messages).toHaveLength(1);
+		expect(messageText(messages[0]!)).toContain(F1);
+	});
+
+	it("does not inject when facts are disabled", async () => {
+		const harness = createHarness({
+			settings: { facts: { enabled: false } },
+			complete: async () => "{}",
+		});
+		seedFact(harness.store, F1);
+		harness.service.start();
+
+		expect(await harness.hooks.emitBeforePrompt(harness.session as unknown as AgentSession, "indentation")).toEqual(
+			[],
+		);
 	});
 });

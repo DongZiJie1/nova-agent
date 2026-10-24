@@ -1546,6 +1546,19 @@ export class AgentSession {
 				timestamp: Date.now(),
 			}));
 
+			// Internal hooks (memory injection) attach context to this exact prompt.
+			// The emitter isolates handler failures and timeouts, so this cannot block the prompt.
+			for (const message of await lifecycleHooks.emitBeforePrompt(this, expandedText)) {
+				messages.push({
+					role: "custom",
+					customType: message.customType,
+					content: message.content,
+					display: message.display ?? false,
+					details: message.details,
+					timestamp: Date.now(),
+				});
+			}
+
 			// Add user message
 			const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
 			if (currentImages) {

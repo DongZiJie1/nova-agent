@@ -20,15 +20,25 @@ export interface FactSearchOptions {
 	includeArchived?: boolean;
 }
 
+export interface FactIndexOptions {
+	/** 单次 `search` 允许的最大 limit，默认 `MAX_SEARCH_LIMIT`；选择器据此放宽到候选上限。 */
+	maxLimit?: number;
+}
+
 interface IndexedDocument {
 	fact: Fact;
 	/** 文档 token 数，用于 BM25 长度归一化。 */
 	length: number;
 }
 
-function clampLimit(value: number | undefined): number {
-	if (value === undefined || !Number.isFinite(value)) return DEFAULT_SEARCH_LIMIT;
-	return Math.min(MAX_SEARCH_LIMIT, Math.max(0, Math.floor(value)));
+function resolveMaxLimit(value: number | undefined): number {
+	if (value === undefined || !Number.isFinite(value)) return MAX_SEARCH_LIMIT;
+	return Math.max(1, Math.floor(value));
+}
+
+function clampLimit(value: number | undefined, maxLimit: number): number {
+	if (value === undefined || !Number.isFinite(value)) return Math.min(DEFAULT_SEARCH_LIMIT, maxLimit);
+	return Math.min(maxLimit, Math.max(0, Math.floor(value)));
 }
 
 function parseOptionalTime(value: string | undefined): number | undefined {
@@ -72,10 +82,12 @@ export class FactIndex {
 	private readonly postings: Map<string, Map<number, number>>;
 	private readonly documents: IndexedDocument[];
 	private readonly averageLength: number;
+	private readonly maxLimit: number;
 
-	constructor(facts: Fact[]) {
+	constructor(facts: Fact[], options: FactIndexOptions = {}) {
 		this.postings = new Map();
 		this.documents = [];
+		this.maxLimit = resolveMaxLimit(options.maxLimit);
 		let totalLength = 0;
 		for (const fact of facts) {
 			const tokens = factTokens(fact.text);
@@ -98,7 +110,7 @@ export class FactIndex {
 
 	search(query: string, options: FactSearchOptions = {}): FactSearchHit[] {
 		const queryTokens = factTokens(query);
-		const limit = clampLimit(options.limit);
+		const limit = clampLimit(options.limit, this.maxLimit);
 		if (queryTokens.length === 0 || limit === 0) return [];
 
 		const kinds =

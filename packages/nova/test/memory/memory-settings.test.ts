@@ -38,6 +38,9 @@ describe("resolveMemorySettings", () => {
 				gateProjectFacts: true,
 				archiveAfterDays: 90,
 				maxActiveFacts: 5000,
+				selection: "query",
+				selectionTimeoutMs: 1500,
+				selectionCandidates: 50,
 				promotion: {
 					minHits: 6,
 					minImportance: 4,
@@ -233,6 +236,38 @@ describe("resolveMemorySettings", () => {
 		expect(resolveMemorySettings({ extraction: { sessionEndFlushMs: -1 } }).extraction.sessionEndFlushMs).toBe(3000);
 	});
 
+	it("defaults fact selection to the query mode", () => {
+		const resolved = resolveMemorySettings({ facts: { maxPromptTokens: 250 } });
+
+		expect(resolved.facts.selection).toBe("query");
+		expect(resolved.facts.selectionTimeoutMs).toBe(1500);
+		expect(resolved.facts.selectionCandidates).toBe(50);
+	});
+
+	it("keeps a valid selection mode and rejects unknown values", () => {
+		expect(resolveMemorySettings({ facts: { selection: "score" } }).facts.selection).toBe("score");
+		expect(resolveMemorySettings({ facts: { selection: "query" } }).facts.selection).toBe("query");
+		expect(resolveRaw({ facts: { selection: "QUERY" } }).facts.selection).toBe("query");
+		expect(resolveRaw({ facts: { selection: true } }).facts.selection).toBe("query");
+	});
+
+	it("clamps selectionTimeoutMs to 100-10000", () => {
+		expect(resolveMemorySettings({ facts: { selectionTimeoutMs: 50 } }).facts.selectionTimeoutMs).toBe(100);
+		expect(resolveMemorySettings({ facts: { selectionTimeoutMs: 100 } }).facts.selectionTimeoutMs).toBe(100);
+		expect(resolveMemorySettings({ facts: { selectionTimeoutMs: 20000 } }).facts.selectionTimeoutMs).toBe(10000);
+		expect(resolveMemorySettings({ facts: { selectionTimeoutMs: 0 } }).facts.selectionTimeoutMs).toBe(1500);
+		expect(resolveMemorySettings({ facts: { selectionTimeoutMs: -1 } }).facts.selectionTimeoutMs).toBe(1500);
+		expect(resolveMemorySettings({ facts: { selectionTimeoutMs: Number.NaN } }).facts.selectionTimeoutMs).toBe(1500);
+	});
+
+	it("clamps selectionCandidates to 10-200", () => {
+		expect(resolveMemorySettings({ facts: { selectionCandidates: 5 } }).facts.selectionCandidates).toBe(10);
+		expect(resolveMemorySettings({ facts: { selectionCandidates: 10 } }).facts.selectionCandidates).toBe(10);
+		expect(resolveMemorySettings({ facts: { selectionCandidates: 500 } }).facts.selectionCandidates).toBe(200);
+		expect(resolveMemorySettings({ facts: { selectionCandidates: 0 } }).facts.selectionCandidates).toBe(50);
+		expect(resolveRaw({ facts: { selectionCandidates: "80" } }).facts.selectionCandidates).toBe(50);
+	});
+
 	it("trims the extraction model and treats blank values as unset", () => {
 		expect(resolveMemorySettings({ extraction: { model: "  provider/model  " } }).extraction.model).toBe(
 			"provider/model",
@@ -284,6 +319,23 @@ describe("SettingsManager.getMemorySettings", () => {
 		expect(resolved.extraction.idleMinutes).toBe(0);
 		expect(resolved.extraction.model).toBe("provider/model");
 		expect(resolved.extraction.timeoutMs).toBe(30000);
+	});
+
+	it("reads the fact selection settings from settings.json", () => {
+		writeFileSync(
+			join(agentDir, "settings.json"),
+			JSON.stringify({
+				memory: {
+					facts: { selection: "score", selectionTimeoutMs: 500, selectionCandidates: 20 },
+				},
+			}),
+		);
+
+		const resolved = SettingsManager.create(projectDir, agentDir).getMemorySettings();
+
+		expect(resolved.facts.selection).toBe("score");
+		expect(resolved.facts.selectionTimeoutMs).toBe(500);
+		expect(resolved.facts.selectionCandidates).toBe(20);
 	});
 
 	it("applies fallback and clamping rules to values from settings.json", () => {

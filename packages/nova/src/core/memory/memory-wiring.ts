@@ -2,11 +2,13 @@
  * 运行时接入：把记忆服务挂到真实会话上。
  *
  * `main.ts` 的 `createRuntime` 在会话建好后调用 `startMemoryForSession`，因此 CLI / TUI / print / RPC
- * 走同一条装配路径。装配本身只做三件事：解析设置、用会话模型构造抽取调用、创建服务；
+ * 走同一条装配路径。装配本身只做三件事：解析设置、用会话模型构造选择/抽取调用、创建服务；
  * 服务是否真正注册钩子仍由 `MemoryService.start()` 决定（关闭记忆时它自己跳过）。
  *
- * 抽取请求沿用当前会话的模型与鉴权：`session.model` 为空（还没选模型）时无法抽取，直接返回 undefined，
- * 让调用方按"功能不可用"处理，而不是等到第一次空闲才发现。
+ * 选择与抽取请求沿用当前会话的模型与鉴权：`session.model` 为空（还没选模型）时无法调用模型，
+ * 直接返回 undefined，让调用方按"功能不可用"处理，而不是等到第一条消息或第一次空闲才发现。
+ * 关闭抽取不影响创建服务：注入只需要事实库和模型，这是文档推荐过的组合。
+ * `startMemoryCompensation` 仍然要求抽取开启，补偿只服务抽取。
  *
  * `startMemoryCompensation` 是同一批装配的启动侧入口，给 `main.ts` 留一个不阻塞启动的调用点。
  */
@@ -70,7 +72,7 @@ export function createMemoryCompletion(
 
 /**
  * 为会话构造记忆服务，调用方负责 `start()`。
- * 记忆关闭、事实关闭、抽取关闭或没有可用模型时返回 undefined。
+ * 记忆关闭、事实关闭或没有可用模型时返回 undefined；抽取关闭不影响创建，注入仍然工作。
  */
 export function createMemoryServiceForSession(options: {
 	session: AgentSession;
@@ -81,8 +83,8 @@ export function createMemoryServiceForSession(options: {
 	settings?: ResolvedMemorySettings;
 }): MemoryService | undefined {
 	const settings = options.settings ?? options.settingsManager.getMemorySettings();
-	// 与 MemoryService.start() 的守卫保持一致：关闭的记忆不该留下一个永远不工作的服务对象。
-	if (!settings.enabled || !settings.facts.enabled || !settings.extraction.enabled) return undefined;
+	// 与 MemoryService.start() 的守卫保持一致：注入只需要 facts，抽取由服务内部再判断。
+	if (!settings.enabled || !settings.facts.enabled) return undefined;
 	const complete = createMemoryCompletion(options.session, settings);
 	if (complete === undefined) return undefined;
 	return new MemoryService({
@@ -97,7 +99,7 @@ export function createMemoryServiceForSession(options: {
 
 /**
  * 为会话创建并启动记忆服务；同一会话只创建一次，重复调用返回首次创建的服务。
- * 返回 undefined 表示这次会话不该启用记忆抽取。
+ * 返回 undefined 表示这次会话不该启用记忆。
  */
 export function startMemoryForSession(
 	options: Parameters<typeof createMemoryServiceForSession>[0],
