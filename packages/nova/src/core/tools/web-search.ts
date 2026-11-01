@@ -1,4 +1,5 @@
 import { type Static, Type } from "typebox";
+import { readStoredCredential } from "../auth-storage.ts";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";
 import { loadWebSearchSettings, resolveWebSearchConfig, type WebSearchConfig } from "../search/config.ts";
 import { runWebSearch, type WebSearchResult } from "../search/providers.ts";
@@ -30,11 +31,17 @@ export interface WebSearchToolOptions {
 	resolveConfig?: (ctx: ExtensionContext) => WebSearchConfig;
 }
 
+function storedDeepSeekApiKey(providerId: string): string | undefined {
+	const credential = readStoredCredential(providerId);
+	return credential?.type === "api_key" ? credential.key?.trim() || undefined : undefined;
+}
+
 function resolveConfig(ctx: ExtensionContext, options: WebSearchToolOptions): WebSearchConfig {
 	return (
 		options.resolveConfig?.(ctx) ??
 		resolveWebSearchConfig({
 			settings: loadWebSearchSettings({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted() }),
+			readStoredApiKey: storedDeepSeekApiKey,
 		})
 	);
 }
@@ -51,7 +58,7 @@ export function createWebSearchToolDefinition(
 		name: "web_search",
 		label: "web_search",
 		description:
-			"Search the web for current information: news, releases, docs, prices, jobs, anything past the model's training data. Returns titles, URLs, and snippets — follow up with fetch_url to read a promising result, and cite the source URLs you used. 360 (so.com) is the default provider and needs no API key; duckduckgo/bing/brave/tavily/searxng can be configured in settings.",
+			"Search the web for current information: news, releases, docs, prices, jobs, anything past the model's training data. Returns titles, URLs, and snippets — follow up with fetch_url to read a promising result, and cite the source URLs you used. 360 (so.com) is the default provider and needs no API key; deepseek (the DeepSeek API key stored by /login) and duckduckgo/bing/brave/tavily/searxng can be selected in settings.",
 		promptSnippet: "Search the web and return titles, URLs, and snippets.",
 		promptGuidelines: [
 			"Use web_search when the answer depends on information newer than your training data, or when you are unsure about current facts.",

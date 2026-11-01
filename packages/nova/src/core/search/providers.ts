@@ -1,4 +1,4 @@
-import type { WebSearchConfig, WebSearchProvider } from "./config.ts";
+import { DEEPSEEK_SEARCH_BASE_URL, type WebSearchConfig, type WebSearchProvider } from "./config.ts";
 import { decodeHtmlEntities } from "./html.ts";
 import { DESKTOP_USER_AGENT, requestSignal } from "./http.ts";
 
@@ -31,6 +31,7 @@ function collapseText(value: string): string {
 
 function statusHint(status: number): string {
 	if (status === 401 || status === 403) return " (check the API key)";
+	if (status === 402) return " (insufficient balance)";
 	if (status === 429) return " (rate limited; retry later)";
 	return "";
 }
@@ -174,7 +175,7 @@ async function searchDuckDuckGo(
 	if (results.length === 0) {
 		throw new Error(
 			"DuckDuckGo returned no parseable results (it may be rate limiting or blocked on this network). " +
-				"Retry later, or switch providers with NOVA_SEARCH_PROVIDER=so|bing|brave|tavily|searxng.",
+				"Retry later, or switch providers with NOVA_SEARCH_PROVIDER=so|bing|brave|tavily|deepseek|searxng.",
 		);
 	}
 	return results;
@@ -303,6 +304,56 @@ async function searchTavily(
 	return results;
 }
 
+/**
+ * DeepSeek's own search API (POST /v1/tools/search), billed per successful
+ * request. It answers with ranked results that already carry a short `snippet`
+ * for display and a long `summary` meant for a model, so the snippet is
+ * preferred and the summary is the fallback.
+ */
+async function searchDeepSeek(
+	query: string,
+	config: WebSearchConfig,
+	fetchImpl: typeof fetch,
+	signal: AbortSignal,
+): Promise<WebSearchResult[]> {
+	const base = (config.baseUrl || DEEPSEEK_SEARCH_BASE_URL)
+		.replace(/\/+$/, "")
+		// Treat a base URL that already ends in the API version as the host root
+		// so "https://api.deepseek.com/v1" does not become "/v1/v1/tools/search".
+		.replace(/\/v1$/i, "");
+	const response = await fetchImpl(`${base}/v1/tools/search`, {
+		method: "POST",
+		headers: {
+			accept: "application/json",
+			"content-type": "application/json",
+			authorization: `Bearer ${config.apiKey ?? ""}`,
+		},
+		body: JSON.stringify({
+			query,
+			count: config.maxResults,
+			need_content: false,
+		}),
+		signal,
+	});
+	if (!response.ok) {
+		throw new Error(`DeepSeek search failed: HTTP ${response.status}${statusHint(response.status)}`);
+	}
+	const payload = (await response.json()) as {
+		results?: Array<{ title?: string; url?: string; snippet?: string; summary?: string }>;
+	};
+	const results: WebSearchResult[] = [];
+	for (const item of payload.results ?? []) {
+		const title = collapseText(item.title ?? "");
+		const target = (item.url ?? "").trim();
+		if (!title || !/^https?:/i.test(target)) continue;
+		const snippet = collapseText(item.snippet ?? "") || collapseText(item.summary ?? "");
+		results.push({ title, url: target, snippet: snippet || undefined });
+		if (results.length >= config.maxResults) break;
+	}
+	// An empty array is a valid answer here: the query simply matched nothing.
+	return results;
+}
+
 async function searchSearxng(
 	query: string,
 	config: WebSearchConfig,
@@ -362,6 +413,8 @@ export async function runWebSearch(
 				return searchBrave(trimmed, config, fetchImpl, signal);
 			case "tavily":
 				return searchTavily(trimmed, config, fetchImpl, signal);
+			case "deepseek":
+				return searchDeepSeek(trimmed, config, fetchImpl, signal);
 			case "searxng":
 				return searchSearxng(trimmed, config, fetchImpl, signal);
 		}

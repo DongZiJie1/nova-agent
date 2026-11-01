@@ -26,6 +26,7 @@ Nova calls `web_search`, reads the top results, and (when needed) follows up wit
 | `duckduckgo` | no | DuckDuckGo HTML results; blocked on some networks. |
 | `brave` | yes | Brave Search API (`X-Subscription-Token`). |
 | `tavily` | yes | Tavily Search API; snippets include page text. |
+| `deepseek` | yes | DeepSeek Search API (`POST https://api.deepseek.com/v1/tools/search`), powered by its own search engine. Reuses the DeepSeek key saved by `/login`; each result carries a short snippet and a long summary. |
 | `searxng` | self-hosted | Any SearXNG instance with the JSON output format enabled. |
 
 The scraping providers (`so`, `bing`, `duckduckgo`) can rate-limit or change markup; the API providers are more stable when you search a lot.
@@ -37,25 +38,27 @@ Configuration lives in the `search` section of `settings.json` — global `~/.no
 ```json
 {
   "search": {
-    "provider": "brave",
-    "apiKey": "BSA...",
-    "baseUrl": "https://searx.example",
+    "provider": "deepseek",
+    "apiKey": "sk-...",
+    "baseUrl": "https://api.deepseek.com",
     "maxResults": 5,
     "timeoutMs": 20000
   }
 }
 ```
 
+For `deepseek`, `apiKey` may be omitted: Nova falls back to `DEEPSEEK_API_KEY`, then to the DeepSeek credential in `auth.json` that `/login` writes, so an account already logged in for models needs no extra search setup. A custom `baseUrl` points the provider at a gateway or proxy and must name the API host (`https://api.deepseek.com`, or e.g. `https://gateway.example`); a trailing `/v1` is accepted.
+
 Environment variables override `settings.json`:
 
 | Variable | Description |
 |----------|-------------|
-| `NOVA_SEARCH_PROVIDER` | `so` \| `duckduckgo` \| `bing` \| `brave` \| `tavily` \| `searxng` |
-| `NOVA_SEARCH_API_KEY` | API key for `brave` / `tavily` |
-| `NOVA_SEARCH_BASE_URL` | Base URL for `searxng` |
+| `NOVA_SEARCH_PROVIDER` | `so` \| `duckduckgo` \| `bing` \| `brave` \| `tavily` \| `deepseek` \| `searxng` |
+| `NOVA_SEARCH_API_KEY` | API key for `brave` / `tavily` / `deepseek` |
+| `NOVA_SEARCH_BASE_URL` | Base URL for `searxng`, or a gateway in front of `deepseek` |
 | `NOVA_SEARCH_MAX_RESULTS` | Results to request, 1–10 (default 5) |
 | `NOVA_SEARCH_TIMEOUT_MS` | Per-request timeout, 1000–60000 ms (default 20000) |
-| `BRAVE_API_KEY` / `TAVILY_API_KEY` / `SEARXNG_URL` | Provider-specific fallbacks |
+| `BRAVE_API_KEY` / `TAVILY_API_KEY` / `DEEPSEEK_API_KEY` / `SEARXNG_URL` | Provider-specific fallbacks |
 
 ## Permissions and safety
 
@@ -63,9 +66,11 @@ Environment variables override `settings.json`:
 - `fetch_url` follows the normal permission mode — it prompts in `ask` / `edits` mode and runs freely in `allow` mode. Unattended automations that need to read pages should run with permission mode `allow`.
 - Fetched pages are untrusted data. The tool guidelines tell the model to ignore instructions found inside pages and to cite sources instead of inventing them.
 - Downloads are capped (5 MB) and returned text is capped (20 000 characters by default, configurable per call with `maxChars`) so one page cannot flood the context.
+- A trusted project's `.nova/settings.json` can override `search.provider` and `baseUrl`. Because the `deepseek` key may come from the global `auth.json`, only trust projects you would let use that key.
 
 ## Limitations
 
 - JavaScript-rendered SPAs may return little readable text; fetch the underlying API or choose another source.
 - Long pages end with a `[... truncated to N characters]` marker; fetch a more specific URL for the rest.
-- On networks where the scraping providers are blocked or rate-limited, configure `brave`/`tavily` or a self-hosted `searxng` instance.
+- On networks where the scraping providers are blocked or rate-limited, configure `brave`/`tavily`/`deepseek` or a self-hosted `searxng` instance.
+- DeepSeek's Search API is billed per successful request (¥5 per 1,000 searches at the time of writing) and returns an empty list instead of an error when a query matches nothing.

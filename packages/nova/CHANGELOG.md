@@ -11,6 +11,7 @@
 - Added fact editing: `FactStore.update`, `nova memory edit <id>` with `--text`, `--kind`, `--importance`, `--applicability`, `--topics`, and `--valid-until`, and the `memory_fact_update` `edit` action with an optional `patch`. Editing rewrites the existing fact instead of creating a new one, preserves ids, timestamps, source, pin state, usage counters, and project links, re-checks duplicates and conflicts against other active facts, rejects sensitive or overlong text, and takes effect from the next session.
 - Added a `before_prompt` internal lifecycle hook that can return custom context messages, and used it for memory injection.
 - Added `memory.facts.retrievalInterval` (default `1`) for how many user messages pass between fact-retrieval calls, clamped to 1-50. Values above `1` join the messages since the last retrieval into one query.
+- Added a `deepseek` web search provider backed by the DeepSeek Search API (`POST /v1/tools/search`), reusing the DeepSeek credential stored in `auth.json` by `/login` or `DEEPSEEK_API_KEY`. Results prefer DeepSeek's short snippet and fall back to its long summary; a custom `baseUrl` points it at a gateway. See [docs/web-search.md](docs/web-search.md).
 
 ### Changed
 

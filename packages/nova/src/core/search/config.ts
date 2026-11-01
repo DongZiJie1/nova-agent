@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { CONFIG_DIR_NAME, getSettingsPath } from "../../config.ts";
 
 /** Providers supported by the built-in web_search tool. */
-export type WebSearchProvider = "so" | "duckduckgo" | "bing" | "brave" | "tavily" | "searxng";
+export type WebSearchProvider = "so" | "duckduckgo" | "bing" | "brave" | "tavily" | "deepseek" | "searxng";
 
 export const WEB_SEARCH_PROVIDERS: readonly WebSearchProvider[] = [
 	"so",
@@ -11,8 +11,12 @@ export const WEB_SEARCH_PROVIDERS: readonly WebSearchProvider[] = [
 	"bing",
 	"brave",
 	"tavily",
+	"deepseek",
 	"searxng",
 ];
+
+/** Default base URL of DeepSeek's Search API (`POST /v1/tools/search`). */
+export const DEEPSEEK_SEARCH_BASE_URL = "https://api.deepseek.com";
 
 /**
  * 360 (so.com) needs no key and stays reachable on Chinese networks where
@@ -80,16 +84,24 @@ export function resolveWebSearchTimeoutMs(
 	);
 }
 
+export interface WebSearchConfigOptions {
+	env?: Record<string, string | undefined>;
+	settings?: WebSearchSettings;
+	/**
+	 * Look up an API key stored in auth.json by provider id (e.g. "deepseek").
+	 * Kept injectable so configuration resolution stays pure for tests.
+	 */
+	readStoredApiKey?: (providerId: string) => string | undefined;
+}
+
 /**
  * Resolve the effective search configuration.
  *
- * Precedence: environment variables > settings.json values > defaults. The
- * loader merges global settings with trusted project settings, so project
- * values win over the global file.
+ * Precedence: environment variables > settings.json values > a stored auth.json
+ * credential (DeepSeek only) > defaults. The loader merges global settings with
+ * trusted project settings, so project values win over the global file.
  */
-export function resolveWebSearchConfig(
-	options: { env?: Record<string, string | undefined>; settings?: WebSearchSettings } = {},
-): WebSearchConfig {
+export function resolveWebSearchConfig(options: WebSearchConfigOptions = {}): WebSearchConfig {
 	const env = options.env ?? process.env;
 	const settings = options.settings ?? {};
 
@@ -105,11 +117,26 @@ export function resolveWebSearchConfig(
 
 	// Provider-specific env vars keep single-provider setups zero-config.
 	const providerApiKeyEnv =
-		provider === "brave" ? env.BRAVE_API_KEY : provider === "tavily" ? env.TAVILY_API_KEY : undefined;
-	const apiKey = firstString(env.NOVA_SEARCH_API_KEY, providerApiKeyEnv, settings.apiKey);
+		provider === "brave"
+			? env.BRAVE_API_KEY
+			: provider === "tavily"
+				? env.TAVILY_API_KEY
+				: provider === "deepseek"
+					? env.DEEPSEEK_API_KEY
+					: undefined;
+	// DeepSeek keys saved by /login live in auth.json; reuse them so a logged-in
+	// DeepSeek account needs no separate search key.
+	const storedApiKey = provider === "deepseek" ? options.readStoredApiKey?.(provider) : undefined;
+	const apiKey = firstString(env.NOVA_SEARCH_API_KEY, providerApiKeyEnv, settings.apiKey, storedApiKey);
 	const providerBaseUrlEnv = provider === "searxng" ? env.SEARXNG_URL : undefined;
 	const baseUrl = firstString(env.NOVA_SEARCH_BASE_URL, providerBaseUrlEnv, settings.baseUrl);
 
+	if (provider === "deepseek" && !apiKey) {
+		throw new Error(
+			"Search provider 'deepseek' requires a DeepSeek API key. Set DEEPSEEK_API_KEY (or NOVA_SEARCH_API_KEY), " +
+				'add "search": { "apiKey": "..." } to settings.json, or log in with /login so the key is stored in auth.json.',
+		);
+	}
 	if ((provider === "brave" || provider === "tavily") && !apiKey) {
 		const keyEnv = provider === "brave" ? "BRAVE_API_KEY" : "TAVILY_API_KEY";
 		throw new Error(

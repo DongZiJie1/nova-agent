@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExtensionContext } from "../src/core/extensions/types.ts";
 import { resolveWebSearchConfig, resolveWebSearchTimeoutMs } from "../src/core/search/config.ts";
@@ -356,5 +359,209 @@ describe("readBodyTextWithLimit", () => {
 		await expect(readBodyTextWithLimit(response, 100 * 1024)).rejects.toThrow(/too large/);
 		// 64KB chunks over a 100KB limit must stop at the second chunk, not drain the stream.
 		expect(reads).toBeLessThanOrEqual(3);
+	});
+});
+
+describe("DeepSeek search provider", () => {
+	it("resolves its key from DEEPSEEK_API_KEY, settings, or the stored credential", () => {
+		const fromEnv = resolveWebSearchConfig({ env: { NOVA_SEARCH_PROVIDER: "deepseek", DEEPSEEK_API_KEY: "ds-env" } });
+		expect(fromEnv.provider).toBe("deepseek");
+		expect(fromEnv.apiKey).toBe("ds-env");
+
+		const fromSettings = resolveWebSearchConfig({
+			env: { NOVA_SEARCH_PROVIDER: "deepseek" },
+			settings: { apiKey: "ds-settings" },
+		});
+		expect(fromSettings.apiKey).toBe("ds-settings");
+
+		let consulted: string | undefined;
+		const fromAuth = resolveWebSearchConfig({
+			env: { NOVA_SEARCH_PROVIDER: "deepseek" },
+			readStoredApiKey: (providerId) => {
+				consulted = providerId;
+				return "ds-auth";
+			},
+		});
+		expect(fromAuth.apiKey).toBe("ds-auth");
+		expect(consulted).toBe("deepseek");
+
+		// Explicit NOVA_SEARCH_API_KEY wins over every fallback.
+		const explicit = resolveWebSearchConfig({
+			env: { NOVA_SEARCH_PROVIDER: "deepseek", NOVA_SEARCH_API_KEY: "explicit", DEEPSEEK_API_KEY: "ds-env" },
+			readStoredApiKey: () => "ds-auth",
+		});
+		expect(explicit.apiKey).toBe("explicit");
+	});
+
+	it("requires a DeepSeek key and only consults auth.json for deepseek", () => {
+		expect(() => resolveWebSearchConfig({ env: { NOVA_SEARCH_PROVIDER: "deepseek" } })).toThrow(
+			/DeepSeek API key.*DEEPSEEK_API_KEY.*\/login/s,
+		);
+		const consulted: string[] = [];
+		resolveWebSearchConfig({
+			env: { NOVA_SEARCH_PROVIDER: "so" },
+			readStoredApiKey: (providerId) => {
+				consulted.push(providerId);
+				return "unused";
+			},
+		});
+		expect(consulted).toEqual([]);
+	});
+
+	it("posts to the DeepSeek search API and maps results", async () => {
+		const payload = {
+			results: [
+				{ title: "DeepSeek One", url: "https://ds.example/1", snippet: "Short one", summary: "Long one" },
+				{ title: "DeepSeek Two", url: "https://ds.example/2", snippet: "", summary: "Long two" },
+				{ title: "No URL", url: "", snippet: "dropped" },
+			],
+		};
+		const { fn, calls } = stubFetch(
+			() => new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } }),
+		);
+		const response = await runWebSearch(
+			"deepseek search",
+			{ provider: "deepseek", apiKey: "ds-key", maxResults: 5, timeoutMs: 20_000 },
+			{ fetch: fn },
+		);
+		expect(calls[0].url).toBe("https://api.deepseek.com/v1/tools/search");
+		expect(calls[0].init?.method).toBe("POST");
+		expect((calls[0].init?.headers as Record<string, string>).authorization).toBe("Bearer ds-key");
+		expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+			query: "deepseek search",
+			count: 5,
+			need_content: false,
+		});
+		expect(response.results).toEqual([
+			{ title: "DeepSeek One", url: "https://ds.example/1", snippet: "Short one" },
+			{ title: "DeepSeek Two", url: "https://ds.example/2", snippet: "Long two" },
+		]);
+	});
+
+	it("honours a custom base URL and treats an empty result list as success", async () => {
+		const { fn, calls } = stubFetch(
+			() =>
+				new Response(JSON.stringify({ results: [] }), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				}),
+		);
+		const response = await runWebSearch(
+			"nothing matches",
+			{ provider: "deepseek", apiKey: "k", baseUrl: "https://gateway.example/", maxResults: 5, timeoutMs: 20_000 },
+			{ fetch: fn },
+		);
+		expect(calls[0].url).toBe("https://gateway.example/v1/tools/search");
+		expect(response.results).toEqual([]);
+
+		// A base URL that already carries the API version must not double it.
+		const versioned = stubFetch(
+			() =>
+				new Response(JSON.stringify({ results: [] }), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				}),
+		);
+		await runWebSearch(
+			"nothing matches",
+			{ provider: "deepseek", apiKey: "k", baseUrl: "https://gateway.example/v1", maxResults: 5, timeoutMs: 20_000 },
+			{ fetch: versioned.fn },
+		);
+		expect(versioned.calls[0].url).toBe("https://gateway.example/v1/tools/search");
+	});
+
+	it("surfaces DeepSeek API errors", async () => {
+		const insufficient = stubFetch(() => new Response("{}", { status: 402 }));
+		await expect(
+			runWebSearch(
+				"x",
+				{ provider: "deepseek", apiKey: "k", maxResults: 5, timeoutMs: 20_000 },
+				{ fetch: insufficient.fn },
+			),
+		).rejects.toThrow(/HTTP 402.*insufficient balance/);
+		const unauthorized = stubFetch(() => new Response("{}", { status: 401 }));
+		await expect(
+			runWebSearch(
+				"x",
+				{ provider: "deepseek", apiKey: "k", maxResults: 5, timeoutMs: 20_000 },
+				{ fetch: unauthorized.fn },
+			),
+		).rejects.toThrow(/HTTP 401.*API key/);
+	});
+
+	it("drives web_search through its default configuration path", async () => {
+		const previous = {
+			provider: process.env.NOVA_SEARCH_PROVIDER,
+			key: process.env.DEEPSEEK_API_KEY,
+			searchKey: process.env.NOVA_SEARCH_API_KEY,
+		};
+		process.env.NOVA_SEARCH_PROVIDER = "deepseek";
+		process.env.DEEPSEEK_API_KEY = "ds-env";
+		delete process.env.NOVA_SEARCH_API_KEY;
+		try {
+			const payload = { results: [{ title: "Env result", url: "https://ds.example/env", snippet: "Found" }] };
+			const { fn } = stubFetch(
+				() =>
+					new Response(JSON.stringify(payload), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+			);
+			const tool = createWebSearchToolDefinition({ fetch: fn });
+			const result = await tool.execute("t1", { query: "env search" }, undefined, undefined, ctx);
+			expect(result.details).toMatchObject({ status: "ok", provider: "deepseek" });
+			expect(textOf(result)).toContain("Env result");
+			expect(textOf(result)).toContain("https://ds.example/env");
+		} finally {
+			if (previous.provider === undefined) delete process.env.NOVA_SEARCH_PROVIDER;
+			else process.env.NOVA_SEARCH_PROVIDER = previous.provider;
+			if (previous.key === undefined) delete process.env.DEEPSEEK_API_KEY;
+			else process.env.DEEPSEEK_API_KEY = previous.key;
+			if (previous.searchKey === undefined) delete process.env.NOVA_SEARCH_API_KEY;
+			else process.env.NOVA_SEARCH_API_KEY = previous.searchKey;
+		}
+	});
+
+	it("reuses the DeepSeek credential saved by /login when no key is configured", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "nova-deepseek-search-"));
+		writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ deepseek: { type: "api_key", key: "ds-stored" } }), {
+			mode: 0o600,
+		});
+		const previous = {
+			agentDir: process.env.NOVA_CODING_AGENT_DIR,
+			provider: process.env.NOVA_SEARCH_PROVIDER,
+			searchKey: process.env.NOVA_SEARCH_API_KEY,
+			key: process.env.DEEPSEEK_API_KEY,
+		};
+		process.env.NOVA_CODING_AGENT_DIR = agentDir;
+		process.env.NOVA_SEARCH_PROVIDER = "deepseek";
+		delete process.env.NOVA_SEARCH_API_KEY;
+		delete process.env.DEEPSEEK_API_KEY;
+		try {
+			const payload = { results: [{ title: "Stored result", url: "https://ds.example/stored" }] };
+			const { fn, calls } = stubFetch(
+				() =>
+					new Response(JSON.stringify(payload), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+			);
+			const tool = createWebSearchToolDefinition({ fetch: fn });
+			const result = await tool.execute("t1", { query: "stored key" }, undefined, undefined, ctx);
+			expect(result.details).toMatchObject({ status: "ok", provider: "deepseek" });
+			expect(textOf(result)).toContain("Stored result");
+			expect((calls[0].init?.headers as Record<string, string>).authorization).toBe("Bearer ds-stored");
+			expect(calls[0].url).toBe("https://api.deepseek.com/v1/tools/search");
+		} finally {
+			if (previous.agentDir === undefined) delete process.env.NOVA_CODING_AGENT_DIR;
+			else process.env.NOVA_CODING_AGENT_DIR = previous.agentDir;
+			if (previous.provider === undefined) delete process.env.NOVA_SEARCH_PROVIDER;
+			else process.env.NOVA_SEARCH_PROVIDER = previous.provider;
+			if (previous.searchKey === undefined) delete process.env.NOVA_SEARCH_API_KEY;
+			else process.env.NOVA_SEARCH_API_KEY = previous.searchKey;
+			if (previous.key === undefined) delete process.env.DEEPSEEK_API_KEY;
+			else process.env.DEEPSEEK_API_KEY = previous.key;
+			rmSync(agentDir, { recursive: true, force: true });
+		}
 	});
 });
