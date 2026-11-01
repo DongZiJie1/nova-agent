@@ -3,7 +3,7 @@
  *
  * 检索工具只给 id 与摘要，这里补上完整文本、来源会话条目和同类事实，
  * 让模型能说明「这条记忆从哪来」而不必让用户重述。
- * 事实命中会调用 `recordRetrieval([id])`；段落命中不计数。
+ * 事实被显式读取或注入 prompt 都会计入使用次数；段落命中不计数。
  */
 
 import { type Static, Type } from "typebox";
@@ -75,13 +75,13 @@ function factText(fact: Fact, related: Fact[]): string {
 	const status = fact.archivedAt === undefined ? "有效" : `已归档（${fact.archiveReason ?? "manual"}）`;
 	const lines = [
 		renderFactLine(fact),
-		`状态：${status} · 重要度：${fact.importance}/5 · 置信度：${fact.confidence} · 命中次数：${fact.retrievalCount}`,
+		`状态：${status} · 重要度：${fact.importance}/5 · 置信度：${fact.confidence} · 使用次数：${fact.retrievalCount}`,
 		`主题：${fact.topics.length > 0 ? fact.topics.join("、") : "无"}`,
 	];
 	if (fact.projects !== undefined && fact.projects.length > 0) lines.push(`项目：${fact.projects.join("、")}`);
 	if (fact.originProject !== undefined) lines.push(`来源项目：${fact.originProject.path}`);
 	if (fact.validUntil !== undefined) lines.push(`有效期至：${fact.validUntil}`);
-	if (fact.lastRetrievedAt !== undefined) lines.push(`最近命中：${fact.lastRetrievedAt}`);
+	if (fact.lastRetrievedAt !== undefined) lines.push(`最近使用：${fact.lastRetrievedAt}`);
 	lines.push(`创建：${fact.createdAt} · 更新：${fact.updatedAt}`);
 	lines.push(
 		`来源：会话 ${fact.source.sessionId} · 来源文件：${fact.source.sessionFile.length > 0 ? fact.source.sessionFile : "（无）"}`,

@@ -3,7 +3,7 @@
  *
  * 事实走 `FactIndex`（BM25），画像段落用 `factTokens` 做简单的分词匹配。
  * 只返回 id 与摘要，完整内容由 `read_memory` 提供，避免一次调用吃满上下文。
- * 命中事实会调用 `recordRetrieval` 更新使用计数（供打分与晋升使用）。
+ * 命中事实会更新使用计数（与注入共用，供打分与晋升使用）。
  */
 
 import { type Static, Type } from "typebox";

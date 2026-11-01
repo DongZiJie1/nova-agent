@@ -170,8 +170,11 @@ describe("startMemoryForSession", () => {
 	it("runs a full extraction through the real model call and stores the fact", async () => {
 		const { harness, agentDir, cwd } = await createWiringHarness();
 		harness.setResponses([extractionResponse(FACT_TEXT)]);
+		// 默认抽取预算要求区间内至少两条用户消息。
 		appendUser(harness, "Which indentation should we use?");
 		appendAssistant(harness, "Use tabs.");
+		appendUser(harness, "Should the release notes mention it?");
+		appendAssistant(harness, "Yes.");
 
 		const service = track(
 			startMemoryForSession({ session: harness.session, agentDir, cwd, settingsManager: harness.settingsManager }),

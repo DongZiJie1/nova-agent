@@ -32,6 +32,8 @@ import { SuggestionStore } from "./suggestion-store.ts";
 const DEFAULT_MAX_SESSIONS = 20;
 /** 补偿写入事实的 model 标签，便于事后区分事实是启动补偿产生的。 */
 const STARTUP_MODEL_LABEL = "startup";
+/** 启动全量评审的最低未评审事实数：不足时这次启动不评审，避免每次启动都碰一次模型。 */
+const MIN_STARTUP_REVIEW_FACTS = 3;
 /** 已跑过补偿的会话目录；同一进程内每个目录只扫一次。 */
 const compensatedDirs = new Set<string>();
 /** 启动全量评审每进程只跑一次：它扫的是全库，与具体会话目录无关。 */
@@ -226,12 +228,35 @@ export interface StartupReviewOptions {
  * 被强杀的会话产生的未评审事实由这条路径兜住。
  *
  * 与补偿一样永远不抛错、不阻塞启动：每进程只跑一次；
- * 取消（会话已结束）或失败只记诊断，状态不写，留给下次启动重试。
+ * 未评审事实不足 `MIN_STARTUP_REVIEW_FACTS` 时跳过，且不消耗"每进程一次"的额度，
+ * 让同一进程后续启动仍有机会评审。取消（会话已结束）或失败只记诊断，状态不写，
+ * 留给下次启动重试。
  */
+/** 测试用：重置「每进程只评审一次」的登记，让用例彼此独立、不依赖执行顺序。 */
+export function resetStartupReviewForTests(): void {
+	startupReviewDone = false;
+}
+
 export async function runStartupReview(options: StartupReviewOptions): Promise<void> {
 	if (startupReviewDone || options.signal?.aborted) return;
-	startupReviewDone = true;
 	const diagnose = options.onDiagnostic ?? ((message: string) => console.error("[memory:startup]", message));
+	let unreviewed: number;
+	try {
+		// 归档/被替代的未评审事实不会成为候选，不能算进评审门槛，否则会白白消耗每次启动一次的评审额度。
+		unreviewed = options.store
+			.list()
+			.filter(
+				(fact) =>
+					fact.reviewState === "unreviewed" && fact.archivedAt === undefined && fact.supersededBy === undefined,
+			).length;
+	} catch (error) {
+		startupReviewDone = true;
+		diagnose(`review failed: ${describeError(error)}`);
+		return;
+	}
+	// 评审降频：只有攒够未评审事实才值得一次全库模型调用。
+	if (unreviewed < MIN_STARTUP_REVIEW_FACTS) return;
+	startupReviewDone = true;
 	try {
 		const result = await reviewFacts({
 			agentDir: options.agentDir,

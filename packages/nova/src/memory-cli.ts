@@ -414,7 +414,7 @@ function runStat(parsed: ParsedMemoryArgs, context: MemoryCommandContext): void 
 	}
 	context.write(`Active facts: ${active}`);
 	context.write(`Archived facts: ${archived}`);
-	context.write(`Retrieval hits: ${hits}`);
+	context.write(`Usage hits: ${hits}`);
 	context.write(`Average importance (active): ${averageImportance}`);
 	context.write(`Added in last ${RECENT_FACT_DAYS} days: ${recent7Days}`);
 }

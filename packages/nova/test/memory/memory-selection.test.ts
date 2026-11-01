@@ -4,8 +4,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ExtractionCompletion } from "../../src/core/memory/fact-extraction.ts";
 import { computeProjectKey, type Fact } from "../../src/core/memory/fact-schema.ts";
+import { selectFacts } from "../../src/core/memory/fact-scoring.ts";
 import { type FactDraft, FactStore } from "../../src/core/memory/fact-store.ts";
 import {
+	deriveProjectTopics,
 	type FactQuerySelectionOptions,
 	type FactQuerySelectionResult,
 	QUERY_SELECTION_MAX_FACTS,
@@ -65,6 +67,73 @@ function addMatchingFacts(store: FactStore, count: number): Fact[] {
 		facts.push(addFact(store, `alpha topic${index} detail${index}`));
 	}
 	return facts;
+}
+
+/** 当前项目里的近期事实：用来生成项目主题上下文。 */
+const PROJECT_HISTORY_TEXTS = [
+	"workspace conventions live in the repository root",
+	"build cache is shared across sibling packages",
+	"editor settings are committed for the whole team",
+	"commit messages follow the package scope",
+	"release notes are generated from the change log",
+];
+
+function addProjectHistory(store: FactStore, cwd: string, topics: string[], count: number): Fact[] {
+	const originProject = { key: computeProjectKey(cwd), path: cwd };
+	const facts: Fact[] = [];
+	for (let index = 1; index <= count; index += 1) {
+		const text = PROJECT_HISTORY_TEXTS[(index - 1) % PROJECT_HISTORY_TEXTS.length];
+		facts.push(
+			addFact(store, `${text} ${index}`, {
+				applicability: "transferable",
+				originProject,
+				topics,
+			}),
+		);
+	}
+	return facts;
+}
+
+/** 与选择器同一套打分参数下的期望顺序：证明没有主题上下文时排序不变。 */
+function baselineIds(workspace: Workspace, facts: Fact[] = workspace.store.list()): string[] {
+	return selectFacts(facts, {
+		projectKey: computeProjectKey(workspace.cwd),
+		maxPromptFacts: QUERY_SELECTION_MAX_FACTS,
+	}).map((entry) => entry.fact.id);
+}
+
+const TOPIC_DAY_MS = 24 * 60 * 60 * 1000;
+const TOPIC_NOW = Date.parse("2026-10-19T12:00:00.000Z");
+
+function isoFromNow(days: number): string {
+	return new Date(TOPIC_NOW + days * TOPIC_DAY_MS).toISOString();
+}
+
+/** 纯函数 `deriveProjectTopics` 的输入：不落盘，直接构造 Fact。 */
+function makeTopicFact(overrides: Partial<Fact> = {}): Fact {
+	sourceCounter += 1;
+	return {
+		id: `fact_topic_${sourceCounter}`,
+		text: "项目约定 fact",
+		kind: "decision",
+		applicability: "universal",
+		topics: [],
+		importance: 3,
+		confidence: 0.8,
+		createdAt: isoFromNow(0),
+		updatedAt: isoFromNow(0),
+		retrievalCount: 0,
+		pinned: false,
+		reviewState: "unreviewed",
+		source: {
+			sessionFile: "/sessions/test.jsonl",
+			sessionId: `session_${sourceCounter}`,
+			entryIds: [],
+			extractedAt: isoFromNow(0),
+			model: "provider/model",
+		},
+		...overrides,
+	};
 }
 
 type Reply = (input: { systemPrompt: string; userPrompt: string; signal?: AbortSignal }) => Promise<string>;
@@ -515,5 +584,143 @@ describe("selectFactsForQuery excludeIds", () => {
 		expect(result.source).toBe("score");
 		expect(result.facts).toHaveLength(QUERY_SELECTION_MAX_FACTS);
 		for (const fact of result.facts) expect(excludedIds.has(fact.id)).toBe(false);
+	});
+});
+
+describe("deriveProjectTopics", () => {
+	it("returns undefined without active, linked, recent facts", () => {
+		const projectKey = "proj_current";
+		const old = isoFromNow(-20);
+		const facts = [
+			makeTopicFact({ topics: ["unlinked"] }),
+			makeTopicFact({ topics: ["stale"], projects: [projectKey], createdAt: old, updatedAt: old }),
+			makeTopicFact({ topics: ["archived"], projects: [projectKey], archivedAt: isoFromNow(0) }),
+		];
+
+		expect(deriveProjectTopics(facts, projectKey, TOPIC_NOW)).toBeUndefined();
+	});
+
+	it("ranks linked recent topics by frequency and keeps the top five", () => {
+		const projectKey = "proj_current";
+		const facts = [
+			makeTopicFact({ topics: ["zeta"], projects: [projectKey] }),
+			makeTopicFact({ topics: ["zeta"], projects: [projectKey] }),
+			makeTopicFact({ topics: ["zeta", "alpha"], projects: [projectKey] }),
+			makeTopicFact({ topics: ["beta"], projects: [projectKey] }),
+			makeTopicFact({ topics: ["beta"], projects: [projectKey] }),
+			makeTopicFact({ topics: ["gamma"], projects: [projectKey] }),
+			makeTopicFact({ topics: ["delta"], projects: [projectKey] }),
+			makeTopicFact({ topics: ["epsilon"], projects: [projectKey] }),
+		];
+
+		expect(deriveProjectTopics(facts, projectKey, TOPIC_NOW)).toEqual(["zeta", "beta", "alpha", "delta", "epsilon"]);
+	});
+
+	it("follows the origin project and counts a topic once per fact", () => {
+		const projectKey = "proj_current";
+		const transferable = makeTopicFact({
+			applicability: "transferable",
+			originProject: { key: projectKey, path: "/repo/current" },
+			topics: ["typescript", "typescript"],
+		});
+
+		expect(deriveProjectTopics([transferable], projectKey, TOPIC_NOW)).toEqual(["typescript"]);
+	});
+
+	it("counts a fact updated recently even when it was created earlier", () => {
+		const projectKey = "proj_current";
+		const refreshed = makeTopicFact({
+			projects: [projectKey],
+			topics: ["refreshed"],
+			createdAt: isoFromNow(-20),
+			updatedAt: isoFromNow(0),
+		});
+
+		expect(deriveProjectTopics([refreshed], projectKey, TOPIC_NOW)).toEqual(["refreshed"]);
+	});
+});
+
+describe("selectFactsForQuery project topics", () => {
+	it("ranks a fact overlapping the project topics above an otherwise equal fact in the score fallback", async () => {
+		const workspace = createWorkspace();
+		const projectKey = computeProjectKey(workspace.cwd);
+		addProjectHistory(workspace.store, workspace.cwd, ["typescript"], 2);
+		// unrelated 先入库：没有主题加成时它会凭插入顺序排在 related 前面。
+		const unrelated = addFact(workspace.store, "alpha unrelated preference", {
+			topics: ["database"],
+			importance: 4,
+		});
+		const related = addFact(workspace.store, "alpha related preference", { topics: ["typescript"], importance: 4 });
+		addMatchingFacts(workspace.store, QUERY_SELECTION_MAX_FACTS);
+		const rec = recorder(async () => '{"ids":[]}');
+
+		const result = await selectFactsForQuery(selectionOptions(workspace, rec, "alpha"));
+
+		expect(deriveProjectTopics(workspace.store.active(), projectKey)).toEqual(["typescript"]);
+		expect(result.source).toBe("score");
+		const ids = result.facts.map((fact) => fact.id);
+		expect(ids).toContain(related.id);
+		expect(ids).toContain(unrelated.id);
+		expect(ids.indexOf(related.id)).toBeLessThan(ids.indexOf(unrelated.id));
+	});
+
+	it("keeps ordering unchanged when the library holds no project topic history", async () => {
+		const workspace = createWorkspace();
+		addMatchingFacts(workspace.store, QUERY_SELECTION_MAX_FACTS + 2);
+		const rec = recorder(async () => '{"ids":[]}');
+
+		const result = await selectFactsForQuery(selectionOptions(workspace, rec, "alpha"));
+
+		expect(result.source).toBe("score");
+		expect(result.facts.map((fact) => fact.id)).toEqual(baselineIds(workspace));
+	});
+
+	it("keeps ordering unchanged when project topics do not overlap any candidate", async () => {
+		const workspace = createWorkspace();
+		const projectKey = computeProjectKey(workspace.cwd);
+		// 已过期但仍在 active() 里的事实只贡献项目主题，本身不进候选。
+		addFact(workspace.store, "project history expired", {
+			applicability: "project",
+			projects: [projectKey],
+			topics: ["typescript"],
+			validUntil: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+		});
+		addMatchingFacts(workspace.store, QUERY_SELECTION_MAX_FACTS + 2);
+		const rec = recorder(async () => '{"ids":[]}');
+
+		const result = await selectFactsForQuery(selectionOptions(workspace, rec, "alpha"));
+
+		expect(deriveProjectTopics(workspace.store.active(), projectKey)).toEqual(["typescript"]);
+		expect(result.source).toBe("score");
+		expect(result.facts.map((fact) => fact.id)).toEqual(baselineIds(workspace));
+	});
+
+	it("keeps BM25 hits ahead of topic-boosted facts in the candidate list", async () => {
+		const workspace = createWorkspace();
+		const projectKey = computeProjectKey(workspace.cwd);
+		addProjectHistory(workspace.store, workspace.cwd, ["typescript"], 2);
+		const bm25Hit = addFact(workspace.store, "zzunique build detail", { topics: ["database"], importance: 2 });
+		const topicTop = addFact(workspace.store, "alpha filler preference high", {
+			topics: ["typescript"],
+			importance: 5,
+		});
+		for (let index = 1; index <= 11; index += 1) {
+			addFact(workspace.store, `alpha filler rule${index} detail${index}`);
+		}
+		const rec = recorder(async () => '{"ids":[]}');
+
+		await selectFactsForQuery(selectionOptions(workspace, rec, "zzunique"));
+
+		const promptIds = [...rec.userPrompts[0]!.matchAll(/^- \[(fact_[^\]]+)\]/gm)].map((match) => match[1]!);
+		expect(promptIds[0]).toBe(bm25Hit.id);
+		expect(promptIds).toHaveLength(QUERY_SELECTION_MAX_FACTS);
+		// 纯打分（含主题加成）的第一名是 topicTop；候选仍以 BM25 命中打头，说明预筛顺序没被改。
+		const scored = selectFacts(workspace.store.list(), {
+			projectKey,
+			topics: ["typescript"],
+			maxPromptFacts: QUERY_SELECTION_MAX_FACTS,
+		});
+		expect(scored[0]!.fact.id).toBe(topicTop.id);
+		expect(promptIds.indexOf(topicTop.id)).toBeGreaterThan(0);
 	});
 });

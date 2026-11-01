@@ -16,7 +16,7 @@ const DEFAULT_MAX_PROMPT_FACTS = 12;
 const DEFAULT_MAX_TEXT_CHARS = 160;
 /** 置顶事实优先入选的条数上限。 */
 const MAX_PINNED_FACTS = 3;
-/** usage 达到封顶值对应的命中次数。 */
+/** usage 达到封顶值对应的使用次数。 */
 const USAGE_SATURATION_COUNT = 20;
 
 export interface FactSelectionContext {
@@ -67,7 +67,7 @@ function recencyScore(fact: Fact, nowMs: number, halfLifeDays: number): number {
 	return 0.5 ** (ageDays / halfLifeDays);
 }
 
-/** 命中次数取对数并封顶到 1。 */
+/** 使用次数取对数并封顶到 1。 */
 function usageScore(retrievalCount: number): number {
 	if (!Number.isFinite(retrievalCount) || retrievalCount <= 0) return 0;
 	return Math.min(1, Math.log1p(retrievalCount) / Math.log1p(USAGE_SATURATION_COUNT));

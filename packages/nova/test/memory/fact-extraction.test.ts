@@ -1,13 +1,14 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	applyExtractedFacts,
 	type ExtractedFact,
 	type ExtractionCompletion,
 	type ExtractionContext,
 	extractFacts,
+	validateProjectScope,
 } from "../../src/core/memory/fact-extraction.ts";
 import type { Fact, FactSource } from "../../src/core/memory/fact-schema.ts";
 import { type FactDraft, FactStore } from "../../src/core/memory/fact-store.ts";
@@ -25,6 +26,7 @@ let counter = 0;
 
 afterEach(() => {
 	for (const directory of tempDirs.splice(0)) rmSync(directory, { recursive: true, force: true });
+	vi.restoreAllMocks();
 });
 
 function createStore(): FactStore {
@@ -361,6 +363,26 @@ describe("extractFacts", () => {
 		expect(facts[0]?.text).toBe("项目统一使用 pnpm 管理依赖");
 	});
 
+	it("drops facts whose confidence is below 0.4", async () => {
+		const { complete } = makeComplete(
+			factJson([
+				extractedFact("项目统一使用 pnpm 管理依赖", { importance: 4, confidence: 0.2 }),
+				extractedFact("所有提交信息使用中文短句描述", { importance: 4, confidence: 0.4 }),
+			]),
+		);
+		const diagnostics: string[] = [];
+		const facts = await extractFacts({
+			entries: [userEntry("以后统一用 pnpm")],
+			context: makeContext(),
+			settings: makeSettings(),
+			complete,
+			onDiagnostic: (message) => diagnostics.push(message),
+		});
+		expect(facts).toHaveLength(1);
+		expect(facts[0]?.text).toBe("所有提交信息使用中文短句描述");
+		expect(diagnostics.some((message) => message.includes("low_confidence"))).toBe(true);
+	});
+
 	it("filters facts already covered by the user profile", async () => {
 		const { complete } = makeComplete(
 			factJson([
@@ -540,5 +562,50 @@ describe("applyExtractedFacts", () => {
 		});
 		expect(result.created).toBe(1);
 		expect(result.facts[0]?.supersedes).toBeUndefined();
+	});
+});
+
+describe("validateProjectScope", () => {
+	it("downgrades project facts that do not include the source project", () => {
+		const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+		const [fact] = validateProjectScope(
+			[
+				extractedFact("项目统一使用 pnpm 管理依赖", {
+					applicability: "project",
+					projects: ["other_project"],
+				}),
+			],
+			PROJECT_KEY,
+		);
+
+		expect(fact?.applicability).toBe("transferable");
+		expect(fact?.projects).toBeUndefined();
+		expect(consoleError).toHaveBeenCalledWith("[memory:extract]", expect.stringContaining(PROJECT_KEY));
+	});
+
+	it("keeps project facts that include the source project", () => {
+		const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+		const [fact] = validateProjectScope(
+			[
+				extractedFact("项目统一使用 pnpm 管理依赖", {
+					applicability: "project",
+					projects: [PROJECT_KEY],
+				}),
+			],
+			PROJECT_KEY,
+		);
+
+		expect(fact?.applicability).toBe("project");
+		expect(fact?.projects).toEqual([PROJECT_KEY]);
+		expect(consoleError).not.toHaveBeenCalled();
+	});
+
+	it("leaves universal and transferable facts untouched", () => {
+		const [fact] = validateProjectScope(
+			[extractedFact("所有提交信息使用中文短句描述", { applicability: "universal" })],
+			PROJECT_KEY,
+		);
+
+		expect(fact?.applicability).toBe("universal");
 	});
 });

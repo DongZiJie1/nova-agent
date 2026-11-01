@@ -23,8 +23,14 @@ import {
 } from "../lifecycle-hooks.ts";
 import type { SessionEntry, SessionManager } from "../session-manager.ts";
 import { UserMemoryStore } from "../user-memory.ts";
-import { applyExtractedFacts, type ExtractedFact, type ExtractionCompletion, extractFacts } from "./fact-extraction.ts";
-import { type Fact, type FactProjectRef, type FactSource, projectRefForCwd } from "./fact-schema.ts";
+import {
+	applyExtractedFacts,
+	type ExtractedFact,
+	type ExtractionCompletion,
+	extractFacts,
+	validateProjectScope,
+} from "./fact-extraction.ts";
+import { computeProjectKey, type Fact, type FactProjectRef, type FactSource, projectRefForCwd } from "./fact-schema.ts";
 import type { FactStore } from "./fact-store.ts";
 import { truncateFactText } from "./fact-text.ts";
 import { appendExtractionMarker, readExtractionMarker, selectPendingEntries } from "./memory-marker.ts";
@@ -127,15 +133,59 @@ function attachOriginProject(facts: ExtractedFact[], originProject: FactProjectR
 	);
 }
 
+/** 区间内的用户消息条数：抽取质量取决于用户实际表达的轮次，只有助手尾巴时不必调用模型。 */
+function countUserMessages(entries: SessionEntry[]): number {
+	let count = 0;
+	for (const entry of entries) {
+		if (entry.type === "message" && entry.message.role === "user") count += 1;
+	}
+	return count;
+}
+
+/** 事实是否创建于本地时间今天：日预算按用户所在时区切日，而不是 UTC 日界。 */
+function isCreatedToday(fact: Fact, now: Date): boolean {
+	const created = new Date(fact.createdAt);
+	if (Number.isNaN(created.getTime())) return false;
+	return (
+		created.getFullYear() === now.getFullYear() &&
+		created.getMonth() === now.getMonth() &&
+		created.getDate() === now.getDate()
+	);
+}
+
 /**
  * 对当前分支的待处理消息执行一次抽取。
  * 没有待处理消息时返回 `ran: false` 且不调用模型；模型或解析失败原样向上抛，且不写标记。
+ * 抽取预算（用户轮数、每日事实数）不满足时同样返回 `ran: false` 且不推进标记，
+ * 让这段消息留到下一次触发再试。
  */
 export async function runExtraction(options: RunExtractionOptions): Promise<RunExtractionResult> {
 	const branch = options.manager.getBranch();
 	const markerState = readExtractionMarker({ getEntries: () => branch });
 	const pending = selectPendingEntries(branch, markerState);
 	if (pending.length === 0) return emptyResult();
+
+	if (countUserMessages(pending) < options.settings.extraction.minUserTurns) return emptyResult();
+
+	const maxFactsPerDay = options.settings.extraction.maxFactsPerDay;
+	if (maxFactsPerDay > 0) {
+		let createdToday: number;
+		try {
+			const now = new Date();
+			createdToday = options.store.list().filter((fact) => isCreatedToday(fact, now)).length;
+		} catch (error) {
+			// 事实库读不出来时不在预算检查这里改变行为：让后面的抽取路径按既有方式报错。
+			console.error("[memory:extract]", error);
+			createdToday = 0;
+		}
+		if (createdToday >= maxFactsPerDay) {
+			console.error(
+				"[memory:extract]",
+				`daily fact budget reached (${createdToday}/${maxFactsPerDay}); skipping extraction`,
+			);
+			return emptyResult();
+		}
+	}
 
 	const project = projectRefForCwd(options.cwd);
 	const firstEntryId = pending[0].id;
@@ -161,9 +211,11 @@ export async function runExtraction(options: RunExtractionOptions): Promise<RunE
 		signal: options.signal,
 	});
 
+	// 作用域校验：不属于当前项目的事实先降级为 transferable，再补来源项目并落库。
+	const scoped = validateProjectScope(extracted, computeProjectKey(options.cwd));
 	const applied = applyExtractedFacts({
 		store: options.store,
-		facts: attachOriginProject(extracted, project),
+		facts: attachOriginProject(scoped, project),
 		source,
 		projectKey: project.key,
 	});
@@ -360,6 +412,13 @@ export class MemoryService {
 		});
 		if (result.facts.length === 0) return undefined;
 		for (const fact of result.facts) this.retrievedIds.add(fact.id);
+		// 注入也是曝光：与显式检索共用同一套使用计数，注入过的事实才不会按
+		// 创建时间衰减沉底。写盘失败只记日志，不能把注入本身变成错误。
+		try {
+			this.options.store.recordUsage(result.facts.map((fact) => fact.id));
+		} catch (error) {
+			this.logInjectionError(error);
+		}
 
 		return {
 			messages: [
@@ -453,8 +512,11 @@ export class MemoryService {
 					onMemoryWrite: () => this.options.session.recordMemoryWrite(),
 					signal: controller.signal,
 				});
-				// 抽取成功后顺带评审：与抽取共用同一个取消信号，评审失败只记日志。
-				if (extraction.ran) await this.reviewSession(controller.signal);
+				// 评审降频：只有本次抽取新增的事实数达到门槛才顺带评审，避免每次抽取后再多一次模型调用。
+				// 与抽取共用同一个取消信号，评审失败只记日志。
+				if (extraction.ran && extraction.created >= this.options.settings.review.minNewFacts) {
+					await this.reviewSession(controller.signal);
+				}
 			} catch (error) {
 				// 主动取消不算失败，避免关闭会话时刷无意义的错误。
 				if (!this.disposed) this.logExtractionError(error);
@@ -499,5 +561,9 @@ export class MemoryService {
 
 	private logExtractionError(error: unknown): void {
 		console.error("[memory:extract]", error);
+	}
+
+	private logInjectionError(error: unknown): void {
+		console.error("[memory:inject]", error);
 	}
 }

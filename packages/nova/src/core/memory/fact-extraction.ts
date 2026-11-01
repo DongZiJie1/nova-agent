@@ -77,6 +77,8 @@ const MIN_ENGLISH_WORDS = 4;
 const GREETING_MAX_CHARS = 12;
 /** 与画像段落达到此相似度的事实视为画像重复。 */
 const PROFILE_DUPLICATE_SIMILARITY = 0.85;
+/** 低于此置信度的事实不落库：模型自己都不确定的内容不值得长期保留。 */
+const MIN_STORED_CONFIDENCE = 0.4;
 
 const CJK_CHAR = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]/;
 const GREETING_PATTERN = /^(?:你好|您好|hi\b|hello\b|在吗|谢谢|好的|ok\b|嗯|收到|明白)/i;
@@ -349,6 +351,7 @@ function dropReason(
 	if (isGreeting(fact.text)) return "greeting";
 	if (isSensitiveText(fact.text)) return "sensitive";
 	if (duplicatesProfile(fact.text, context.sections)) return "profile_duplicate";
+	if (fact.confidence < MIN_STORED_CONFIDENCE) return "low_confidence";
 	if (fact.importance < settings.extraction.minImportance) return "low_importance";
 	return undefined;
 }
@@ -447,6 +450,20 @@ export function applyExtractedFacts(input: {
 		}
 	}
 	return result;
+}
+
+/**
+ * 作用域校验：`project` 事实必须包含来源会话 cwd 的项目键（`computeProjectKey(cwd)`）。
+ * 模型偶尔会把别的项目键写进来；这类事实按 project 落库后会在当前项目里消失、却在无关项目
+ * 出现，所以降级为 transferable 并清掉项目列表，同时留下诊断。
+ */
+export function validateProjectScope(facts: ExtractedFact[], projectKey: string): ExtractedFact[] {
+	return facts.map((fact) => {
+		if (fact.applicability !== "project") return fact;
+		if ((fact.projects ?? []).includes(projectKey)) return fact;
+		console.error("[memory:extract]", `project-scoped fact does not include the source project ${projectKey}`);
+		return { ...fact, applicability: "transferable", projects: undefined };
+	});
 }
 
 function buildFactDraft(extracted: ExtractedFact, source: FactSource, projectKey: string, store: FactStore): FactDraft {

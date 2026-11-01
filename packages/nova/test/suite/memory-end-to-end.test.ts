@@ -273,7 +273,8 @@ describe("memory end-to-end", () => {
 		const options = {
 			agentDir: ws.agentDir,
 			sessionDir: ws.sessionDir,
-			settings: settings(),
+			// 尾巴只有一轮对话；抽取预算的默认值由 test/memory 下的预算用例覆盖。
+			settings: resolveMemorySettings({ extraction: { minUserTurns: 1 } }),
 			store: ws.store,
 			complete: fixedCompletion(JSON.stringify({ facts: [extractedFactJson(TAIL_FACT)] })),
 		};

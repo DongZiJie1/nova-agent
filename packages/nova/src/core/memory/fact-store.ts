@@ -33,7 +33,7 @@ const DEFAULT_IMPORTANCE = 3;
 const DEFAULT_CONFIDENCE = 0.5;
 /** 过期后仍保留的宽限天数。 */
 const EXPIRY_GRACE_DAYS = 7;
-/** 未被命中且不重要的陈旧天数。 */
+/** 长期未被使用（检索或注入）且不重要的陈旧天数。 */
 const STALE_AFTER_DAYS = 90;
 const STALE_MAX_IMPORTANCE = 2;
 /** 被替代后到归档的保留天数。 */
@@ -412,7 +412,11 @@ export class FactStore {
 		});
 	}
 
-	recordRetrieval(ids: string[]): void {
+	/**
+	 * 记一次使用：显式检索与 prompt 注入共用同一套计数，注入过的事实同样
+	 * 刷新 `lastRetrievedAt`，避免只被自动注入的事实按创建时间衰减沉底。
+	 */
+	recordUsage(ids: string[]): void {
 		const wanted = new Set(ids);
 		if (wanted.size === 0) return;
 		this.withLockedState((state) => {
@@ -426,6 +430,11 @@ export class FactStore {
 			}
 			return { changed, result: undefined };
 		});
+	}
+
+	/** 显式检索的旧入口，语义等同于 `recordUsage`。 */
+	recordRetrieval(ids: string[]): void {
+		this.recordUsage(ids);
 	}
 
 	prune(options: PruneOptions = {}): { archived: number } {

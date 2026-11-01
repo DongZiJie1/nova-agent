@@ -6,6 +6,7 @@
  * - 只在“选择模式为 query、符合门控的事实多于 10 条”时调用模型；其余情况直接用打分或全量结果。
  * - 门控与打分共用 `isFactEligible`：别的项目的 `project` 事实、过期事实不会进入候选。
  * - 模型只看到本地候选：BM25 命中优先，命中不足 10 条时用打分结果补足，按 id 去重。
+ * - 项目主题上下文只影响补足与打分回退的排序（`topicScore`），不改变 BM25 命中的先后。
  * - `excludeIds`（本次会话已注入过的 id）从门控阶段就剔除，同时写进提示词，避免重复挑同一条记忆。
  * - 模型超时、抛错、输出不可解析或没有有效 id 时回退到打分结果，不向调用方抛错。
  */
@@ -68,10 +69,64 @@ function timeValue(iso: string): number {
 	return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-/** 打分与回退共用同一份上下文：当前项目、作用域门控与预算都跟随设置。 */
-function selectionContext(cwd: string, settings: ResolvedMemorySettings): FactSelectionContext {
+/** 项目主题上下文的回溯窗口：只看最近 14 天内创建或更新过的事实。 */
+const PROJECT_TOPIC_WINDOW_DAYS = 14;
+/** 项目主题上下文最多取 5 个高频主题。 */
+const MAX_PROJECT_TOPICS = 5;
+
+/** 事实是否链接到当前项目：`projects` 命中，或来源项目就是当前项目。 */
+function isLinkedToProject(fact: Fact, projectKey: string): boolean {
+	if ((fact.projects ?? []).includes(projectKey)) return true;
+	return fact.originProject?.key === projectKey;
+}
+
+/** 创建时间与更新时间的较新者；都不可解析时返回 NaN。 */
+function freshestTimestamp(fact: Fact): number {
+	const created = Date.parse(fact.createdAt);
+	const updated = Date.parse(fact.updatedAt);
+	if (Number.isNaN(created)) return updated;
+	if (Number.isNaN(updated)) return created;
+	return Math.max(created, updated);
+}
+
+/**
+ * 当前项目的主题上下文：活跃、链接到本项目、最近 14 天内创建或更新的事实，
+ * 按主题出现频次取前 5；频次相同按主题名排序，保证同样的库得到同样的结果。
+ * 没有合格事实或没有主题时返回 undefined，调用方据此保持原有的打分与排序。
+ * 纯函数：只遍历一次传入的事实列表，不读库、不依赖外部状态。
+ */
+export function deriveProjectTopics(
+	facts: readonly Fact[],
+	projectKey: string,
+	nowMs: number = Date.now(),
+): string[] | undefined {
+	const oldest = nowMs - PROJECT_TOPIC_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+	const counts = new Map<string, number>();
+	for (const fact of facts) {
+		if (fact.archivedAt !== undefined || fact.supersededBy !== undefined) continue;
+		if (!isLinkedToProject(fact, projectKey)) continue;
+		const freshest = freshestTimestamp(fact);
+		if (Number.isNaN(freshest) || freshest < oldest) continue;
+		for (const topic of new Set(fact.topics)) {
+			counts.set(topic, (counts.get(topic) ?? 0) + 1);
+		}
+	}
+	if (counts.size === 0) return undefined;
+	const ranked = [...counts.entries()].sort(
+		(left, right) => right[1] - left[1] || (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0),
+	);
+	return ranked.slice(0, MAX_PROJECT_TOPICS).map(([topic]) => topic);
+}
+
+/** 打分与回退共用同一份上下文：当前项目、项目主题、作用域门控与预算都跟随设置。 */
+function selectionContext(
+	projectKey: string,
+	settings: ResolvedMemorySettings,
+	topics: string[] | undefined,
+): FactSelectionContext {
 	return {
-		projectKey: computeProjectKey(cwd),
+		projectKey,
+		topics,
 		gateProjectFacts: settings.facts.gateProjectFacts,
 		crossProjectRecall: settings.facts.crossProjectRecall,
 		halfLifeDays: settings.facts.halfLifeDays,
@@ -229,11 +284,14 @@ async function completeWithinTimeout(input: CompletionInput): Promise<string | u
  * 事实库读取失败（文件损坏）仍然抛出：这不是模型失败，静默返回空结果会掩盖数据问题。
  */
 export async function selectFactsForQuery(options: FactQuerySelectionOptions): Promise<FactQuerySelectionResult> {
-	const context = selectionContext(options.cwd, options.settings);
+	const projectKey = computeProjectKey(options.cwd);
+	// 只读一次库：项目主题上下文、打分回退与门控筛选共用同一份活跃事实快照。
+	const activeFacts = options.store.active();
+	const context = selectionContext(projectKey, options.settings, deriveProjectTopics(activeFacts, projectKey));
 	const exclude = options.excludeIds ?? EMPTY_IDS;
 	const scored = (): Fact[] =>
 		selectFacts(
-			options.store.list().filter((fact) => !exclude.has(fact.id)),
+			activeFacts.filter((fact) => !exclude.has(fact.id)),
 			context,
 		).map((entry) => entry.fact);
 	const fallback = (): FactQuerySelectionResult => ({ facts: scored(), source: "score" });
@@ -241,7 +299,7 @@ export async function selectFactsForQuery(options: FactQuerySelectionOptions): P
 	if (options.settings.facts.selection === "score") return fallback();
 
 	// 先过门控：别的项目的 project 事实、过期事实、本次会话已注入过的事实都不进候选池。
-	const eligible = options.store.active().filter((fact) => !exclude.has(fact.id) && isFactEligible(fact, context));
+	const eligible = activeFacts.filter((fact) => !exclude.has(fact.id) && isFactEligible(fact, context));
 	if (eligible.length === 0) return { facts: [], source: "all" };
 	if (eligible.length <= QUERY_SELECTION_MAX_FACTS) return { facts: newestFirst(eligible), source: "all" };
 

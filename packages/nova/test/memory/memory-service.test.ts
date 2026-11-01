@@ -78,7 +78,11 @@ function createHarness(options: HarnessOptions): Harness {
 		agentDir,
 		cwd,
 		session,
-		settings: resolveMemorySettings(options.settings),
+		// 多数夹具只铺一轮对话；minUserTurns 的默认值由预算用例单独验证。
+		settings: resolveMemorySettings({
+			...options.settings,
+			extraction: { minUserTurns: 1, ...options.settings?.extraction },
+		}),
 		store,
 		complete: options.complete,
 		hooks,
@@ -327,6 +331,222 @@ describe("MemoryService extraction", () => {
 		const archived = harness.store.get(seeded.fact.id);
 		expect(archived?.archivedAt).toBeDefined();
 		expect(archived?.archiveReason).toBe("expired");
+	});
+
+	it("downgrades project facts that do not belong to the source project", async () => {
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const harness = createHarness({
+			complete: completionReturning([F1], undefined, {
+				applicability: "project",
+				projects: ["other_project"],
+			}),
+		});
+		appendUser(harness.manager, "Which indentation should we use?");
+		appendAssistant(harness.manager, "Use tabs.");
+
+		harness.service.start();
+		harness.service.enqueue("manual");
+		await harness.service.flush();
+
+		const [fact] = harness.store.active();
+		expect(fact.applicability).toBe("transferable");
+		expect(fact.projects).toBeUndefined();
+		expect(fact.originProject).toEqual(projectRefForCwd(harness.cwd));
+		expect(errorSpy).toHaveBeenCalledWith(
+			"[memory:extract]",
+			expect.stringContaining(projectRefForCwd(harness.cwd).key),
+		);
+	});
+
+	it("keeps a project fact that lists the source project", async () => {
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		let projectKey = "";
+		const harness = createHarness({
+			complete: async () =>
+				JSON.stringify({
+					facts: [factPayload(F1, { importance: 4, applicability: "project", projects: [projectKey] })],
+				}),
+		});
+		projectKey = projectRefForCwd(harness.cwd).key;
+		appendUser(harness.manager, "Which indentation should we use?");
+		appendAssistant(harness.manager, "Use tabs.");
+
+		harness.service.start();
+		harness.service.enqueue("manual");
+		await harness.service.flush();
+
+		const [fact] = harness.store.active();
+		expect(fact.applicability).toBe("project");
+		expect(fact.projects).toEqual([projectKey]);
+		expect(errorSpy).not.toHaveBeenCalled();
+	});
+});
+
+describe("MemoryService extraction budget", () => {
+	it("skips extraction until the pending range holds enough user turns", async () => {
+		const prompts: string[] = [];
+		const harness = createHarness({
+			settings: { extraction: { minUserTurns: 2 } },
+			complete: completionReturning([F1], prompts),
+		});
+		const firstUserId = appendUser(harness.manager, "Which indentation should we use?");
+		appendAssistant(harness.manager, "Use tabs.");
+
+		harness.service.start();
+		harness.service.enqueue("manual");
+		await harness.service.flush();
+
+		expect(prompts).toHaveLength(0);
+		expect(harness.store.active()).toHaveLength(0);
+		expect(harness.session.writes).toBe(0);
+		expect(readExtractionMarker(harness.manager).marker).toBeUndefined();
+
+		// 第二条用户消息补上后满足门槛：标记从第一条用户消息开始，覆盖整段区间。
+		appendUser(harness.manager, "What belongs in the release notes?");
+		const lastId = appendAssistant(harness.manager, "List breaking changes.");
+		harness.service.enqueue("manual");
+		await harness.service.flush();
+
+		expect(prompts).toHaveLength(1);
+		expect(prompts[0]).toContain("Which indentation should we use?");
+		expect(prompts[0]).toContain("What belongs in the release notes?");
+		const marker = readExtractionMarker(harness.manager).marker;
+		expect(marker?.fromEntryId).toBe(firstUserId);
+		expect(marker?.throughEntryId).toBe(lastId);
+		expect(harness.store.active()).toHaveLength(1);
+	});
+
+	it("skips extraction once the daily fact budget is reached", async () => {
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const prompts: string[] = [];
+		const harness = createHarness({
+			settings: { extraction: { maxFactsPerDay: 2 } },
+			complete: completionReturning([F1], prompts),
+		});
+		for (const text of ["Dependencies stay pinned to exact versions", "Release notes list breaking changes"]) {
+			const seeded = harness.store.add({
+				text,
+				kind: "preference",
+				importance: 3,
+				source: {
+					sessionFile: "",
+					sessionId: "seed",
+					entryIds: [],
+					extractedAt: new Date().toISOString(),
+					model: "seed",
+				},
+			});
+			if (seeded.action !== "created") throw new Error(`seed failed: ${seeded.action}`);
+		}
+		appendUser(harness.manager, "Which indentation should we use?");
+		appendAssistant(harness.manager, "Use tabs.");
+
+		harness.service.start();
+		harness.service.enqueue("manual");
+		await harness.service.flush();
+
+		expect(prompts).toHaveLength(0);
+		expect(harness.store.active()).toHaveLength(2);
+		expect(harness.session.writes).toBe(0);
+		// 预算跳过不推进标记，也不抛错：这段消息留到明天或预算放开后再抽。
+		expect(readExtractionMarker(harness.manager).marker).toBeUndefined();
+		expect(errorSpy).toHaveBeenCalledWith("[memory:extract]", expect.stringContaining("daily fact budget"));
+	});
+
+	it("treats maxFactsPerDay 0 as unlimited", async () => {
+		const prompts: string[] = [];
+		const harness = createHarness({
+			settings: { extraction: { maxFactsPerDay: 0 } },
+			complete: completionReturning([F1], prompts),
+		});
+		appendUser(harness.manager, "Which indentation should we use?");
+		appendAssistant(harness.manager, "Use tabs.");
+
+		harness.service.start();
+		harness.service.enqueue("manual");
+		await harness.service.flush();
+
+		expect(prompts).toHaveLength(1);
+		expect(harness.store.active()).toHaveLength(1);
+		expect(readExtractionMarker(harness.manager).marker).toBeDefined();
+	});
+});
+
+describe("MemoryService review frequency", () => {
+	const REVIEWABLE = [
+		"Team prefers tabs for indentation",
+		"Release notes must list breaking changes",
+		"Prefer conventional commits across all projects",
+	];
+
+	function reviewablePayload(text: string): Record<string, unknown> {
+		return factPayload(text, { importance: 4 });
+	}
+
+	/** 抽取与评审共用同一个 complete：靠 system prompt 区分两次模型调用。 */
+	function twoPhaseCompletion(texts: string[]): { complete: ExtractionCompletion; reviews: () => number } {
+		let reviews = 0;
+		const complete: ExtractionCompletion = async (input) => {
+			if (input.systemPrompt.includes("You review a coding assistant's long-term memory")) {
+				reviews += 1;
+				return JSON.stringify({ suggestions: [] });
+			}
+			return JSON.stringify({ facts: texts.map((text) => reviewablePayload(text)) });
+		};
+		return { complete, reviews: () => reviews };
+	}
+
+	function reviewSettings(overrides: MemorySettings = {}): MemorySettings {
+		return {
+			...overrides,
+			facts: { promotion: { minAgeDays: 0 }, ...overrides.facts },
+		};
+	}
+
+	it("skips the post-extraction review when fewer than minNewFacts facts were created", async () => {
+		const phase = twoPhaseCompletion(REVIEWABLE.slice(0, 2));
+		const harness = createHarness({ settings: reviewSettings(), complete: phase.complete });
+		appendUser(harness.manager, "Which indentation should we use?");
+		appendAssistant(harness.manager, "Use tabs.");
+
+		harness.service.start();
+		harness.service.enqueue("manual");
+		await harness.service.flush();
+
+		expect(harness.store.active()).toHaveLength(2);
+		expect(phase.reviews()).toBe(0);
+	});
+
+	it("reviews after extraction once minNewFacts new facts were created", async () => {
+		const phase = twoPhaseCompletion(REVIEWABLE);
+		const harness = createHarness({ settings: reviewSettings(), complete: phase.complete });
+		appendUser(harness.manager, "Which indentation should we use?");
+		appendAssistant(harness.manager, "Use tabs.");
+
+		harness.service.start();
+		harness.service.enqueue("manual");
+		await harness.service.flush();
+
+		expect(harness.store.active()).toHaveLength(3);
+		expect(phase.reviews()).toBe(1);
+		expect(harness.store.active().every((fact) => fact.reviewState === "kept")).toBe(true);
+	});
+
+	it("honours a custom review.minNewFacts", async () => {
+		const phase = twoPhaseCompletion(REVIEWABLE.slice(0, 1));
+		const harness = createHarness({
+			settings: reviewSettings({ review: { minNewFacts: 1 } }),
+			complete: phase.complete,
+		});
+		appendUser(harness.manager, "Which indentation should we use?");
+		appendAssistant(harness.manager, "Use tabs.");
+
+		harness.service.start();
+		harness.service.enqueue("manual");
+		await harness.service.flush();
+
+		expect(harness.store.active()).toHaveLength(1);
+		expect(phase.reviews()).toBe(1);
 	});
 });
 
@@ -631,6 +851,46 @@ describe("MemoryService after_user_message injection", () => {
 
 		// 两条记忆都已经注入过：候选被剔除，第二轮不再返回消息。
 		expect(await harness.hooks.emitAfterUserMessage(session, "Another question")).toEqual([]);
+	});
+
+	it("counts injected facts as usage so they keep their recency", async () => {
+		const harness = createHarness({
+			settings: { facts: { selection: "score" } },
+			complete: async () => "{}",
+		});
+		const id = seedFact(harness.store, F1);
+		harness.service.start();
+
+		const messages = await harness.hooks.emitAfterUserMessage(
+			harness.session as unknown as AgentSession,
+			"Which indentation do we use?",
+		);
+		expect(messages).toHaveLength(1);
+
+		const stored = harness.store.get(id);
+		expect(stored?.retrievalCount).toBe(1);
+		expect(stored?.lastRetrievedAt).toBeDefined();
+	});
+
+	it("still injects when recording usage fails", async () => {
+		const harness = createHarness({
+			settings: { facts: { selection: "score" } },
+			complete: async () => "{}",
+		});
+		seedFact(harness.store, F1);
+		harness.service.start();
+		vi.spyOn(FactStore.prototype, "recordUsage").mockImplementation(() => {
+			throw new Error("facts.json is read-only");
+		});
+		const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+		const messages = await harness.hooks.emitAfterUserMessage(
+			harness.session as unknown as AgentSession,
+			"indentation?",
+		);
+		expect(messages).toHaveLength(1);
+		expect(messageText(messages[0]!)).toContain(F1);
+		expect(consoleError).toHaveBeenCalledWith("[memory:inject]", expect.any(Error));
 	});
 
 	it("injects nothing for an empty query, another session, or an empty store", async () => {

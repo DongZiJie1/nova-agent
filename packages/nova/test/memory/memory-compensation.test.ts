@@ -1,10 +1,15 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ExtractionCompletion } from "../../src/core/memory/fact-extraction.ts";
 import { FactStore } from "../../src/core/memory/fact-store.ts";
-import { findSessionsNeedingExtraction, runStartupCompensation } from "../../src/core/memory/memory-compensation.ts";
+import {
+	findSessionsNeedingExtraction,
+	resetStartupReviewForTests,
+	runStartupCompensation,
+	runStartupReview,
+} from "../../src/core/memory/memory-compensation.ts";
 import {
 	appendExtractionMarker,
 	MEMORY_EXTRACTION_CUSTOM_TYPE,
@@ -106,21 +111,32 @@ function writeMarker(sessionFile: string, throughEntryId: string): void {
 	);
 }
 
+interface InterruptedSessionFixture extends SessionFixture {
+	pendingUserId: string;
+}
+
 /**
- * 被强杀的会话：抽取跑过一次（标记停在 user 消息），assistant 回复没来得及抽取。
- * 这正是启动补偿唯一应该处理的形态。
+ * 被强杀的会话：上一轮已经抽取过（标记停在 assistant 回复），用户又发了下一条消息但进程被杀。
+ * 这正是启动补偿唯一应该处理的形态：标记之后至少还有一条用户消息可抽。
  */
-function createInterruptedSession(ws: Workspace, options: { sessionDir?: string } = {}): SessionFixture {
+function createInterruptedSession(ws: Workspace, options: { sessionDir?: string } = {}): InterruptedSessionFixture {
 	const fixture = createSession(ws, options);
-	writeMarker(fixture.path, fixture.userId);
-	return fixture;
+	const manager = SessionManager.open(fixture.path);
+	const pendingUserId = manager.appendMessage({
+		role: "user",
+		content: "What belongs in the release notes?",
+		timestamp: Date.now(),
+	});
+	writeMarker(fixture.path, fixture.assistantId);
+	return { ...fixture, pendingUserId };
 }
 
 function compensationOptions(ws: Workspace, complete: ExtractionCompletion): CompensationOptions {
 	return {
 		agentDir: ws.agentDir,
 		sessionDir: ws.sessionDir,
-		settings: resolveMemorySettings(undefined),
+		// 夹具里标记之后只剩一条助手回复；抽取预算（minUserTurns）由 memory-service 的预算用例覆盖。
+		settings: resolveMemorySettings({ extraction: { minUserTurns: 1 } }),
 		store: ws.store,
 		complete,
 	};
@@ -243,7 +259,7 @@ describe("findSessionsNeedingExtraction", () => {
 describe("runStartupCompensation", () => {
 	it("extracts a killed session and appends only the marker entry", async () => {
 		const ws = workspace();
-		const { path, assistantId } = createInterruptedSession(ws);
+		const { path, assistantId, pendingUserId } = createInterruptedSession(ws);
 		const before = readFileSync(path, "utf8");
 
 		const result = await runStartupCompensation(compensationOptions(ws, completionReturning(FACT_TEXT)));
@@ -254,7 +270,8 @@ describe("runStartupCompensation", () => {
 		expect(facts[0].text).toBe(FACT_TEXT);
 		expect(facts[0].source.model).toBe("startup");
 		expect(facts[0].source.sessionFile).toBe(path);
-		expect(facts[0].source.entryIds).toEqual([assistantId]);
+		// 区间里没有助手回复时，entryIds 指向区间最后一条消息。
+		expect(facts[0].source.entryIds).toEqual([pendingUserId]);
 
 		// 已有消息条目逐字节保留，只多出一行自定义标记。
 		const after = readFileSync(path, "utf8");
@@ -262,7 +279,8 @@ describe("runStartupCompensation", () => {
 		const added = after.slice(before.length).trim().split("\n");
 		expect(added).toHaveLength(1);
 		expect(JSON.parse(added[0])).toMatchObject({ type: "custom", customType: MEMORY_EXTRACTION_CUSTOM_TYPE });
-		expect(markerThrough(path)).toBe(assistantId);
+		expect(markerThrough(path)).toBe(pendingUserId);
+		expect(markerThrough(path)).not.toBe(assistantId);
 	});
 
 	it("never extracts a session that was never extracted", async () => {
@@ -301,7 +319,7 @@ describe("runStartupCompensation", () => {
 
 	it("skips sessions with a live ownership marker", async () => {
 		const ws = workspace();
-		const { path, userId } = createInterruptedSession(ws);
+		const { path, assistantId } = createInterruptedSession(ws);
 		writeFileSync(`${path}.active.${process.pid}.json`, JSON.stringify({ pid: process.pid }));
 		let calls = 0;
 		const complete: ExtractionCompletion = async () => {
@@ -313,7 +331,7 @@ describe("runStartupCompensation", () => {
 
 		expect(result).toEqual({ processed: 0, created: 0, failed: 0 });
 		expect(calls).toBe(0);
-		expect(markerThrough(path)).toBe(userId);
+		expect(markerThrough(path)).toBe(assistantId);
 	});
 
 	it("skips the caller's own session file", async () => {
@@ -327,13 +345,13 @@ describe("runStartupCompensation", () => {
 		});
 
 		expect(result).toEqual({ processed: 1, created: 1, failed: 0 });
-		expect(markerThrough(other.path)).toBe(other.assistantId);
-		expect(markerThrough(own.path)).toBe(own.userId);
+		expect(markerThrough(other.path)).toBe(other.pendingUserId);
+		expect(markerThrough(own.path)).toBe(own.assistantId);
 	});
 
 	it("ignores a corrupt session file", async () => {
 		const ws = workspace();
-		const { path, assistantId } = createInterruptedSession(ws);
+		const { path, pendingUserId } = createInterruptedSession(ws);
 		writeFileSync(join(ws.sessionDir, "broken.jsonl"), '{"type":"session","version":3,"id":');
 		const diagnostics: string[] = [];
 
@@ -344,7 +362,7 @@ describe("runStartupCompensation", () => {
 
 		expect(result).toEqual({ processed: 1, created: 1, failed: 0 });
 		expect(diagnostics).toEqual([]);
-		expect(markerThrough(path)).toBe(assistantId);
+		expect(markerThrough(path)).toBe(pendingUserId);
 		expect(ws.store.active()).toHaveLength(1);
 	});
 
@@ -365,10 +383,10 @@ describe("runStartupCompensation", () => {
 
 		expect(result.processed).toBe(2);
 		expect(result.failed).toBe(0);
-		expect(markerThrough(middle.path)).toBe(middle.assistantId);
-		expect(markerThrough(newest.path)).toBe(newest.assistantId);
-		// 最旧的会话保持原样：标记停在 user 消息，没有被补抽。
-		expect(markerThrough(oldest.path)).toBe(oldest.userId);
+		expect(markerThrough(middle.path)).toBe(middle.pendingUserId);
+		expect(markerThrough(newest.path)).toBe(newest.pendingUserId);
+		// 最旧的会话保持原样：标记停在上一轮，没有被补抽。
+		expect(markerThrough(oldest.path)).toBe(oldest.assistantId);
 	});
 
 	it("scans each session directory only once per process", async () => {
@@ -391,7 +409,7 @@ describe("runStartupCompensation", () => {
 
 	it("stops without counting failures once the signal is aborted", async () => {
 		const ws = workspace();
-		const { path, userId } = createInterruptedSession(ws);
+		const { path, assistantId } = createInterruptedSession(ws);
 		const controller = new AbortController();
 		controller.abort();
 
@@ -401,6 +419,105 @@ describe("runStartupCompensation", () => {
 		});
 
 		expect(result).toEqual({ processed: 0, created: 0, failed: 0 });
-		expect(markerThrough(path)).toBe(userId);
+		expect(markerThrough(path)).toBe(assistantId);
+	});
+});
+
+describe("runStartupReview", () => {
+	beforeEach(() => {
+		resetStartupReviewForTests();
+	});
+
+	function seedFact(ws: Workspace, text: string): string {
+		const result = ws.store.add({
+			text,
+			kind: "preference",
+			importance: 4,
+			source: {
+				sessionFile: "",
+				sessionId: "seed",
+				entryIds: [],
+				extractedAt: new Date().toISOString(),
+				model: "provider/model",
+			},
+		});
+		if (result.action !== "created") throw new Error(`seed failed: ${result.action}`);
+		return result.fact.id;
+	}
+
+	function reviewOptions(): { complete: ExtractionCompletion; calls: () => number } {
+		let calls = 0;
+		const complete: ExtractionCompletion = async () => {
+			calls += 1;
+			return JSON.stringify({ suggestions: [] });
+		};
+		return { complete, calls: () => calls };
+	}
+
+	// 模块级 "每进程只评审一次" 的登记是共享的：本文件的用例按顺序共用同一次评审机会。
+	it("waits for at least three unreviewed facts before reviewing", async () => {
+		const ws = workspace();
+		const complete = reviewOptions();
+		seedFact(ws, "Team prefers tabs for indentation");
+		seedFact(ws, "Release notes must list breaking changes");
+		const options = {
+			agentDir: ws.agentDir,
+			settings: resolveMemorySettings({ facts: { promotion: { minAgeDays: 0 } } }),
+			store: ws.store,
+			complete: complete.complete,
+		};
+
+		await runStartupReview(options);
+		expect(complete.calls()).toBe(0);
+
+		seedFact(ws, "Prefer conventional commits across all projects");
+		await runStartupReview(options);
+		expect(complete.calls()).toBe(1);
+	});
+
+	it("reviews at most once per process", async () => {
+		const ws = workspace();
+		const complete = reviewOptions();
+		for (const text of [
+			"Dependencies stay pinned to exact versions",
+			"Lockfile changes require explicit review",
+			"Every store write is atomic through a temporary file",
+		]) {
+			seedFact(ws, text);
+		}
+		const options = {
+			agentDir: ws.agentDir,
+			settings: resolveMemorySettings({ facts: { promotion: { minAgeDays: 0 } } }),
+			store: ws.store,
+			complete: complete.complete,
+		};
+
+		await runStartupReview(options);
+		expect(complete.calls()).toBe(1);
+
+		await runStartupReview(options);
+		expect(complete.calls()).toBe(1);
+	});
+
+	it("does not count archived unreviewed facts toward the startup gate", async () => {
+		const ws = workspace();
+		const complete = reviewOptions();
+		seedFact(ws, "Team prefers tabs for indentation");
+		seedFact(ws, "Release notes must list breaking changes");
+		const archivedId = seedFact(ws, "Every store write is atomic through a temporary file");
+		ws.store.archive(archivedId, "manual");
+		const options = {
+			agentDir: ws.agentDir,
+			settings: resolveMemorySettings({ facts: { promotion: { minAgeDays: 0 } } }),
+			store: ws.store,
+			complete: complete.complete,
+		};
+
+		await runStartupReview(options);
+		expect(complete.calls()).toBe(0);
+
+		seedFact(ws, "Prefer conventional commits across all projects");
+		await runStartupReview(options);
+		expect(complete.calls()).toBe(1);
 	});
 });

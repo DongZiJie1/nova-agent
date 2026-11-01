@@ -26,6 +26,7 @@ const MAX_REVIEW_CANDIDATES = 10;
 const MAX_SUGGESTIONS = 5;
 const MAX_TITLE_CHARS = 80;
 const MAX_CONTENT_CHARS = 4000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const REVIEW_SYSTEM_PROMPT = `You review a coding assistant's long-term memory and propose changes to the user's durable profile.
 Reply with a single JSON object and nothing else: no prose, no markdown fences, no comments, no trailing text.
@@ -83,26 +84,40 @@ function isActiveFact(fact: Fact): boolean {
 	return fact.archivedAt === undefined && fact.supersededBy === undefined;
 }
 
+/** 事实是否已存在至少 `minAgeDays` 天；创建时间不可解析时一律不算。 */
+function isOldEnough(fact: Fact, minAgeDays: number, nowMs: number): boolean {
+	const createdMs = Date.parse(fact.createdAt);
+	if (Number.isNaN(createdMs)) return false;
+	return nowMs - createdMs >= minAgeDays * DAY_MS;
+}
+
 /**
- * 候选事实：未评审、未归档、未被替代、universal、无有效期，
- * 且重要性达到晋升门槛，或由 `remember` 工具显式写入（`source.model === "explicit"`）。
+ * 候选事实：未评审、未归档、未被替代、universal、无有效期，且创建时间达到
+ * `promotion.minAgeDays`；在此之上满足任一条即可：
+ * 使用次数达到 `promotion.minHits`、重要性达到 `promotion.minImportance`、
+ * 或由 `remember` 工具显式写入（`source.model === "explicit"`，`skipExplicitExemption`
+ * 为 true 时不再适用）。
  */
-function isReviewCandidate(fact: Fact, options: ReviewOptions): boolean {
+function isReviewCandidate(fact: Fact, options: ReviewOptions, nowMs: number): boolean {
 	if (fact.reviewState !== "unreviewed" || !isActiveFact(fact)) return false;
 	if (fact.applicability !== "universal" || fact.validUntil !== undefined) return false;
 	if (options.scope.type === "session" && fact.source.sessionId !== options.scope.sessionId) return false;
+	if (!isOldEnough(fact, options.settings.facts.promotion.minAgeDays, nowMs)) return false;
+	if (fact.retrievalCount >= options.settings.facts.promotion.minHits) return true;
 	if (fact.importance >= options.settings.facts.promotion.minImportance) return true;
 	if (options.skipExplicitExemption === true) return false;
 	return fact.source.model === "explicit";
 }
 
-/** 高重要性优先；同分按更新时间倒序，再按 id 保证顺序稳定。 */
+/** 按 `importance * confidence` 降序；同分按更新时间倒序，再按 id 保证顺序稳定。 */
 function selectReviewCandidates(options: ReviewOptions): Fact[] {
+	const nowMs = Date.now();
 	return options.store
 		.list()
-		.filter((fact) => isReviewCandidate(fact, options))
+		.filter((fact) => isReviewCandidate(fact, options, nowMs))
 		.sort((left, right) => {
-			if (right.importance !== left.importance) return right.importance - left.importance;
+			const scoreDiff = right.importance * right.confidence - left.importance * left.confidence;
+			if (scoreDiff !== 0) return scoreDiff;
 			const byUpdated = updatedAtMs(right) - updatedAtMs(left);
 			if (byUpdated !== 0) return byUpdated;
 			if (left.id === right.id) return 0;

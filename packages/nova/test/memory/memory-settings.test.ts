@@ -56,9 +56,14 @@ describe("resolveMemorySettings", () => {
 				maxInputChars: 24000,
 				minImportance: 2,
 				maxFactsPerBatch: 8,
+				minUserTurns: 2,
+				maxFactsPerDay: 30,
 				model: undefined,
 				timeoutMs: 30000,
 				sessionEndFlushMs: 3000,
+			},
+			review: {
+				minNewFacts: 3,
 			},
 		});
 		expect(resolved).toEqual(DEFAULT_MEMORY_SETTINGS);
@@ -77,16 +82,19 @@ describe("resolveMemorySettings", () => {
 		expect(resolved.facts).not.toBe(DEFAULT_MEMORY_SETTINGS.facts);
 		expect(resolved.facts.promotion).not.toBe(DEFAULT_MEMORY_SETTINGS.facts.promotion);
 		expect(resolved.extraction).not.toBe(DEFAULT_MEMORY_SETTINGS.extraction);
+		expect(resolved.review).not.toBe(DEFAULT_MEMORY_SETTINGS.review);
 
 		resolved.facts.maxPromptTokens = 1;
 		resolved.facts.promotion.auto = true;
 		resolved.extraction.timeoutMs = 1;
 		resolved.extraction.model = "mutated/model";
+		resolved.review.minNewFacts = 1;
 
 		expect(DEFAULT_MEMORY_SETTINGS.facts.maxPromptTokens).toBe(1000);
 		expect(DEFAULT_MEMORY_SETTINGS.facts.promotion.auto).toBe(false);
 		expect(DEFAULT_MEMORY_SETTINGS.extraction.timeoutMs).toBe(30000);
 		expect(DEFAULT_MEMORY_SETTINGS.extraction.model).toBeUndefined();
+		expect(DEFAULT_MEMORY_SETTINGS.review.minNewFacts).toBe(3);
 	});
 
 	it("keeps the other facts fields at their defaults when only maxPromptTokens is set", () => {
@@ -112,8 +120,33 @@ describe("resolveMemorySettings", () => {
 		expect(resolved.extraction.maxInputChars).toBe(24000);
 		expect(resolved.extraction.minImportance).toBe(2);
 		expect(resolved.extraction.maxFactsPerBatch).toBe(8);
+		expect(resolved.extraction.minUserTurns).toBe(2);
+		expect(resolved.extraction.maxFactsPerDay).toBe(30);
 		expect(resolved.extraction.timeoutMs).toBe(30000);
 		expect(resolved.extraction.sessionEndFlushMs).toBe(3000);
+	});
+
+	it("merges review overrides and defaults minNewFacts to 3", () => {
+		expect(resolveMemorySettings(undefined).review.minNewFacts).toBe(3);
+		expect(resolveMemorySettings({ review: { minNewFacts: 5 } }).review.minNewFacts).toBe(5);
+		expect(resolveMemorySettings({ review: { minNewFacts: 1 } }).review.minNewFacts).toBe(1);
+	});
+
+	it("treats maxFactsPerDay 0 as unlimited but rejects negative values", () => {
+		expect(resolveMemorySettings({ extraction: { maxFactsPerDay: 0 } }).extraction.maxFactsPerDay).toBe(0);
+		expect(resolveMemorySettings({ extraction: { maxFactsPerDay: 12 } }).extraction.maxFactsPerDay).toBe(12);
+		expect(resolveMemorySettings({ extraction: { maxFactsPerDay: -1 } }).extraction.maxFactsPerDay).toBe(30);
+		expect(resolveMemorySettings({ extraction: { maxFactsPerDay: 2.9 } }).extraction.maxFactsPerDay).toBe(2);
+	});
+
+	it("requires minUserTurns and minNewFacts to be positive", () => {
+		expect(resolveMemorySettings({ extraction: { minUserTurns: 0 } }).extraction.minUserTurns).toBe(2);
+		expect(resolveMemorySettings({ extraction: { minUserTurns: 1 } }).extraction.minUserTurns).toBe(1);
+		expect(resolveMemorySettings({ extraction: { minUserTurns: -2 } }).extraction.minUserTurns).toBe(2);
+		expect(resolveRaw({ extraction: { minUserTurns: "3" } }).extraction.minUserTurns).toBe(2);
+		expect(resolveMemorySettings({ review: { minNewFacts: 0 } }).review.minNewFacts).toBe(3);
+		expect(resolveMemorySettings({ review: { minNewFacts: -1 } }).review.minNewFacts).toBe(3);
+		expect(resolveRaw({ review: { minNewFacts: "2" } }).review.minNewFacts).toBe(3);
 	});
 
 	it("merges nested promotion overrides field by field", () => {

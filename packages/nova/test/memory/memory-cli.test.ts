@@ -389,7 +389,7 @@ describe("stat", () => {
 
 		expect(result.text).toContain("Active facts: 2");
 		expect(result.text).toContain("Archived facts: 1");
-		expect(result.text).toContain("Retrieval hits: 0");
+		expect(result.text).toContain("Usage hits: 0");
 		expect(result.text).toContain("Added in last 7 days: 3");
 		expect(result.text).not.toContain(SETTINGS_ERROR_TEXT);
 	});

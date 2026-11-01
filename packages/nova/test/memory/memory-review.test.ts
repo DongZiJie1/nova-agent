@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -114,10 +114,18 @@ function reviewOptions(
 		signal?: AbortSignal;
 	} = {},
 ): ReviewOptions {
+	const settings = overrides.settings ?? {};
 	return {
 		agentDir: ws.agentDir,
 		cwd: ws.cwd,
-		settings: resolveMemorySettings(overrides.settings),
+		settings: resolveMemorySettings({
+			...settings,
+			facts: {
+				...settings.facts,
+				// 多数用例关心阈值而不是年龄：默认把年龄门槛关掉，年龄门槛由专门用例显式配置。
+				promotion: { minAgeDays: 0, ...settings.facts?.promotion },
+			},
+		}),
 		store: ws.store,
 		suggestions: ws.suggestions,
 		complete,
@@ -125,6 +133,16 @@ function reviewOptions(
 		skipExplicitExemption: overrides.skipExplicitExemption,
 		signal: overrides.signal,
 	};
+}
+
+/** 把已落库事实的创建时间改成 `days` 天前，用于年龄门槛用例。 */
+function ageFact(ws: Workspace, factId: string, days: number): void {
+	const path = join(ws.agentDir, "memory", "facts.json");
+	const state = JSON.parse(readFileSync(path, "utf8")) as { facts: Array<{ id: string; createdAt: string }> };
+	const fact = state.facts.find((entry) => entry.id === factId);
+	if (fact === undefined) throw new Error(`fact not found: ${factId}`);
+	fact.createdAt = new Date(Date.now() - days * 86_400_000 - 60_000).toISOString();
+	writeFileSync(path, JSON.stringify(state), "utf8");
 }
 
 function appendUser(manager: SessionManager, text: string): string {
@@ -224,10 +242,10 @@ describe("reviewFacts candidate selection", () => {
 		expect(recorder.prompts).toHaveLength(0);
 	});
 
-	it("sends at most ten candidates, highest importance first", async () => {
+	it("sends at most ten candidates, ordered by importance times confidence", async () => {
 		const ws = workspace();
 		for (let index = 0; index < DISTINCT_TEXTS.length; index++) {
-			addFact(ws, DISTINCT_TEXTS[index], { importance: index < 2 ? 5 : 4 });
+			addFact(ws, DISTINCT_TEXTS[index], { importance: index < 2 ? 5 : 4, confidence: 0.9 });
 		}
 		const recorder = completionReturning(suggestionReply([]));
 
@@ -236,6 +254,61 @@ describe("reviewFacts candidate selection", () => {
 		expect(result.candidates).toBe(10);
 		expect(recorder.prompts).toHaveLength(1);
 		expect(recorder.prompts[0].match(/- \[fact_/g)).toHaveLength(10);
+	});
+
+	it("orders candidates by importance times confidence instead of importance alone", async () => {
+		const ws = workspace();
+		const confident = addFact(ws, "Release cadence ships every two weeks on Thursday", {
+			importance: 4,
+			confidence: 0.5,
+		});
+		const doubtful = addFact(ws, "Avoid force pushing to shared branches", {
+			importance: 5,
+			confidence: 0.3,
+		});
+		const recorder = completionReturning(suggestionReply([]));
+
+		await reviewFacts(reviewOptions(ws, recorder.complete));
+
+		const prompt = recorder.prompts[0] ?? "";
+		// 4 * 0.5 = 2.0 排在 5 * 0.3 = 1.5 前面：仅按重要性排序会得到相反结果。
+		expect(prompt.indexOf(confident.id)).toBeGreaterThanOrEqual(0);
+		expect(prompt.indexOf(confident.id)).toBeLessThan(prompt.indexOf(doubtful.id));
+	});
+
+	it("requires facts to be old enough before they become candidates", async () => {
+		const ws = workspace();
+		const young = addFact(ws, "Team prefers tabs for indentation");
+		const old = addFact(ws, "Release notes must list breaking changes");
+		ageFact(ws, young.id, 13);
+		ageFact(ws, old.id, 14);
+		const settings: MemorySettings = { facts: { promotion: { minAgeDays: 14 } } };
+		const recorder = completionReturning(suggestionReply([]));
+
+		const result = await reviewFacts(reviewOptions(ws, recorder.complete, { settings }));
+
+		expect(result.candidates).toBe(1);
+		expect(recorder.prompts[0]).toContain("Release notes must list breaking changes");
+		expect(recorder.prompts[0]).not.toContain("Team prefers tabs for indentation");
+	});
+
+	it("accepts facts whose retrieval count reaches promotion.minHits", async () => {
+		const ws = workspace();
+		const used = addFact(ws, "Team prefers tabs for indentation", { importance: 3 });
+		const unused = addFact(ws, "Release notes must list breaking changes", { importance: 3 });
+		// recordUsage 每次只把同一 id 记一次，命中门槛需要两次调用。
+		ws.store.recordUsage([used.id]);
+		ws.store.recordUsage([used.id]);
+		const settings: MemorySettings = { facts: { promotion: { minHits: 2 } } };
+		const recorder = completionReturning(suggestionReply([]));
+
+		const result = await reviewFacts(reviewOptions(ws, recorder.complete, { settings }));
+
+		expect(ws.store.get(used.id)?.retrievalCount).toBe(2);
+		expect(result.candidates).toBe(1);
+		expect(recorder.prompts[0]).toContain("Team prefers tabs for indentation");
+		expect(recorder.prompts[0]).not.toContain("Release notes must list breaking changes");
+		expect(ws.store.get(unused.id)?.reviewState).toBe("unreviewed");
 	});
 });
 
@@ -540,7 +613,8 @@ describe("extraction to promotion", () => {
 			});
 		const extracted = await runExtraction({
 			manager,
-			settings: resolveMemorySettings(undefined),
+			// 夹具只有一轮对话；抽取预算由 memory-service 的预算用例覆盖。
+			settings: resolveMemorySettings({ extraction: { minUserTurns: 1 } }),
 			store: ws.store,
 			complete: extraction,
 			cwd: ws.cwd,

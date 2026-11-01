@@ -4,6 +4,7 @@
  * 默认值只在解析时生效，不写入 settings.json。非法值（非有限、负数、要求为正时的 0）
  * 回落到默认值；需要夹取的字段（maxPromptFacts、maxInputChars、timeoutMs、sessionEndFlushMs、
  * retrievalInterval、selectionTimeoutMs、selectionCandidates）按 CONTRACTS 第 7 节与 STEP-05 的边界处理。
+ * `maxFactsPerDay` 是唯一的例外：0 合法，表示当天不设上限。
  */
 
 /** 按用户消息选择事实的模式：本地打分，或本地预筛后再问一次模型。 */
@@ -41,15 +42,22 @@ export interface MemoryExtractionSettings {
 	maxInputChars?: number; // 默认 24000，最小 1000
 	minImportance?: number; // 默认 2
 	maxFactsPerBatch?: number; // 默认 8
+	minUserTurns?: number; // 默认 2
+	maxFactsPerDay?: number; // 默认 30，0 表示不设每日上限
 	model?: string; // 默认 undefined（沿用当前会话模型）
 	timeoutMs?: number; // 默认 30000，最小 1000
 	sessionEndFlushMs?: number; // 默认 3000，夹取到 0-15000
+}
+
+export interface MemoryReviewSettings {
+	minNewFacts?: number; // 默认 3
 }
 
 export interface MemorySettings {
 	enabled?: boolean; // 默认 true
 	facts?: MemoryFactsSettings;
 	extraction?: MemoryExtractionSettings;
+	review?: MemoryReviewSettings;
 }
 
 export interface ResolvedMemoryPromotionSettings {
@@ -84,15 +92,22 @@ export interface ResolvedMemoryExtractionSettings {
 	maxInputChars: number;
 	minImportance: number;
 	maxFactsPerBatch: number;
+	minUserTurns: number;
+	maxFactsPerDay: number;
 	model: string | undefined;
 	timeoutMs: number;
 	sessionEndFlushMs: number;
+}
+
+export interface ResolvedMemoryReviewSettings {
+	minNewFacts: number;
 }
 
 export interface ResolvedMemorySettings {
 	enabled: boolean;
 	facts: ResolvedMemoryFactsSettings;
 	extraction: ResolvedMemoryExtractionSettings;
+	review: ResolvedMemoryReviewSettings;
 }
 
 export const DEFAULT_MEMORY_SETTINGS: ResolvedMemorySettings = {
@@ -126,9 +141,14 @@ export const DEFAULT_MEMORY_SETTINGS: ResolvedMemorySettings = {
 		maxInputChars: 24000,
 		minImportance: 2,
 		maxFactsPerBatch: 8,
+		minUserTurns: 2,
+		maxFactsPerDay: 30,
 		model: undefined,
 		timeoutMs: 30000,
 		sessionEndFlushMs: 3000,
+	},
+	review: {
+		minNewFacts: 3,
 	},
 };
 
@@ -177,6 +197,7 @@ function resolveSelectionMode(value: unknown, fallback: MemorySelectionMode): Me
 export function resolveMemorySettings(value: MemorySettings | undefined): ResolvedMemorySettings {
 	const facts = value?.facts;
 	const extraction = value?.extraction;
+	const review = value?.review;
 	const promotion = facts?.promotion;
 	const defaults = DEFAULT_MEMORY_SETTINGS;
 
@@ -221,6 +242,9 @@ export function resolveMemorySettings(value: MemorySettings | undefined): Resolv
 			maxInputChars: resolvePositiveInteger(extraction?.maxInputChars, defaults.extraction.maxInputChars, 1000),
 			minImportance: resolvePositiveInteger(extraction?.minImportance, defaults.extraction.minImportance),
 			maxFactsPerBatch: resolvePositiveInteger(extraction?.maxFactsPerBatch, defaults.extraction.maxFactsPerBatch),
+			minUserTurns: resolvePositiveInteger(extraction?.minUserTurns, defaults.extraction.minUserTurns),
+			// 0 合法：不设每日上限，交给 maxFactsPerBatch 与抽取间隔控制用量。
+			maxFactsPerDay: resolveNonNegativeInteger(extraction?.maxFactsPerDay, defaults.extraction.maxFactsPerDay),
 			model: resolveModel(extraction?.model),
 			timeoutMs: resolvePositiveInteger(extraction?.timeoutMs, defaults.extraction.timeoutMs, 1000),
 			sessionEndFlushMs: resolveNonNegativeInteger(
@@ -229,6 +253,9 @@ export function resolveMemorySettings(value: MemorySettings | undefined): Resolv
 				0,
 				15000,
 			),
+		},
+		review: {
+			minNewFacts: resolvePositiveInteger(review?.minNewFacts, defaults.review.minNewFacts),
 		},
 	};
 }

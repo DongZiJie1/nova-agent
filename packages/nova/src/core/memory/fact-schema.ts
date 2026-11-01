@@ -32,7 +32,9 @@ export interface Fact {
 	confidence: number; // 0-1
 	createdAt: string;
 	updatedAt: string;
+	/** 最近一次使用：显式检索或 prompt 注入。 */
 	lastRetrievedAt?: string;
+	/** 使用次数：显式检索与 prompt 注入共用同一个计数。 */
 	retrievalCount: number;
 	pinned: boolean;
 	archivedAt?: string;
