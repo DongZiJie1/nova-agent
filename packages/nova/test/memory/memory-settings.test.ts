@@ -39,6 +39,7 @@ describe("resolveMemorySettings", () => {
 				archiveAfterDays: 90,
 				maxActiveFacts: 5000,
 				selection: "query",
+				retrievalInterval: 1,
 				selectionTimeoutMs: 1500,
 				selectionCandidates: 50,
 				promotion: {
@@ -266,6 +267,18 @@ describe("resolveMemorySettings", () => {
 		expect(resolveMemorySettings({ facts: { selectionCandidates: 500 } }).facts.selectionCandidates).toBe(200);
 		expect(resolveMemorySettings({ facts: { selectionCandidates: 0 } }).facts.selectionCandidates).toBe(50);
 		expect(resolveRaw({ facts: { selectionCandidates: "80" } }).facts.selectionCandidates).toBe(50);
+	});
+
+	it("defaults retrievalInterval to 1 and clamps it to 1-50", () => {
+		expect(resolveMemorySettings(undefined).facts.retrievalInterval).toBe(1);
+		expect(resolveMemorySettings({ facts: { retrievalInterval: 1 } }).facts.retrievalInterval).toBe(1);
+		expect(resolveMemorySettings({ facts: { retrievalInterval: 4 } }).facts.retrievalInterval).toBe(4);
+		expect(resolveMemorySettings({ facts: { retrievalInterval: 0 } }).facts.retrievalInterval).toBe(1);
+		expect(resolveMemorySettings({ facts: { retrievalInterval: -2 } }).facts.retrievalInterval).toBe(1);
+		expect(resolveMemorySettings({ facts: { retrievalInterval: 500 } }).facts.retrievalInterval).toBe(50);
+		expect(resolveMemorySettings({ facts: { retrievalInterval: 2.7 } }).facts.retrievalInterval).toBe(2);
+		expect(resolveRaw({ facts: { retrievalInterval: "3" } }).facts.retrievalInterval).toBe(1);
+		expect(resolveMemorySettings({ facts: { retrievalInterval: Number.NaN } }).facts.retrievalInterval).toBe(1);
 	});
 
 	it("trims the extraction model and treats blank values as unset", () => {

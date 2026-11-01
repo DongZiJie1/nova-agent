@@ -3,7 +3,7 @@
  *
  * 默认值只在解析时生效，不写入 settings.json。非法值（非有限、负数、要求为正时的 0）
  * 回落到默认值；需要夹取的字段（maxPromptFacts、maxInputChars、timeoutMs、sessionEndFlushMs、
- * selectionTimeoutMs、selectionCandidates）按 CONTRACTS 第 7 节与 STEP-05 的边界处理。
+ * retrievalInterval、selectionTimeoutMs、selectionCandidates）按 CONTRACTS 第 7 节与 STEP-05 的边界处理。
  */
 
 /** 按用户消息选择事实的模式：本地打分，或本地预筛后再问一次模型。 */
@@ -28,6 +28,7 @@ export interface MemoryFactsSettings {
 	archiveAfterDays?: number; // 默认 90
 	maxActiveFacts?: number; // 默认 5000
 	selection?: MemorySelectionMode; // 默认 "query"
+	retrievalInterval?: number; // 默认 1（每条用户消息检索一次），夹取到 1-50
 	selectionTimeoutMs?: number; // 默认 1500，夹取到 100-10000
 	selectionCandidates?: number; // 默认 50，夹取到 10-200
 	promotion?: MemoryPromotionSettings;
@@ -70,6 +71,7 @@ export interface ResolvedMemoryFactsSettings {
 	archiveAfterDays: number;
 	maxActiveFacts: number;
 	selection: MemorySelectionMode;
+	retrievalInterval: number;
 	selectionTimeoutMs: number;
 	selectionCandidates: number;
 	promotion: ResolvedMemoryPromotionSettings;
@@ -107,6 +109,7 @@ export const DEFAULT_MEMORY_SETTINGS: ResolvedMemorySettings = {
 		archiveAfterDays: 90,
 		maxActiveFacts: 5000,
 		selection: "query",
+		retrievalInterval: 1,
 		selectionTimeoutMs: 1500,
 		selectionCandidates: 50,
 		promotion: {
@@ -191,6 +194,7 @@ export function resolveMemorySettings(value: MemorySettings | undefined): Resolv
 			archiveAfterDays: resolvePositiveInteger(facts?.archiveAfterDays, defaults.facts.archiveAfterDays),
 			maxActiveFacts: resolvePositiveInteger(facts?.maxActiveFacts, defaults.facts.maxActiveFacts),
 			selection: resolveSelectionMode(facts?.selection, defaults.facts.selection),
+			retrievalInterval: resolvePositiveInteger(facts?.retrievalInterval, defaults.facts.retrievalInterval, 1, 50),
 			selectionTimeoutMs: resolvePositiveInteger(
 				facts?.selectionTimeoutMs,
 				defaults.facts.selectionTimeoutMs,

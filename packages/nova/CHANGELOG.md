@@ -10,13 +10,15 @@
 - Added long-term fact memory: cross-session extraction with startup compensation for killed sessions, budgeted fact injection selected per user message, the `remember`/`search_memory`/`read_memory` tools, and the `nova memory` CLI for listing and curating stored facts. See [docs/memory.md](docs/memory.md).
 - Added fact editing: `FactStore.update`, `nova memory edit <id>` with `--text`, `--kind`, `--importance`, `--applicability`, `--topics`, and `--valid-until`, and the `memory_fact_update` `edit` action with an optional `patch`. Editing rewrites the existing fact instead of creating a new one, preserves ids, timestamps, source, pin state, usage counters, and project links, re-checks duplicates and conflicts against other active facts, rejects sensitive or overlong text, and takes effect from the next session.
 - Added a `before_prompt` internal lifecycle hook that can return custom context messages, and used it for memory injection.
+- Added `memory.facts.retrievalInterval` (default `1`) for how many user messages pass between fact-retrieval calls, clamped to 1-50. Values above `1` join the messages since the last retrieval into one query.
 
 ### Changed
 
 - Changed the default tool permission mode from `ask` to `allow` (全部放行). Tools run without confirmation unless the user selects `ask`/`edits` via `--permission-mode`, settings, or `/permission`.
 - Changed the model to stop writing the user profile directly. Profile edits now go through the settings interface or the review flow, so the model can no longer rewrite what the user stored about themselves.
 - Changed memory extraction to record only the user's side of a conversation: what they asked for, decided, preferred, rejected, or corrected. What the assistant changed, ran, searched, or found, unaccepted proposals, repository state, and task summaries are no longer stored as facts; feedback on the assistant's behaviour becomes a rule for future sessions.
-- Changed fact injection to run per request instead of at session start: on the first user message Nova pre-screens facts locally, lets the model pick up to 10 relevant ids, and inserts them as a `nova.memory_retrieval` message after the user message (Nova Studio shows it as a collapsed memory card). A failed, timed-out, or unparsable selection falls back to local scoring, and `memory.facts.selection` (default `"query"`) switches back to scoring only.
+- Changed fact injection to run per request instead of at session start: every user message (or every `memory.facts.retrievalInterval` messages) Nova pre-screens facts locally, lets the model pick up to 10 relevant ids, and inserts them as a `nova.memory_retrieval` message after the user message (Nova Studio shows it as a collapsed memory card). Facts already injected in the session are excluded from the candidates and listed in the selection prompt. A failed, timed-out, or unparsable selection falls back to local scoring, and `memory.facts.selection` (default `"query"`) switches back to scoring only.
+- Changed the selection prompt to carry the user messages since the last retrieval, joined in order, so a configured interval never drops requests between calls.
 
 ### Fixed
 

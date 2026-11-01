@@ -6,6 +6,7 @@
  * - 只在“选择模式为 query、符合门控的事实多于 10 条”时调用模型；其余情况直接用打分或全量结果。
  * - 门控与打分共用 `isFactEligible`：别的项目的 `project` 事实、过期事实不会进入候选。
  * - 模型只看到本地候选：BM25 命中优先，命中不足 10 条时用打分结果补足，按 id 去重。
+ * - `excludeIds`（本次会话已注入过的 id）从门控阶段就剔除，同时写进提示词，避免重复挑同一条记忆。
  * - 模型超时、抛错、输出不可解析或没有有效 id 时回退到打分结果，不向调用方抛错。
  */
 
@@ -22,6 +23,8 @@ export interface FactQuerySelectionOptions {
 	cwd: string;
 	settings: ResolvedMemorySettings;
 	complete: ExtractionCompletion;
+	/** 本次会话已经注入过的 id：既不进候选，也在提示词里显式列出，避免模型重复挑同样的记忆。 */
+	excludeIds?: ReadonlySet<string>;
 	signal?: AbortSignal;
 }
 
@@ -32,6 +35,9 @@ export interface FactQuerySelectionResult {
 
 /** 一次选择最多返回（也是最多让模型挑选）的事实条数。 */
 export const QUERY_SELECTION_MAX_FACTS = 10;
+
+/** 没有已注入 id 时的共享空集合：避免每次选择都新建集合。 */
+const EMPTY_IDS: ReadonlySet<string> = new Set();
 
 const SELECTION_SYSTEM_PROMPT = `You pick the stored memories about the user that are relevant to the user's current request.
 Reply with a single JSON object and nothing else: no prose, no markdown fences, no comments, no trailing text.
@@ -117,9 +123,19 @@ function buildCandidates(eligible: Fact[], query: string, context: FactSelection
 	return candidates.slice(0, maxCandidates);
 }
 
-function buildUserPrompt(query: string, candidates: Fact[]): string {
+/** 已注入 id 的提示行：只列 id，最多 100 个，超出的部分折叠成计数，避免提示词无上限膨胀。 */
+const ALREADY_RETRIEVED_PROMPT_LIMIT = 100;
+
+function buildUserPrompt(query: string, candidates: Fact[], alreadyRetrieved: string[]): string {
 	const lines = candidates.map((fact) => `- [${fact.id}] (${fact.kind}, importance ${fact.importance}) ${fact.text}`);
-	return `User request:\n${query}\n\nCandidate memories:\n${lines.join("\n")}`;
+	const sections = [`User request:\n${query}\n\nCandidate memories:\n${lines.join("\n")}`];
+	if (alreadyRetrieved.length > 0) {
+		const shown = alreadyRetrieved.slice(0, ALREADY_RETRIEVED_PROMPT_LIMIT);
+		const hidden = alreadyRetrieved.length - shown.length;
+		const suffix = hidden > 0 ? `, and ${hidden} more` : "";
+		sections.push(`Already shown earlier in this session (do not select again): ${shown.join(", ")}${suffix}`);
+	}
+	return sections.join("\n\n");
 }
 
 /** 去掉 ```json 围栏；没有围栏时返回原文。 */
@@ -208,17 +224,24 @@ async function completeWithinTimeout(input: CompletionInput): Promise<string | u
  * - 没有符合门控的事实：空结果（`source: "all"`）；不超过 10 条：全部返回（`source: "all"`）。
  * - 其余：BM25 + 打分补足出候选，让模型挑 id；模型失败或挑不出有效 id 时回退打分（`source: "score"`）。
  *
+ * 已经注入过的 id（`excludeIds`）在三条路径上都剔除：全量返回、BM25 候选池、打分回退。
+ *
  * 事实库读取失败（文件损坏）仍然抛出：这不是模型失败，静默返回空结果会掩盖数据问题。
  */
 export async function selectFactsForQuery(options: FactQuerySelectionOptions): Promise<FactQuerySelectionResult> {
 	const context = selectionContext(options.cwd, options.settings);
-	const scored = (): Fact[] => selectFacts(options.store.list(), context).map((entry) => entry.fact);
+	const exclude = options.excludeIds ?? EMPTY_IDS;
+	const scored = (): Fact[] =>
+		selectFacts(
+			options.store.list().filter((fact) => !exclude.has(fact.id)),
+			context,
+		).map((entry) => entry.fact);
 	const fallback = (): FactQuerySelectionResult => ({ facts: scored(), source: "score" });
 
 	if (options.settings.facts.selection === "score") return fallback();
 
-	// 先过门控：别的项目的 project 事实、过期事实不参与“全部返回”，也不进 BM25 候选池。
-	const eligible = options.store.active().filter((fact) => isFactEligible(fact, context));
+	// 先过门控：别的项目的 project 事实、过期事实、本次会话已注入过的事实都不进候选池。
+	const eligible = options.store.active().filter((fact) => !exclude.has(fact.id) && isFactEligible(fact, context));
 	if (eligible.length === 0) return { facts: [], source: "all" };
 	if (eligible.length <= QUERY_SELECTION_MAX_FACTS) return { facts: newestFirst(eligible), source: "all" };
 
@@ -228,7 +251,7 @@ export async function selectFactsForQuery(options: FactQuerySelectionOptions): P
 	const raw = await completeWithinTimeout({
 		complete: options.complete,
 		systemPrompt: SELECTION_SYSTEM_PROMPT,
-		userPrompt: buildUserPrompt(options.query, candidates),
+		userPrompt: buildUserPrompt(options.query, candidates, [...exclude]),
 		timeoutMs: options.settings.facts.selectionTimeoutMs,
 		signal: options.signal,
 	});

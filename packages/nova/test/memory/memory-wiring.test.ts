@@ -143,7 +143,7 @@ describe("createMemoryServiceForSession", () => {
 			startMemoryForSession({ session: harness.session, agentDir, cwd, settingsManager: harness.settingsManager }),
 		);
 
-		// 关闭抽取只停掉四个抽取钩子，首条消息的注入钩子仍然注册。
+		// 关闭抽取只停掉四个抽取钩子，注入钩子仍然注册。
 		expect(registerSpy.mock.calls.map(([event]) => event)).toEqual(["after_user_message"]);
 	});
 

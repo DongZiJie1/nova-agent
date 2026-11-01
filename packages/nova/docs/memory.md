@@ -35,9 +35,9 @@ The review returns profile suggestions (`create`, `append`, `update`) that are s
 
 ## Injection
 
-Facts are injected per request, not per session. When the session receives its first user message, Nova selects facts for that message once and inserts them as a `nova.memory_retrieval` custom message immediately after the user message; Nova Studio renders that message as a collapsed memory card. Later turns do not select or inject again, so the block belongs to the request that opened the conversation.
+Facts are injected per request, not per session. By default (`memory.facts.retrievalInterval: 1`) every user message triggers one retrieval: Nova pre-screens facts locally, lets the model pick up to 10 relevant ids, and inserts them as a `nova.memory_retrieval` custom message immediately after the user message; Nova Studio renders each one as a collapsed memory card. With a larger interval, retrieval runs every N user messages and the queries are the messages since the last retrieval, joined in order (capped at the most recent 6000 characters). Ids already injected in this session are dropped from the candidate pool and listed in the selection prompt, so a fact is not injected twice.
 
-Selection is a local pre-screen plus one model call. The local side gates facts first (other projects' `project` facts stay hidden unless `gateProjectFacts` is off, expired facts are dropped, and `crossProjectRecall` applies to transferable facts), then ranks up to `selectionCandidates` candidates: BM25 hits first, padded with scored facts when the hits are fewer. The model picks at most 10 ids from that candidate list and anything outside it is ignored. A failed, timed-out, or unparsable reply, or a reply without usable ids, falls back to local scoring, and that fallback is still injected. `selection: "score"` skips the model call entirely.
+Selection is a local pre-screen plus one model call. The local side gates facts first (other projects' `project` facts stay hidden unless `gateProjectFacts` is off, expired facts are dropped, ids already injected in this session are dropped, and `crossProjectRecall` applies to transferable facts), then ranks up to `selectionCandidates` candidates: BM25 hits first, padded with scored facts when the hits are fewer. The model picks at most 10 ids from that candidate list and anything outside it is ignored; the prompt also lists the ids already shown earlier in the session so the model does not pick them again. A failed, timed-out, or unparsable reply, or a reply without usable ids, falls back to local scoring, and that fallback is still injected. `selection: "score"` skips the model call entirely.
 
 The injected block is labeled:
 
@@ -79,7 +79,8 @@ All keys live under `memory` in `settings.json` (`~/.nova/agent/settings.json` o
 | `memory.facts.maxActiveFacts` | `5000` | Reserved: active fact cap, not enforced yet |
 | `memory.facts.archiveAfterDays` | `90` | Days without a retrieval before a low-importance fact is archived; applied after each successful extraction |
 | `memory.facts.promotion` | `{minHits: 6, minImportance: 4, minAgeDays: 14, auto: false}` | Promotion gate (`minImportance`) and auto-apply flag; `minHits` and `minAgeDays` are reserved |
-| `memory.facts.selection` | `"query"` | `"query"` lets the model pick facts per user message; `"score"` uses local scoring only |
+| `memory.facts.selection` | `"query"` | `"query"` lets the model pick facts on each retrieval; `"score"` uses local scoring only |
+| `memory.facts.retrievalInterval` | `1` | User messages between retrieval calls, clamped to 1-50; `1` retrieves on every message |
 | `memory.facts.selectionTimeoutMs` | `1500` | Timeout for the selection call, clamped to 100-10000 |
 | `memory.facts.selectionCandidates` | `50` | Maximum candidate facts sent to the selection call, clamped to 10-200 |
 | `memory.extraction.enabled` | `true` | Background extraction |
@@ -97,4 +98,4 @@ Set `memory.enabled` to `false` to remove injection, background extraction, star
 
 ## Privacy
 
-Extraction sends the tail of the conversation (up to `maxInputChars` characters, including user messages) to the model provider configured for the current session. Review sends candidate facts plus the existing profile sections, and fact selection for a first message sends the candidates plus that message. Facts, suggestions, and profile content are stored unencrypted on the local disk, and the injected block is sent to the provider with the conversation from the message that triggered it onward. Greetings and obvious secrets are filtered, but filtering is heuristic: review stored facts with `nova memory list` and disable extraction if conversations must not leave the machine.
+Extraction sends the tail of the conversation (up to `maxInputChars` characters, including user messages) to the model provider configured for the current session. Review sends candidate facts plus the existing profile sections, and fact selection sends the candidate facts, the user messages since the last retrieval, and the ids already injected in this session. Facts, suggestions, and profile content are stored unencrypted on the local disk, and each injected block is sent to the provider with the conversation from the message that triggered it onward. Greetings and obvious secrets are filtered, but filtering is heuristic: review stored facts with `nova memory list` and disable extraction if conversations must not leave the machine.

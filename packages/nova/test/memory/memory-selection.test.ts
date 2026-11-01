@@ -98,7 +98,7 @@ function selectionOptions(
 	rec: Recorder,
 	query: string,
 	settings: MemorySettings = {},
-	overrides: { signal?: AbortSignal } = {},
+	overrides: { signal?: AbortSignal; excludeIds?: ReadonlySet<string> } = {},
 ): FactQuerySelectionOptions {
 	return {
 		store: workspace.store,
@@ -106,6 +106,7 @@ function selectionOptions(
 		cwd: workspace.cwd,
 		settings: resolveMemorySettings(settings),
 		complete: rec.complete,
+		excludeIds: overrides.excludeIds,
 		signal: overrides.signal,
 	};
 }
@@ -453,5 +454,66 @@ describe("selectFactsForQuery eligibility gating", () => {
 		expect(result.source).toBe("all");
 		expect(result.facts.map((fact) => fact.id).sort()).toEqual(kept.map((fact) => fact.id).sort());
 		expect(rec.userPrompts).toEqual([]);
+	});
+});
+
+describe("selectFactsForQuery excludeIds", () => {
+	it("drops already injected facts from the all-facts branch", async () => {
+		const workspace = createWorkspace();
+		const first = addFact(workspace.store, "alpha kept one");
+		const second = addFact(workspace.store, "alpha kept two");
+		const rec = recorder(async () => '{"ids":[]}');
+
+		const result = await selectFactsForQuery(
+			selectionOptions(workspace, rec, "alpha", {}, { excludeIds: new Set([first.id]) }),
+		);
+
+		expect(result.source).toBe("all");
+		expect(result.facts.map((fact) => fact.id)).toEqual([second.id]);
+		expect(rec.userPrompts).toEqual([]);
+	});
+
+	it("removes excluded facts from the candidate list and lists their ids in the prompt", async () => {
+		const workspace = createWorkspace();
+		const excluded = [
+			addFact(workspace.store, "alpha excluded preference one"),
+			addFact(workspace.store, "alpha excluded preference two"),
+		];
+		addMatchingFacts(workspace.store, QUERY_SELECTION_MAX_FACTS + 4);
+		const excludedIds = new Set(excluded.map((fact) => fact.id));
+		const rec = recorder(async (input) => {
+			const ids = [...input.userPrompt.matchAll(/^- \[(fact_[^\]]+)\]/gm)].map((match) => match[1]!);
+			return JSON.stringify({ ids: ids.slice(0, 1) });
+		});
+
+		const result = await selectFactsForQuery(
+			selectionOptions(workspace, rec, "alpha", {}, { excludeIds: excludedIds }),
+		);
+
+		const prompt = rec.userPrompts[0]!;
+		expect(prompt).toContain("Already shown earlier in this session");
+		for (const fact of excluded) {
+			expect(prompt).toContain(fact.id);
+			expect(prompt).not.toMatch(new RegExp(`^- \\[${fact.id}\\]`, "m"));
+		}
+		expect(result.facts).toHaveLength(1);
+		expect(excludedIds.has(result.facts[0]!.id)).toBe(false);
+	});
+
+	it("keeps excluded facts out of the score fallback", async () => {
+		const workspace = createWorkspace();
+		const facts = addMatchingFacts(workspace.store, QUERY_SELECTION_MAX_FACTS + 4);
+		const excludedIds = new Set([facts[0]!.id, facts[1]!.id]);
+		const rec = recorder(async () => {
+			throw new Error("selection model unavailable");
+		});
+
+		const result = await selectFactsForQuery(
+			selectionOptions(workspace, rec, "alpha", {}, { excludeIds: excludedIds }),
+		);
+
+		expect(result.source).toBe("score");
+		expect(result.facts).toHaveLength(QUERY_SELECTION_MAX_FACTS);
+		for (const fact of result.facts) expect(excludedIds.has(fact.id)).toBe(false);
 	});
 });

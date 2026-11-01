@@ -346,7 +346,7 @@ describe("memory end-to-end", () => {
 		expect(stored?.source.entryIds).toEqual([entryId]);
 	});
 
-	it("H. 首条消息的记忆注入排在用户消息之后", async () => {
+	it("H. 记忆注入排在用户消息之后", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage("好的")]);

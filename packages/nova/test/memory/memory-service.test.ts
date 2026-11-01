@@ -607,7 +607,7 @@ describe("MemoryService after_user_message injection", () => {
 		return message.content[0]?.text ?? "";
 	}
 
-	it("injects the selected facts once as a tagged custom message", async () => {
+	it("injects the selected facts as a tagged custom message without repeating the same ids", async () => {
 		const harness = createHarness({
 			settings: { facts: { selection: "score" } },
 			complete: async () => "{}",
@@ -629,7 +629,7 @@ describe("MemoryService after_user_message injection", () => {
 		expect(text).toContain(firstId);
 		expect(text).toContain(secondId);
 
-		// 只注入一次：后续轮次不再返回消息。
+		// 两条记忆都已经注入过：候选被剔除，第二轮不再返回消息。
 		expect(await harness.hooks.emitAfterUserMessage(session, "Another question")).toEqual([]);
 	});
 
@@ -703,5 +703,91 @@ describe("MemoryService after_user_message injection", () => {
 		expect(
 			await harness.hooks.emitAfterUserMessage(harness.session as unknown as AgentSession, "indentation"),
 		).toEqual([]);
+	});
+
+	it("retrieves again on the next message and injects only facts that are still new", async () => {
+		const harness = createHarness({
+			settings: { facts: { selection: "score" } },
+			complete: async () => "{}",
+		});
+		seedFact(harness.store, F1);
+		harness.service.start();
+		const session = harness.session as unknown as AgentSession;
+
+		const first = await harness.hooks.emitAfterUserMessage(session, "tab or spaces?");
+		expect(first).toHaveLength(1);
+		expect(messageText(first[0]!)).toContain(F1);
+
+		// 第二轮前写入一条新事实：默认 interval=1，这条消息要能把它检索出来。
+		const newId = seedFact(harness.store, F3);
+		const second = await harness.hooks.emitAfterUserMessage(session, "how do we write commits?");
+		expect(second).toHaveLength(1);
+		const text = messageText(second[0]!);
+		expect(text).toContain(newId);
+		expect(text).not.toContain(F1);
+	});
+
+	it("waits retrievalInterval messages and combines them into one query", async () => {
+		const prompts: string[] = [];
+		const harness = createHarness({
+			settings: { facts: { retrievalInterval: 3 } },
+			complete: async (input) => {
+				prompts.push(input.userPrompt);
+				return JSON.stringify({
+					ids: [...input.userPrompt.matchAll(/^- \[(fact_[^\]]+)\]/gm)].slice(0, 2).map((match) => match[1]),
+				});
+			},
+		});
+		for (const seed of SEEDS) seedFact(harness.store, seed);
+		harness.service.start();
+		const session = harness.session as unknown as AgentSession;
+
+		expect(await harness.hooks.emitAfterUserMessage(session, "first question about builds")).toEqual([]);
+		expect(await harness.hooks.emitAfterUserMessage(session, "second question about logs")).toEqual([]);
+		expect(prompts).toHaveLength(0);
+
+		const messages = await harness.hooks.emitAfterUserMessage(session, "third question about caches");
+		expect(messages).toHaveLength(1);
+		expect(prompts).toHaveLength(1);
+		const prompt = prompts[0]!;
+		expect(prompt).toContain("first question about builds");
+		expect(prompt).toContain("second question about logs");
+		expect(prompt).toContain("third question about caches");
+		expect(prompt.indexOf("first question")).toBeLessThan(prompt.indexOf("third question"));
+
+		// 合并后的计数已清零：下一条消息重新从 0 开始累积。
+		expect(await harness.hooks.emitAfterUserMessage(session, "fourth question")).toEqual([]);
+	});
+
+	it("lists ids already injected in the session in the selection prompt", async () => {
+		const prompts: string[] = [];
+		const harness = createHarness({
+			complete: async (input) => {
+				prompts.push(input.userPrompt);
+				const ids = [...input.userPrompt.matchAll(/^- \[(fact_[^\]]+)\]/gm)].map((match) => match[1]!);
+				return JSON.stringify({ ids: ids.slice(0, 2) });
+			},
+		});
+		for (const seed of [...SEEDS, "Nightly backups keep thirty days", "Staging uses the same schema"]) {
+			seedFact(harness.store, seed);
+		}
+		harness.service.start();
+		const session = harness.session as unknown as AgentSession;
+
+		const first = await harness.hooks.emitAfterUserMessage(session, "how should builds run?");
+		expect(first).toHaveLength(1);
+		const injectedIds = [...messageText(first[0]!).matchAll(/^- \[(fact_[^\]]+)\]/gm)].map((match) => match[1]!);
+		expect(injectedIds).toHaveLength(2);
+
+		const second = await harness.hooks.emitAfterUserMessage(session, "what about alerts?");
+		expect(second).toHaveLength(1);
+		expect(prompts).toHaveLength(2);
+		const prompt = prompts[1]!;
+		expect(prompt).toContain("Already shown earlier in this session");
+		for (const id of injectedIds) {
+			expect(prompt).toContain(id);
+			// 候选列表里不能再出现这些 id。
+			expect(prompt).not.toMatch(new RegExp(`^- \\[${id}\\]`, "m"));
+		}
 	});
 });
