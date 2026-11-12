@@ -26,6 +26,7 @@ import { formatNoModelsAvailableMessage } from "./core/auth-guidance.ts";
 import { exportFromFile } from "./core/export-html/index.ts";
 import type { InlineExtension } from "./core/extensions/types.ts";
 import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.ts";
+import { startMemoryCompensation, startMemoryForSession } from "./core/memory/memory-wiring.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
 import type { ModelRuntime } from "./core/model-runtime.ts";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
@@ -44,6 +45,7 @@ import { todoPrompt } from "./core/todo-prompt.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
 import { UserMemoryStore } from "./core/user-memory.ts";
 import { builtInExtensions } from "./extensions/index.ts";
+import { handleMemoryCommand } from "./memory-cli.ts";
 import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
@@ -515,6 +517,10 @@ export async function main(args: string[], options?: MainOptions) {
 		return;
 	}
 
+	if (await handleMemoryCommand(args)) {
+		return;
+	}
+
 	const parsed = parseArgs(args);
 	if (parsed.diagnostics.length > 0) {
 		for (const d of parsed.diagnostics) {
@@ -778,6 +784,16 @@ export async function main(args: string[], options?: MainOptions) {
 		if (created.session.model && cliThinkingOverride) {
 			created.session.setThinkingLevel(created.session.thinkingLevel);
 		}
+
+		// Memory extraction runs in the background: setup never throws and never blocks session startup.
+		startMemoryForSession({ session: created.session, agentDir, cwd, settingsManager: runtimeSettingsManager });
+		// Startup compensation for killed sessions: one scan per session directory per process, never awaited.
+		void startMemoryCompensation({
+			session: created.session,
+			agentDir,
+			sessionDir: sessionManager.getSessionDir(),
+			settingsManager: runtimeSettingsManager,
+		});
 
 		return {
 			...created,

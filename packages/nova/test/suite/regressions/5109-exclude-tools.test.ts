@@ -58,11 +58,13 @@ describe("regression #5109: exclude tools", () => {
 				"fetch_url",
 				"nova_data",
 				"query_scheduled_tasks",
+				"read_memory",
+				"remember",
+				"search_memory",
 				"todo",
 				"web_search",
 				"write",
 				"write_scheduled_task",
-				"write_user_memory",
 			]);
 			// Tool snippets are intentionally NOT in the system prompt.
 			expect(harness.session.systemPrompt).not.toContain("- read:");

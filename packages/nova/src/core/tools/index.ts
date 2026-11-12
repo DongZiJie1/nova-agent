@@ -1,4 +1,20 @@
 export {
+	createReadMemoryToolDefinition,
+	type ReadMemoryDetails,
+	type ReadMemoryToolInput,
+} from "../memory/tools/read-memory.ts";
+export {
+	createRememberToolDefinition,
+	type RememberToolDetails,
+	type RememberToolInput,
+	resetMemoryToolRateLimits,
+} from "../memory/tools/remember.ts";
+export {
+	createSearchMemoryToolDefinition,
+	type SearchMemoryDetails,
+	type SearchMemoryToolInput,
+} from "../memory/tools/search-memory.ts";
+export {
 	type AskUserQuestionDetails,
 	type AskUserQuestionOption,
 	type AskUserQuestionToolInput,
@@ -121,6 +137,9 @@ export {
 
 import type { AgentTool } from "@dongzijie1/pi-agent-core";
 import type { ToolDefinition } from "../extensions/types.ts";
+import { createReadMemoryToolDefinition } from "../memory/tools/read-memory.ts";
+import { createRememberToolDefinition } from "../memory/tools/remember.ts";
+import { createSearchMemoryToolDefinition } from "../memory/tools/search-memory.ts";
 import { createAskUserQuestionToolDefinition } from "./ask-user-question.ts";
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.ts";
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.ts";
@@ -137,7 +156,6 @@ import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { createWebSearchToolDefinition } from "./web-search.ts";
 import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.ts";
 import { createWriteScheduledTaskToolDefinition } from "./write-scheduled-task.ts";
-import { createWriteUserMemoryToolDefinition } from "./write-user-memory.ts";
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
@@ -156,7 +174,9 @@ export type ToolName =
 	| "ask_user_question"
 	| "hub_list_agents"
 	| "hub_delegate_task"
-	| "write_user_memory"
+	| "remember"
+	| "search_memory"
+	| "read_memory"
 	| "web_search"
 	| "fetch_url";
 export const allToolNames: Set<ToolName> = new Set([
@@ -174,7 +194,9 @@ export const allToolNames: Set<ToolName> = new Set([
 	"ask_user_question",
 	"hub_list_agents",
 	"hub_delegate_task",
-	"write_user_memory",
+	"remember",
+	"search_memory",
+	"read_memory",
 	"web_search",
 	"fetch_url",
 ]);
@@ -219,8 +241,12 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createHubListAgentsToolDefinition();
 		case "hub_delegate_task":
 			return createHubDelegateTaskToolDefinition();
-		case "write_user_memory":
-			return createWriteUserMemoryToolDefinition();
+		case "remember":
+			return createRememberToolDefinition();
+		case "search_memory":
+			return createSearchMemoryToolDefinition();
+		case "read_memory":
+			return createReadMemoryToolDefinition();
 		case "web_search":
 			return createWebSearchToolDefinition();
 		case "fetch_url":
@@ -260,8 +286,12 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return wrapToolDefinition(createHubListAgentsToolDefinition());
 		case "hub_delegate_task":
 			return wrapToolDefinition(createHubDelegateTaskToolDefinition());
-		case "write_user_memory":
-			return wrapToolDefinition(createWriteUserMemoryToolDefinition());
+		case "remember":
+			return wrapToolDefinition(createRememberToolDefinition());
+		case "search_memory":
+			return wrapToolDefinition(createSearchMemoryToolDefinition());
+		case "read_memory":
+			return wrapToolDefinition(createReadMemoryToolDefinition());
 		case "web_search":
 			return wrapToolDefinition(createWebSearchToolDefinition());
 		case "fetch_url":
@@ -305,7 +335,9 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		ask_user_question: createAskUserQuestionToolDefinition(),
 		hub_list_agents: createHubListAgentsToolDefinition(),
 		hub_delegate_task: createHubDelegateTaskToolDefinition(),
-		write_user_memory: createWriteUserMemoryToolDefinition(),
+		remember: createRememberToolDefinition(),
+		search_memory: createSearchMemoryToolDefinition(),
+		read_memory: createReadMemoryToolDefinition(),
 		web_search: createWebSearchToolDefinition(),
 		fetch_url: createFetchUrlToolDefinition(),
 	};
@@ -345,7 +377,9 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		ask_user_question: wrapToolDefinition(createAskUserQuestionToolDefinition()),
 		hub_list_agents: wrapToolDefinition(createHubListAgentsToolDefinition()),
 		hub_delegate_task: wrapToolDefinition(createHubDelegateTaskToolDefinition()),
-		write_user_memory: wrapToolDefinition(createWriteUserMemoryToolDefinition()),
+		remember: wrapToolDefinition(createRememberToolDefinition()),
+		search_memory: wrapToolDefinition(createSearchMemoryToolDefinition()),
+		read_memory: wrapToolDefinition(createReadMemoryToolDefinition()),
 		web_search: wrapToolDefinition(createWebSearchToolDefinition()),
 		fetch_url: wrapToolDefinition(createFetchUrlToolDefinition()),
 	};
@@ -367,7 +401,9 @@ export function createDefaultActiveToolNames(): ToolName[] {
 		"todo",
 		"query_scheduled_tasks",
 		"write_scheduled_task",
-		"write_user_memory",
+		"remember",
+		"search_memory",
+		"read_memory",
 		"web_search",
 		"fetch_url",
 	];

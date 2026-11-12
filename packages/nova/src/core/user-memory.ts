@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "../config.ts";
+import { isSensitiveText } from "./sensitive.ts";
 
 export interface UserMemorySection {
 	id: string;
@@ -15,11 +16,6 @@ export interface UserMemoryProfile {
 	sections: UserMemorySection[];
 }
 
-const SENSITIVE_PATTERNS = [
-	/\b(?:api[ _-]?key|access[ _-]?token|secret|password|passwd|private[ _-]?key)\b/i,
-	/\b(?:sk|pk)_[a-z0-9_-]{16,}\b/i,
-	/\b\d{13,19}\b/,
-];
 const emptyProfile = (): UserMemoryProfile => ({ version: 3, enabled: true, sections: [] });
 
 function migrate(value: unknown): UserMemoryProfile {
@@ -91,8 +87,7 @@ export class UserMemoryStore {
 		const normalized = content.trim().replace(/\s+/g, " ");
 		if (!normalizedTitle) throw new Error("Memory section title must not be empty");
 		if (!normalized) throw new Error("Memory section content must not be empty");
-		if (SENSITIVE_PATTERNS.some((pattern) => pattern.test(normalized)))
-			throw new Error("Sensitive information must not be saved to user memory");
+		if (isSensitiveText(normalized)) throw new Error("Sensitive information must not be saved to user memory");
 		const updatedAt = new Date().toISOString();
 		const existing = id ? profile.sections.find((section) => section.id === id) : undefined;
 		if (id && !existing) throw new Error(`Memory section not found: ${id}`);

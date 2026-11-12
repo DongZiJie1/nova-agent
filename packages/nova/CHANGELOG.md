@@ -4,12 +4,31 @@
 
 ### Added
 
+- Added internal ordered lifecycle hooks with per-handler timeouts and error isolation, session timing/tool/memory statistics, and local end records with startup recovery for interrupted sessions.
 - Added tags and topics to the `todo` tool: `topic` defaults to the first tag (or 未分类), the list can filter by tag or topic, and `offset` with `limit` pages through the rest. Todos written before tags existed keep their grouping without any rewrite.
 - Added the `todo` tool for recording and updating items on Nova's todo list (`todos.json` in the agent directory), the same store the 待办 page of Nova Studio reads. Items created by the agent are attributed to it and stay linked to the session that wrote them.
+- Added long-term fact memory: cross-session extraction with startup compensation for killed sessions, budgeted fact injection selected per user message, the `remember`/`search_memory`/`read_memory` tools, and the `nova memory` CLI for listing and curating stored facts. See [docs/memory.md](docs/memory.md).
+- Added fact editing: `FactStore.update`, `nova memory edit <id>` with `--text`, `--kind`, `--importance`, `--applicability`, `--topics`, and `--valid-until`, and the `memory_fact_update` `edit` action with an optional `patch`. Editing rewrites the existing fact instead of creating a new one, preserves ids, timestamps, source, pin state, usage counters, and project links, re-checks duplicates and conflicts against other active facts, rejects sensitive or overlong text, and takes effect from the next session.
+- Added a `before_prompt` internal lifecycle hook that can return custom context messages, and used it for memory injection.
+- Added `memory.facts.retrievalInterval` (default `1`) for how many user messages pass between fact-retrieval calls, clamped to 1-50. Values above `1` join the messages since the last retrieval into one query.
+- Added extraction budgets (`memory.extraction.minUserTurns` default `2`, `memory.extraction.maxFactsPerDay` default `30` with `0` disabling the cap) and review frequency (`memory.review.minNewFacts` default `3`).
+- Added a `deepseek` web search provider backed by the DeepSeek Search API (`POST /v1/tools/search`), reusing the DeepSeek credential stored in `auth.json` by `/login` or `DEEPSEEK_API_KEY`. Results prefer DeepSeek's short snippet and fall back to its long summary; a custom `baseUrl` points it at a gateway. See [docs/web-search.md](docs/web-search.md).
 
 ### Changed
 
 - Changed the default tool permission mode from `ask` to `allow` (全部放行). Tools run without confirmation unless the user selects `ask`/`edits` via `--permission-mode`, settings, or `/permission`.
+- Changed the model to stop writing the user profile directly. Profile edits now go through the settings interface or the review flow, so the model can no longer rewrite what the user stored about themselves.
+- Changed memory extraction to record only the user's side of a conversation: what they asked for, decided, preferred, rejected, or corrected. What the assistant changed, ran, searched, or found, unaccepted proposals, repository state, and task summaries are no longer stored as facts; feedback on the assistant's behaviour becomes a rule for future sessions.
+- Changed fact injection to run per request instead of at session start: every user message (or every `memory.facts.retrievalInterval` messages) Nova pre-screens facts locally, lets the model pick up to 10 relevant ids, and inserts them as a `nova.memory_retrieval` message after the user message (Nova Studio shows it as a collapsed memory card). Facts already injected in the session are excluded from the candidates and listed in the selection prompt. A failed, timed-out, or unparsable selection falls back to local scoring, and `memory.facts.selection` (default `"query"`) switches back to scoring only.
+- Changed the selection prompt to carry the user messages since the last retrieval, joined in order, so a configured interval never drops requests between calls.
+- Changed fact usage counting so prompt injection and explicit retrieval share one counter: every injected fact advances `retrievalCount` and `lastRetrievedAt`, keeping its recency and rank and keeping the stale prune from archiving facts that keep being injected.
+- Changed review candidates to require `promotion.minAgeDays` and to accept `promotion.minHits` or `promotion.minImportance` (or an explicit write), ordered by `importance × confidence`; extraction now drops facts with `confidence < 0.4`.
+- Changed injection selection to pass a project topic context (up to five topics from the last 14 days of project facts) into local scoring, so facts sharing recent project topics rank higher while BM25 hits keep their order.
+- Changed extraction to downgrade `applicability: "project"` facts whose projects do not include the source session project key to `transferable`, and to skip extraction below the user-turn and daily-fact budgets without advancing the extraction marker.
+
+### Fixed
+
+- Fixed startup memory compensation replaying entire historical sessions into facts. It now only resumes sessions that already have an extraction marker with messages after it, and it always skips the session the process opened, so merely opening an old conversation no longer adds facts.
 
 ## [1.5.0] - 2026-09-14
 

@@ -194,6 +194,7 @@ export class AgentSessionRuntime {
 	}
 
 	private async teardownCurrent(reason: SessionShutdownEvent["reason"], targetSessionFile?: string): Promise<void> {
+		await this.session.endLifecycle(reason);
 		await emitSessionShutdownEvent(this.session.extensionRunner, {
 			type: "session_shutdown",
 			reason,
@@ -358,13 +359,13 @@ export class AgentSessionRuntime {
 			return { cancelled: false, selectedText };
 		}
 
+		await this.teardownCurrent("fork");
 		const sessionManager = this.session.sessionManager;
 		if (!targetLeafId) {
 			sessionManager.newSession({ parentSession: this.session.sessionFile });
 		} else {
 			sessionManager.createBranchedSession(targetLeafId);
 		}
-		await this.teardownCurrent("fork", sessionManager.getSessionFile());
 		this.apply(
 			await this.createRuntime({
 				cwd: this.cwd,
@@ -422,6 +423,7 @@ export class AgentSessionRuntime {
 	}
 
 	async dispose(): Promise<void> {
+		await this.session.endLifecycle("quit");
 		await emitSessionShutdownEvent(this.session.extensionRunner, {
 			type: "session_shutdown",
 			reason: "quit",

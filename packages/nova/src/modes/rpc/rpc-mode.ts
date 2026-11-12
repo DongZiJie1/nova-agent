@@ -12,6 +12,7 @@
  */
 
 import * as crypto from "node:crypto";
+import { getAgentDir } from "../../config.ts";
 import type { PromptOptions } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import type {
@@ -20,6 +21,18 @@ import type {
 	ExtensionWidgetOptions,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
+import { isFactApplicability } from "../../core/memory/fact-schema.ts";
+import { type MemoryChangedEvent, onMemoryChanged } from "../../core/memory/memory-events.ts";
+import {
+	getMemoryFacts,
+	getMemorySuggestions,
+	isMemoryFactAction,
+	isMemorySuggestionResolution,
+	resolveMemorySuggestion,
+	updateMemoryFact,
+} from "../../core/memory/memory-rpc.ts";
+import { MEMORY_RETRIEVAL_CUSTOM_TYPE } from "../../core/memory/memory-service.ts";
+import { isSuggestionStatus } from "../../core/memory/suggestion-store.ts";
 import {
 	flushRawStdout,
 	takeOverStdout,
@@ -97,6 +110,24 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	const error = (id: string | undefined, command: string, message: string): RpcResponse => {
 		return { id, type: "response", command, success: false, error: message };
 	};
+
+	// 记忆变更通知：抽取与评审会连续写文件，100ms 窗口内的多次通知合并成一条，
+	// 保留窗口内最后一次的原因，避免刷爆客户端。进程退出时退订并清掉未发出的通知。
+	const MEMORY_CHANGED_DEBOUNCE_MS = 100;
+	let memoryChangedTimer: ReturnType<typeof setTimeout> | undefined;
+	let pendingMemoryChangedReason: MemoryChangedEvent["reason"] | undefined;
+	const unsubscribeMemoryChanged = onMemoryChanged((event) => {
+		pendingMemoryChangedReason = event.reason;
+		if (memoryChangedTimer !== undefined) return;
+		memoryChangedTimer = setTimeout(() => {
+			memoryChangedTimer = undefined;
+			const reason = pendingMemoryChangedReason;
+			pendingMemoryChangedReason = undefined;
+			if (reason === undefined) return;
+			const memoryChanged: MemoryChangedEvent = { type: "memory_changed", reason };
+			output(memoryChanged);
+		}, MEMORY_CHANGED_DEBOUNCE_MS);
+	});
 
 	// Pending extension UI requests waiting for response
 	const pendingExtensionRequests = new Map<
@@ -1152,9 +1183,25 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "get_messages": {
 				const branch = session.sessionManager.getBranch();
-				const messages = branch
-					.filter((entry) => entry.type === "message")
-					.map((entry) => ({ ...entry.message, entryId: entry.id }));
+				// Fact retrieval is stored as a custom message; replay it so the desktop
+				// transcript can show which memories shaped the reply after a reload.
+				const messages = branch.flatMap((entry) => {
+					if (entry.type === "message") return [{ ...entry.message, entryId: entry.id }];
+					if (entry.type === "custom_message" && entry.customType === MEMORY_RETRIEVAL_CUSTOM_TYPE) {
+						return [
+							{
+								role: "custom" as const,
+								customType: entry.customType,
+								content: entry.content,
+								display: entry.display,
+								details: entry.details,
+								timestamp: Date.parse(entry.timestamp),
+								entryId: entry.id,
+							},
+						];
+					}
+					return [];
+				});
 				const feedback: Record<string, "up" | "down"> = {};
 				for (const entry of branch) {
 					if (entry.type !== "custom" || entry.customType !== "nova_studio.feedback") continue;
@@ -1164,6 +1211,53 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					else delete feedback[data.targetEntryId];
 				}
 				return success(id, "get_messages", { messages, feedback });
+			}
+
+			// =================================================================
+			// Memory
+			// =================================================================
+
+			case "get_memory_facts": {
+				if (command.applicability !== undefined && !isFactApplicability(command.applicability)) {
+					return error(id, "get_memory_facts", `Unknown applicability: ${String(command.applicability)}`);
+				}
+				const facts = getMemoryFacts({ agentDir: getAgentDir(), applicability: command.applicability });
+				return success(id, "get_memory_facts", facts);
+			}
+
+			case "get_memory_suggestions": {
+				if (command.status !== undefined && !isSuggestionStatus(command.status)) {
+					return error(id, "get_memory_suggestions", `Unknown status: ${String(command.status)}`);
+				}
+				const suggestions = getMemorySuggestions({ agentDir: getAgentDir(), status: command.status });
+				return success(id, "get_memory_suggestions", suggestions);
+			}
+
+			case "memory_fact_update": {
+				if (!isMemoryFactAction(command.action)) {
+					return error(id, "memory_fact_update", `Unknown action: ${String(command.action)}`);
+				}
+				// 不存在的 id、edit 缺 patch、非 edit 带 patch 都由 updateMemoryFact 抛错，
+				// 命令循环统一转成 error 响应。
+				const updated = updateMemoryFact({
+					agentDir: getAgentDir(),
+					id: command.factId,
+					action: command.action,
+					patch: command.patch,
+				});
+				return success(id, "memory_fact_update", updated);
+			}
+
+			case "memory_suggestion_resolve": {
+				if (!isMemorySuggestionResolution(command.action)) {
+					return error(id, "memory_suggestion_resolve", `Unknown action: ${String(command.action)}`);
+				}
+				const resolved = resolveMemorySuggestion({
+					agentDir: getAgentDir(),
+					id: command.suggestionId,
+					action: command.action,
+				});
+				return success(id, "memory_suggestion_resolve", resolved);
 			}
 
 			// =================================================================
@@ -1223,6 +1317,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		shuttingDown = true;
 		for (const cleanup of signalCleanupHandlers) {
 			cleanup();
+		}
+		unsubscribeMemoryChanged();
+		if (memoryChangedTimer !== undefined) {
+			clearTimeout(memoryChangedTimer);
+			memoryChangedTimer = undefined;
 		}
 		unsubscribe?.();
 		unsubscribeBackpressure?.();

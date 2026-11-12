@@ -34,6 +34,11 @@ export interface ToolPermissionManagerOptions {
  * `web_search` is read-only (a query leaves the machine, no page content is
  * read back); `fetch_url` stays gated because the URL itself can carry data
  * out of the machine.
+ *
+ * The memory tools are included for the same reason as `todo`: `remember`
+ * only appends to `<agentDir>/memory/facts.json`, `search_memory` only reads
+ * that file (plus the profile) and bumps retrieval counters, and `read_memory`
+ * only reads. None of them touch project files.
  */
 const AUTO_APPROVED_TOOLS = new Set([
 	"read",
@@ -48,6 +53,9 @@ const AUTO_APPROVED_TOOLS = new Set([
 	"query_scheduled_tasks",
 	"write_scheduled_task",
 	"web_search",
+	"remember",
+	"search_memory",
+	"read_memory",
 ]);
 
 const EDIT_TOOLS = new Set(["edit", "write"]);
