@@ -1,4 +1,5 @@
 import type {
+	Context,
 	ImageContent,
 	Message,
 	Model,
@@ -177,6 +178,20 @@ export class Agent {
 	public convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
 	public transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
 	public streamFunction: StreamFn;
+	private lastModelRequest?: {
+		model: Parameters<StreamFn>[0];
+		context: Context;
+		options?: SimpleStreamOptions;
+	};
+
+	getLastModelRequest() {
+		return this.lastModelRequest;
+	}
+
+	private readonly streamWithSnapshot: StreamFn = (model, context, options) => {
+		this.lastModelRequest = { model, context, options };
+		return this.streamFunction(model, context, options);
+	};
 	public getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
 	public onPayload?: SimpleStreamOptions["onPayload"];
 	public onResponse?: SimpleStreamOptions["onResponse"];
@@ -406,7 +421,7 @@ export class Agent {
 				this.createLoopConfig(options),
 				(event) => this.processEvents(event),
 				signal,
-				this.streamFunction,
+				this.streamWithSnapshot,
 			);
 		});
 	}
@@ -418,7 +433,7 @@ export class Agent {
 				this.createLoopConfig(),
 				(event) => this.processEvents(event),
 				signal,
-				this.streamFunction,
+				this.streamWithSnapshot,
 			);
 		});
 	}

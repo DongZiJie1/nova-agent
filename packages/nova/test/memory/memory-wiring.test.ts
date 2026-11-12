@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fauxAssistantMessage } from "@dongzijie1/pi-ai/compat";
+import { type Context, fauxAssistantMessage } from "@dongzijie1/pi-ai/compat";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { lifecycleHooks } from "../../src/core/lifecycle-hooks.ts";
 import { FactStore } from "../../src/core/memory/fact-store.ts";
@@ -189,6 +189,44 @@ describe("startMemoryForSession", () => {
 		expect(facts[0].source.model).toBe("extraction");
 		expect(harness.session.getSessionStats().memoryWrites).toBe(1);
 		expect(service.pending()).toBe(0);
+	});
+
+	it("reuses the last live request for fact extraction", async () => {
+		const { harness, agentDir, cwd } = await createWiringHarness();
+		const session = harness.session;
+		session.agent.sessionId = session.sessionManager.getSessionId();
+		let mainContext: Context | undefined;
+		let extractionContext: Context | undefined;
+		let extractionSessionId: string | undefined;
+		harness.setResponses([
+			fauxAssistantMessage("Understood."),
+			(context) => {
+				mainContext = context;
+				return fauxAssistantMessage("I'll use tabs.");
+			},
+			(context, options) => {
+				extractionContext = context;
+				extractionSessionId = options?.sessionId;
+				return extractionResponse(FACT_TEXT);
+			},
+		]);
+		await session.prompt("Use TypeScript for this project.");
+		await session.prompt("Use tabs for TypeScript files.");
+		const service = track(
+			startMemoryForSession({ session, agentDir, cwd, settingsManager: harness.settingsManager }),
+		);
+		service.enqueue("manual");
+		await service.flush();
+
+		expect(mainContext).toBeDefined();
+		expect(extractionContext?.systemPrompt).toBe(mainContext?.systemPrompt);
+		expect(extractionContext?.tools).toEqual(mainContext?.tools);
+		expect(extractionContext?.messages.slice(0, -1)).toEqual(mainContext?.messages);
+		expect(extractionContext?.messages.at(-1)?.content).toEqual([
+			expect.objectContaining({ text: expect.stringContaining("Respond with JSON only") }),
+		]);
+		expect(extractionSessionId).toBe(session.sessionManager.getSessionId());
+		expect(new FactStore(agentDir).active().map((fact) => fact.text)).toEqual([FACT_TEXT]);
 	});
 
 	it("creates only one service, and one set of hooks, per session", async () => {

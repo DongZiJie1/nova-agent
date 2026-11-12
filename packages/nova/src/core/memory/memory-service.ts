@@ -27,6 +27,7 @@ import {
 	applyExtractedFacts,
 	type ExtractedFact,
 	type ExtractionCompletion,
+	type ExtractionPrefix,
 	extractFacts,
 	validateProjectScope,
 } from "./fact-extraction.ts";
@@ -70,6 +71,7 @@ export interface RunExtractionOptions {
 	settings: ResolvedMemorySettings;
 	store: FactStore;
 	complete: ExtractionCompletion;
+	prefix?: ExtractionPrefix;
 	cwd: string;
 	modelLabel: string;
 	onMemoryWrite?: () => void;
@@ -208,6 +210,7 @@ export async function runExtraction(options: RunExtractionOptions): Promise<RunE
 		},
 		settings: options.settings,
 		complete: options.complete,
+		prefix: options.prefix,
 		signal: options.signal,
 	});
 
@@ -263,6 +266,7 @@ export interface MemoryServiceOptions {
 	settings: ResolvedMemorySettings;
 	store: FactStore;
 	complete: ExtractionCompletion;
+	getExtractionPrefix?: () => ExtractionPrefix | undefined;
 	hooks?: LifecycleHooks;
 }
 
@@ -507,6 +511,7 @@ export class MemoryService {
 					settings: this.options.settings,
 					store: this.options.store,
 					complete: this.options.complete,
+					prefix: this.options.getExtractionPrefix?.(),
 					cwd: this.options.cwd,
 					modelLabel: this.options.settings.extraction.model ?? "extraction",
 					onMemoryWrite: () => this.options.session.recordMemoryWrite(),

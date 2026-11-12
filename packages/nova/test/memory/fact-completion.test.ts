@@ -93,6 +93,33 @@ describe("createExtractionCompletion", () => {
 		expect(capturedOptions).not.toHaveProperty("temperature");
 	});
 
+	it("appends the extraction instruction while preserving the main request prefix and cache routing", async () => {
+		const faux = registerFaux();
+		const prefix: Context = {
+			systemPrompt: "Main agent instructions",
+			messages: [{ role: "user", content: "Use tabs for indentation", timestamp: 1 }],
+			tools: [],
+		};
+		faux.setResponses([
+			(context, options) => {
+				expect(context.systemPrompt).toBe(prefix.systemPrompt);
+				expect(context.tools).toBe(prefix.tools);
+				expect(context.messages.slice(0, -1)).toEqual(prefix.messages);
+				expect(context.messages.at(-1)?.content).toEqual([{ type: "text", text: USER_PROMPT }]);
+				expect(options).toMatchObject({ sessionId: "main-session", cacheRetention: "short" });
+				return fauxAssistantMessage('{"facts":[]}');
+			},
+		]);
+
+		await expect(
+			createCompletion(faux.getModel())({
+				...requestInput(),
+				prefix: { context: prefix, options: { sessionId: "main-session", cacheRetention: "short" } },
+			}),
+		).resolves.toBe('{"facts":[]}');
+		expect(prefix.messages).toHaveLength(1);
+	});
+
 	it("uses a fresh session id for every request", async () => {
 		const faux = registerFaux();
 		const sessionIds: Array<string | undefined> = [];

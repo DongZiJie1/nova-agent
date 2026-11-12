@@ -107,7 +107,7 @@ export const TODO_TITLE_MAX = 120;
 export const TODO_DESCRIPTION_MAX = 50_000;
 export const TODO_TAG_MAX = 24;
 export const TODO_TAGS_MAX = 5;
-export const TODO_PROGRESS_CONTENT_MAX = 5_000;
+export const TODO_PROGRESS_CONTENT_MAX = 50_000;
 export const TODO_PROGRESS_PERCENT_MAX = 100;
 
 const TODO_STATUSES: readonly TodoStatus[] = ["pending", "in_progress", "completed", "abandoned"];
@@ -396,6 +396,11 @@ export class TodoStore {
 			percent: normalizeProgressPercent(input.percent),
 		};
 		todo.progress.push(entry);
+		if (entry.percent === 100 && todo.status !== "completed") {
+			todo.history.push({ type: "status_changed", from: todo.status, to: "completed", changedAt: entry.at });
+			todo.status = "completed";
+			todo.completedAt = entry.at;
+		}
 		todo.updatedAt = entry.at;
 		this.write(state);
 		return entry;
@@ -411,6 +416,11 @@ export class TodoStore {
 		entry.content = normalizeProgressContent(input.content);
 		if (input.percent !== undefined) entry.percent = normalizeProgressPercent(input.percent);
 		entry.editedAt = changedAt;
+		if (input.percent === 100 && todo.status !== "completed") {
+			todo.history.push({ type: "status_changed", from: todo.status, to: "completed", changedAt });
+			todo.status = "completed";
+			todo.completedAt = changedAt;
+		}
 		todo.updatedAt = changedAt;
 		this.write(state);
 		return entry;

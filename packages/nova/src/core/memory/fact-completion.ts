@@ -1,7 +1,7 @@
 /**
  * 抽取的模型调用适配：把 `fact-extraction` 的 `complete` 注入点接到真实模型。
  *
- * 每次调用都是独立请求：独立 `sessionId`、不写 prompt cache、不重试、不解析 JSON。
+ * 独立请求关闭缓存；实时抽取沿用主请求的前缀与缓存路由。
  * 成功只返回拼接后的文本；`stopReason` 为 error/aborted、超时或外部取消时抛错，
  * 记录与重试都由上层决定。
  */
@@ -59,11 +59,14 @@ function stopReasonError(response: AssistantMessage): Error | undefined {
 export function createExtractionCompletion(options: CreateExtractionCompletionOptions): ExtractionCompletion {
 	const { model, streamFn, resolveAuth, timeoutMs } = options;
 
-	const send = async (context: Context, auth: CompletionAuth, signal: AbortSignal): Promise<AssistantMessage> => {
+	const send = async (
+		context: Context,
+		auth: CompletionAuth,
+		signal: AbortSignal,
+		prefixOptions?: SimpleStreamOptions,
+	): Promise<AssistantMessage> => {
 		const requestOptions: SimpleStreamOptions = {
-			// 抽取请求之间无法复用前缀缓存：隔离路由，并明确关闭缓存写入。
-			cacheRetention: "none",
-			sessionId: uuidv7(),
+			...(prefixOptions ?? { cacheRetention: "none", sessionId: uuidv7() }),
 			maxTokens: EXTRACTION_MAX_TOKENS,
 			signal,
 			apiKey: auth.apiKey,
@@ -87,7 +90,12 @@ export function createExtractionCompletion(options: CreateExtractionCompletionOp
 		const forwardAbort = () => controller.abort();
 		external?.addEventListener("abort", forwardAbort, { once: true });
 
-		const request = send(requestContext(input.systemPrompt, input.userPrompt), auth, controller.signal);
+		const suffix = requestContext(input.systemPrompt, input.userPrompt);
+		const prefix = input.prefix;
+		const context = prefix
+			? { ...prefix.context, messages: [...prefix.context.messages, ...suffix.messages] }
+			: suffix;
+		const request = send(context, auth, controller.signal, prefix ? (prefix.options ?? {}) : undefined);
 
 		let timedOut = false;
 		let timer: ReturnType<typeof setTimeout> | undefined;

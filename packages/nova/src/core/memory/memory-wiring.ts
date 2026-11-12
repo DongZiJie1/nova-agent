@@ -60,14 +60,26 @@ async function resolveCompletionAuth(session: AgentSession, model: Model<Api>): 
 export function createMemoryCompletion(
 	session: AgentSession,
 	settings: ResolvedMemorySettings,
+	live = false,
 ): ExtractionCompletion | undefined {
 	const model = session.model;
 	if (model === undefined) return undefined;
-	return createExtractionCompletion({
+	const standalone = createExtractionCompletion({
 		model,
 		timeoutMs: settings.extraction.timeoutMs,
 		resolveAuth: () => resolveCompletionAuth(session, model),
 	});
+	if (!live) return standalone;
+	return (input) => {
+		const currentModel = session.model;
+		if (!input.prefix || !currentModel) return standalone(input);
+		return createExtractionCompletion({
+			model: currentModel,
+			streamFn: session.agent.streamFunction,
+			timeoutMs: settings.extraction.timeoutMs,
+			resolveAuth: () => resolveCompletionAuth(session, currentModel),
+		})(input);
+	};
 }
 
 /**
@@ -85,7 +97,7 @@ export function createMemoryServiceForSession(options: {
 	const settings = options.settings ?? options.settingsManager.getMemorySettings();
 	// 与 MemoryService.start() 的守卫保持一致：注入只需要 facts，抽取由服务内部再判断。
 	if (!settings.enabled || !settings.facts.enabled) return undefined;
-	const complete = createMemoryCompletion(options.session, settings);
+	const complete = createMemoryCompletion(options.session, settings, true);
 	if (complete === undefined) return undefined;
 	return new MemoryService({
 		agentDir: options.agentDir,
@@ -94,6 +106,17 @@ export function createMemoryServiceForSession(options: {
 		settings,
 		store: options.store ?? new FactStore(options.agentDir),
 		complete,
+		getExtractionPrefix: () => {
+			const { session } = options;
+			const request = session.agent.getLastModelRequest();
+			if (
+				request?.model !== session.model ||
+				request?.options?.sessionId !== session.sessionManager.getSessionId()
+			) {
+				return undefined;
+			}
+			return request;
+		},
 	});
 }
 
