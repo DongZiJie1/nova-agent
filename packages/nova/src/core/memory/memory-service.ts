@@ -163,6 +163,7 @@ function isCreatedToday(fact: Fact, now: Date): boolean {
  */
 export async function runExtraction(options: RunExtractionOptions): Promise<RunExtractionResult> {
 	const branch = options.manager.getBranch();
+	const agentExperience = branch.some((entry) => entry.type === "custom" && entry.customType === "persistent_agent");
 	const markerState = readExtractionMarker({ getEntries: () => branch });
 	const pending = selectPendingEntries(branch, markerState);
 	if (pending.length === 0) return emptyResult();
@@ -203,6 +204,7 @@ export async function runExtraction(options: RunExtractionOptions): Promise<RunE
 	const extracted = await extractFacts({
 		entries: pending,
 		context: {
+			agentExperience,
 			projectPath: project.path,
 			projectKey: project.key,
 			sections: new UserMemoryStore(agentDirForStore(options.store)).list(),
@@ -215,7 +217,11 @@ export async function runExtraction(options: RunExtractionOptions): Promise<RunE
 	});
 
 	// 作用域校验：不属于当前项目的事实先降级为 transferable，再补来源项目并落库。
-	const scoped = validateProjectScope(extracted, computeProjectKey(options.cwd));
+	const scoped = validateProjectScope(extracted, computeProjectKey(options.cwd)).map((fact) =>
+		agentExperience && fact.applicability === "project"
+			? { ...fact, applicability: "transferable" as const, projects: undefined }
+			: fact,
+	);
 	const applied = applyExtractedFacts({
 		store: options.store,
 		facts: attachOriginProject(scoped, project),

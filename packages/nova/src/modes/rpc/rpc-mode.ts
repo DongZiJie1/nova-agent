@@ -1,3 +1,5 @@
+import { listAgentTools } from "../../core/agent-tool-catalog.ts";
+import { listInstalledAgentSkills } from "../../core/persistent-agent-skills.ts";
 /**
  * RPC mode: Headless operation with JSON stdin/stdout protocol.
  *
@@ -12,7 +14,6 @@
  */
 
 import * as crypto from "node:crypto";
-import { getAgentDir } from "../../config.ts";
 import type { PromptOptions } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import type {
@@ -39,6 +40,7 @@ import {
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
 } from "../../core/output-guard.ts";
+import { loadPersistentAgent } from "../../core/persistent-agent.ts";
 import { runWithHubAgentContext, sealHubTaskBatch } from "../../core/tools/hub.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
@@ -576,6 +578,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	const handleCommand = async (command: RpcCommand): Promise<RpcResponse | undefined> => {
 		const id = command.id;
 
+		if (command.type === "list_agent_tools") {
+			return success(id, command.type, { tools: listAgentTools(runtimeHost.session) });
+		}
+
+		if (command.type === "list_installed_agent_skills") {
+			return success(id, command.type, { skills: await listInstalledAgentSkills(runtimeHost.services.agentDir) });
+		}
+
 		if (command.type === "agent_create") {
 			if (runtimes.has(command.agentId)) {
 				return error(id, "agent_create", `Agent already exists: ${command.agentId}`);
@@ -596,6 +606,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				}
 				sibling = await runtimeHost.createSibling({
 					cwd: command.cwd,
+					persistentAgentId:
+						command.persistentAgentId ??
+						(contextSource ? loadPersistentAgent(contextSource.services.agentDir)?.id : undefined),
 					sessionId: command.sessionId,
 					sessionPath: command.sessionPath,
 					parentSession: command.parentSession,
@@ -629,6 +642,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			lifecycle.ready();
 			return success(id, "agent_create", {
 				agentId: command.agentId,
+				persistentAgentId: loadPersistentAgent(sibling.services.agentDir)?.id,
 				sessionId: sibling.session.sessionId,
 				sessionFile: sibling.session.sessionFile,
 			});
@@ -1221,7 +1235,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (command.applicability !== undefined && !isFactApplicability(command.applicability)) {
 					return error(id, "get_memory_facts", `Unknown applicability: ${String(command.applicability)}`);
 				}
-				const facts = getMemoryFacts({ agentDir: getAgentDir(), applicability: command.applicability });
+				const facts = getMemoryFacts({
+					agentDir: targetRuntime.services.agentDir,
+					applicability: command.applicability,
+				});
 				return success(id, "get_memory_facts", facts);
 			}
 
@@ -1229,7 +1246,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (command.status !== undefined && !isSuggestionStatus(command.status)) {
 					return error(id, "get_memory_suggestions", `Unknown status: ${String(command.status)}`);
 				}
-				const suggestions = getMemorySuggestions({ agentDir: getAgentDir(), status: command.status });
+				const suggestions = getMemorySuggestions({
+					agentDir: targetRuntime.services.agentDir,
+					status: command.status,
+				});
 				return success(id, "get_memory_suggestions", suggestions);
 			}
 
@@ -1240,7 +1260,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				// 不存在的 id、edit 缺 patch、非 edit 带 patch 都由 updateMemoryFact 抛错，
 				// 命令循环统一转成 error 响应。
 				const updated = updateMemoryFact({
-					agentDir: getAgentDir(),
+					agentDir: targetRuntime.services.agentDir,
 					id: command.factId,
 					action: command.action,
 					patch: command.patch,
@@ -1253,7 +1273,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					return error(id, "memory_suggestion_resolve", `Unknown action: ${String(command.action)}`);
 				}
 				const resolved = resolveMemorySuggestion({
-					agentDir: getAgentDir(),
+					agentDir: targetRuntime.services.agentDir,
 					id: command.suggestionId,
 					action: command.action,
 				});

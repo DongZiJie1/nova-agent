@@ -10,6 +10,7 @@ import type {
 	SessionStartEvent,
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
+import { loadPersistentAgent, persistentAgentDirectory } from "./persistent-agent.ts";
 import type { CreateAgentSessionResult } from "./sdk.ts";
 import { assertSessionCwdExists } from "./session-cwd.ts";
 import { SessionManager } from "./session-manager.ts";
@@ -143,6 +144,7 @@ export class AgentSessionRuntime {
 		sessionPath?: string;
 		parentSession?: string;
 		inMemory?: boolean;
+		persistentAgentId?: string;
 	}): Promise<AgentSessionRuntime> {
 		const sessionManager = options.inMemory
 			? SessionManager.inMemory(options.cwd, { id: options.sessionId, parentSession: options.parentSession })
@@ -154,7 +156,12 @@ export class AgentSessionRuntime {
 					});
 		return createAgentSessionRuntime(this.createRuntime, {
 			cwd: sessionManager.getCwd(),
-			agentDir: this.services.agentDir,
+			agentDir: options.persistentAgentId
+				? persistentAgentDirectory(
+						loadPersistentAgent(this.services.agentDir)?.configDir ?? this.services.agentDir,
+						options.persistentAgentId,
+					)
+				: this.services.agentDir,
 			sessionManager,
 		});
 	}

@@ -229,6 +229,8 @@ export interface AgentSessionConfig {
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 	/** Resource loader for extensions, skills, prompts, themes, context files, and system prompt */
 	resourceLoader: ResourceLoader;
+	/** Storage directory used by built-in memory tools. */
+	agentDir?: string;
 	/** SDK custom tools registered outside extensions */
 	customTools?: ToolDefinition[];
 	/** Canonical model/auth runtime used by coding-agent internals. */
@@ -444,6 +446,7 @@ export class AgentSession {
 	private _toolPermissionManager: ToolPermissionManager;
 	private _rpcPermissionBridgeEnabled = false;
 	private _pendingToolPermissions = new Map<string, (allowed: boolean) => void>();
+	private readonly memoryAgentDir?: string;
 	private _baseToolsOverride?: Record<string, AgentTool>;
 	private _sessionStartEvent: SessionStartEvent;
 	private _extensionUIContext?: ExtensionUIContext;
@@ -486,6 +489,7 @@ export class AgentSession {
 			timeoutMs: config.toolPermissionTimeoutMs,
 		});
 		this._baseToolsOverride = config.baseToolsOverride;
+		this.memoryAgentDir = config.agentDir;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
 
 		// Always subscribe to agent events for internal handling
@@ -3086,6 +3090,7 @@ export class AgentSession {
 					]),
 				)
 			: createAllToolDefinitions(this._cwd, {
+					agentDir: this.memoryAgentDir,
 					read: { autoResizeImages },
 					bash: {
 						commandPrefix: shellCommandPrefix,

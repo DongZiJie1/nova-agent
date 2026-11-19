@@ -17,6 +17,7 @@
 
 import { type Dirent, readdirSync, type Stats, statSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { loadPersistentAgent } from "../persistent-agent.ts";
 import type { SessionEntry } from "../session-manager.ts";
 import { loadEntriesFromFile, SessionManager } from "../session-manager.ts";
 import { hasLiveSessionOwner } from "../session-records.ts";
@@ -37,7 +38,7 @@ const MIN_STARTUP_REVIEW_FACTS = 3;
 /** 已跑过补偿的会话目录；同一进程内每个目录只扫一次。 */
 const compensatedDirs = new Set<string>();
 /** 启动全量评审每进程只跑一次：它扫的是全库，与具体会话目录无关。 */
-let startupReviewDone = false;
+const startupReviewedAgentDirs = new Set<string>();
 
 export interface CompensationCandidate {
 	sessionFile: string;
@@ -80,7 +81,7 @@ function collectSessionFiles(directory: string, files: string[]): void {
  * 只有"抽过、但标记之后还有消息"的会话才算候选；标记指向的条目已经不存在（fork、裁剪）时
  * 同样跳过，而不是退回从头抽取整段历史。
  */
-function scanSession(sessionFile: string): ScannedSession | undefined {
+function scanSession(sessionFile: string, persistentAgentId?: string): ScannedSession | undefined {
 	let stats: Stats;
 	try {
 		stats = statSync(sessionFile);
@@ -89,6 +90,10 @@ function scanSession(sessionFile: string): ScannedSession | undefined {
 	}
 	const loaded = loadEntriesFromFile(sessionFile);
 	const entries: SessionEntry[] = loaded.filter((entry) => entry.type !== "session");
+	const identity = entries.find((entry) => entry.type === "custom" && entry.customType === "persistent_agent");
+	const identityId = identity?.type === "custom" ? (identity.data as { id?: unknown } | undefined)?.id : undefined;
+	if (identity && typeof identityId !== "string") return undefined;
+	if (identityId !== persistentAgentId) return undefined;
 	const markerState = readExtractionMarker({ getEntries: () => entries });
 	const throughEntryId = markerState.marker?.throughEntryId;
 	if (throughEntryId === undefined) return undefined;
@@ -112,6 +117,8 @@ function scanSession(sessionFile: string): ScannedSession | undefined {
  */
 export function findSessionsNeedingExtraction(options: {
 	sessionDir: string;
+	/** Undefined selects ordinary sessions; an id selects only that persistent identity. */
+	persistentAgentId?: string;
 	maxSessions?: number;
 	excludeSessionFile?: string;
 }): CompensationCandidate[] {
@@ -130,7 +137,7 @@ export function findSessionsNeedingExtraction(options: {
 		if (excluded !== undefined && resolve(sessionFile) === excluded) continue;
 		if (hasLiveSessionOwner(sessionFile)) continue;
 		try {
-			const result = scanSession(sessionFile);
+			const result = scanSession(sessionFile, options.persistentAgentId);
 			if (result !== undefined) scanned.push(result);
 		} catch {
 			// 单个文件读失败不影响其余会话；下次启动会重新尝试。
@@ -167,7 +174,7 @@ export async function runStartupCompensation(options: {
 	signal?: AbortSignal;
 }): Promise<StartupCompensationResult> {
 	const result: StartupCompensationResult = { processed: 0, created: 0, failed: 0 };
-	const key = resolve(options.sessionDir);
+	const key = JSON.stringify([resolve(options.sessionDir), resolve(options.agentDir)]);
 	if (compensatedDirs.has(key)) return result;
 	// 先登记再扫描：即使中途失败，也不该在同一个进程里重复付出一次启动开销。
 	compensatedDirs.add(key);
@@ -178,6 +185,7 @@ export async function runStartupCompensation(options: {
 	try {
 		candidates = findSessionsNeedingExtraction({
 			sessionDir: options.sessionDir,
+			persistentAgentId: loadPersistentAgent(options.agentDir)?.id,
 			maxSessions: options.maxSessions,
 			excludeSessionFile: options.excludeSessionFile,
 		});
@@ -234,11 +242,12 @@ export interface StartupReviewOptions {
  */
 /** 测试用：重置「每进程只评审一次」的登记，让用例彼此独立、不依赖执行顺序。 */
 export function resetStartupReviewForTests(): void {
-	startupReviewDone = false;
+	startupReviewedAgentDirs.clear();
 }
 
 export async function runStartupReview(options: StartupReviewOptions): Promise<void> {
-	if (startupReviewDone || options.signal?.aborted) return;
+	const key = resolve(options.agentDir);
+	if (startupReviewedAgentDirs.has(key) || options.signal?.aborted) return;
 	const diagnose = options.onDiagnostic ?? ((message: string) => console.error("[memory:startup]", message));
 	let unreviewed: number;
 	try {
@@ -250,13 +259,13 @@ export async function runStartupReview(options: StartupReviewOptions): Promise<v
 					fact.reviewState === "unreviewed" && fact.archivedAt === undefined && fact.supersededBy === undefined,
 			).length;
 	} catch (error) {
-		startupReviewDone = true;
+		startupReviewedAgentDirs.add(key);
 		diagnose(`review failed: ${describeError(error)}`);
 		return;
 	}
 	// 评审降频：只有攒够未评审事实才值得一次全库模型调用。
 	if (unreviewed < MIN_STARTUP_REVIEW_FACTS) return;
-	startupReviewDone = true;
+	startupReviewedAgentDirs.add(key);
 	try {
 		const result = await reviewFacts({
 			agentDir: options.agentDir,

@@ -202,6 +202,8 @@ export const allToolNames: Set<ToolName> = new Set([
 ]);
 
 export interface ToolsOptions {
+	/** Bind all memory tools to this identity, without process-global environment changes. */
+	agentDir?: string;
 	read?: ReadToolOptions;
 	bash?: BashToolOptions;
 	write?: WriteToolOptions;
@@ -242,11 +244,11 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 		case "hub_delegate_task":
 			return createHubDelegateTaskToolDefinition();
 		case "remember":
-			return createRememberToolDefinition();
+			return createRememberToolDefinition({ agentDir: options?.agentDir });
 		case "search_memory":
-			return createSearchMemoryToolDefinition();
+			return createSearchMemoryToolDefinition({ agentDir: options?.agentDir });
 		case "read_memory":
-			return createReadMemoryToolDefinition();
+			return createReadMemoryToolDefinition({ agentDir: options?.agentDir });
 		case "web_search":
 			return createWebSearchToolDefinition();
 		case "fetch_url":
@@ -287,11 +289,11 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 		case "hub_delegate_task":
 			return wrapToolDefinition(createHubDelegateTaskToolDefinition());
 		case "remember":
-			return wrapToolDefinition(createRememberToolDefinition());
+			return wrapToolDefinition(createRememberToolDefinition({ agentDir: options?.agentDir }));
 		case "search_memory":
-			return wrapToolDefinition(createSearchMemoryToolDefinition());
+			return wrapToolDefinition(createSearchMemoryToolDefinition({ agentDir: options?.agentDir }));
 		case "read_memory":
-			return wrapToolDefinition(createReadMemoryToolDefinition());
+			return wrapToolDefinition(createReadMemoryToolDefinition({ agentDir: options?.agentDir }));
 		case "web_search":
 			return wrapToolDefinition(createWebSearchToolDefinition());
 		case "fetch_url":
@@ -335,9 +337,9 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		ask_user_question: createAskUserQuestionToolDefinition(),
 		hub_list_agents: createHubListAgentsToolDefinition(),
 		hub_delegate_task: createHubDelegateTaskToolDefinition(),
-		remember: createRememberToolDefinition(),
-		search_memory: createSearchMemoryToolDefinition(),
-		read_memory: createReadMemoryToolDefinition(),
+		remember: createRememberToolDefinition({ agentDir: options?.agentDir }),
+		search_memory: createSearchMemoryToolDefinition({ agentDir: options?.agentDir }),
+		read_memory: createReadMemoryToolDefinition({ agentDir: options?.agentDir }),
 		web_search: createWebSearchToolDefinition(),
 		fetch_url: createFetchUrlToolDefinition(),
 	};
@@ -377,9 +379,9 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		ask_user_question: wrapToolDefinition(createAskUserQuestionToolDefinition()),
 		hub_list_agents: wrapToolDefinition(createHubListAgentsToolDefinition()),
 		hub_delegate_task: wrapToolDefinition(createHubDelegateTaskToolDefinition()),
-		remember: wrapToolDefinition(createRememberToolDefinition()),
-		search_memory: wrapToolDefinition(createSearchMemoryToolDefinition()),
-		read_memory: wrapToolDefinition(createReadMemoryToolDefinition()),
+		remember: wrapToolDefinition(createRememberToolDefinition({ agentDir: options?.agentDir })),
+		search_memory: wrapToolDefinition(createSearchMemoryToolDefinition({ agentDir: options?.agentDir })),
+		read_memory: wrapToolDefinition(createReadMemoryToolDefinition({ agentDir: options?.agentDir })),
 		web_search: wrapToolDefinition(createWebSearchToolDefinition()),
 		fetch_url: wrapToolDefinition(createFetchUrlToolDefinition()),
 	};

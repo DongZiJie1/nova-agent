@@ -5,6 +5,7 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@dongzijie1/pi-ai";
 import chalk from "chalk";
@@ -30,6 +31,7 @@ import { startMemoryCompensation, startMemoryForSession } from "./core/memory/me
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
 import type { ModelRuntime } from "./core/model-runtime.ts";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
+import { loadPersistentAgent, persistentAgentDirectory } from "./core/persistent-agent.ts";
 import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
 import type { CreateAgentSessionOptions } from "./core/sdk.ts";
 import {
@@ -663,6 +665,24 @@ export async function main(args: string[], options?: MainOptions) {
 		sessionStartEvent,
 		projectTrustContext,
 	}) => {
+		const identity = sessionManager
+			.getEntries()
+			.find((entry) => entry.type === "custom" && entry.customType === "persistent_agent");
+		if (!loadPersistentAgent(agentDir) && identity?.type === "custom") {
+			const data = identity.data as { id?: unknown } | undefined;
+			if (typeof data?.id !== "string") throw new Error("Invalid persistent Agent session identity");
+			agentDir = persistentAgentDirectory(agentDir, data.id);
+		}
+		const persistent = loadPersistentAgent(agentDir);
+		if (
+			persistent &&
+			identity?.type === "custom" &&
+			(identity.data as { id?: unknown } | undefined)?.id !== persistent.id
+		) {
+			throw new Error("Session belongs to another persistent Agent");
+		}
+		if (persistent && !identity) sessionManager.appendCustomEntry("persistent_agent", { id: persistent.id });
+		const configDir = persistent?.configDir ?? agentDir;
 		const isInitialRuntime = sessionStartEvent === undefined;
 		const projectTrustDiagnostics: AgentSessionRuntimeDiagnostic[] = [];
 		const cachedProjectTrust = projectTrustByCwd.get(cwd);
@@ -674,10 +694,10 @@ export async function main(args: string[], options?: MainOptions) {
 			: (cachedProjectTrust ??
 				parsed.projectTrustOverride ??
 				(!hasTrustRequiringResources || trustStore.get(cwd) === true));
-		const runtimeSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
+		const runtimeSettingsManager = SettingsManager.create(cwd, configDir, { projectTrusted });
 		const services = await createAgentSessionServices({
 			cwd,
-			agentDir,
+			agentDir: configDir,
 			settingsManager: runtimeSettingsManager,
 			modelRuntime: appMode === "rpc" ? sharedRpcModelRuntime : undefined,
 			extensionFlagValues: parsed.unknownFlags,
@@ -706,9 +726,20 @@ export async function main(args: string[], options?: MainOptions) {
 					}
 				: undefined,
 			resourceLoaderOptions: {
+				agentsFilesOverride: persistent
+					? (base) => ({
+							agentsFiles: [
+								...base.agentsFiles.filter((file) => file.path !== join(configDir, "AGENTS.md")),
+								{ path: join(agentDir, "AGENTS.md"), content: persistent.instructions },
+							],
+						})
+					: undefined,
+				skillsOverride: persistent
+					? (base) => ({ ...base, skills: base.skills.filter((skill) => persistent.skills.includes(skill.name)) })
+					: undefined,
 				appendSystemPromptOverride: (base) => {
 					const userMemory = new UserMemoryStore(agentDir).toPrompt();
-					const todos = todoPrompt(agentDir);
+					const todos = persistent ? "" : todoPrompt(agentDir);
 					return [...base, ...(userMemory ? [userMemory] : []), ...(todos ? [todos] : [])];
 				},
 				additionalExtensionPaths: resolvedExtensionPaths,
@@ -728,6 +759,7 @@ export async function main(args: string[], options?: MainOptions) {
 		if (appMode === "rpc" && !sharedRpcModelRuntime) {
 			sharedRpcModelRuntime = services.modelRuntime;
 		}
+		services.agentDir = agentDir;
 		const { settingsManager, modelRuntime, resourceLoader } = services;
 		const diagnostics: AgentSessionRuntimeDiagnostic[] = [
 			...projectTrustDiagnostics,
@@ -774,7 +806,7 @@ export async function main(args: string[], options?: MainOptions) {
 			model: sessionOptions.model,
 			thinkingLevel: sessionOptions.thinkingLevel,
 			scopedModels: sessionOptions.scopedModels,
-			tools: sessionOptions.tools,
+			tools: persistent?.tools ?? sessionOptions.tools,
 			excludeTools: sessionOptions.excludeTools,
 			noTools: sessionOptions.noTools,
 			customTools: sessionOptions.customTools,
@@ -786,13 +818,27 @@ export async function main(args: string[], options?: MainOptions) {
 		}
 
 		// Memory extraction runs in the background: setup never throws and never blocks session startup.
-		startMemoryForSession({ session: created.session, agentDir, cwd, settingsManager: runtimeSettingsManager });
+		const baseMemorySettings = runtimeSettingsManager.getMemorySettings();
+		const memorySettings = persistent
+			? {
+					...baseMemorySettings,
+					extraction: { ...baseMemorySettings.extraction, minUserTurns: 1, checkpointTurns: 1 },
+				}
+			: baseMemorySettings;
+		startMemoryForSession({
+			session: created.session,
+			agentDir,
+			cwd,
+			settingsManager: runtimeSettingsManager,
+			settings: memorySettings,
+		});
 		// Startup compensation for killed sessions: one scan per session directory per process, never awaited.
 		void startMemoryCompensation({
 			session: created.session,
 			agentDir,
 			sessionDir: sessionManager.getSessionDir(),
 			settingsManager: runtimeSettingsManager,
+			settings: memorySettings,
 		});
 
 		return {

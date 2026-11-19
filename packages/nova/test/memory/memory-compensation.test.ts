@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -147,6 +148,51 @@ function markerThrough(sessionFile: string): string | undefined {
 }
 
 describe("findSessionsNeedingExtraction", () => {
+	it("runs compensation independently per identity even with a shared session directory", async () => {
+		const ws = workspace();
+		for (const name of ["Reviewer", "Writer"]) {
+			const id = randomUUID();
+			const dir = join(ws.agentDir, "agents", id);
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(join(dir, "profile.json"), JSON.stringify({ id, name, tools: [], skills: [] }));
+			writeFileSync(join(dir, "AGENTS.md"), name);
+			const fixture = createInterruptedSession(ws);
+			SessionManager.open(fixture.path).appendCustomEntry("persistent_agent", { id });
+			const store = new FactStore(dir);
+			const result = await runStartupCompensation({
+				...compensationOptions(ws, completionReturning(`${name} reviews database error handling first`)),
+				agentDir: dir,
+				store,
+			});
+			expect(result.processed).toBe(1);
+			expect(store.list()).toHaveLength(1);
+			expect(store.list()[0].text).toContain(name);
+		}
+		expect(ws.store.list()).toEqual([]);
+	});
+
+	it("never compensates another persistent identity or ordinary session into the selected Agent", () => {
+		const ws = workspace();
+		const ordinary = createInterruptedSession(ws);
+		const reviewer = createInterruptedSession(ws);
+		const writer = createInterruptedSession(ws);
+		SessionManager.open(reviewer.path).appendCustomEntry("persistent_agent", { id: "reviewer" });
+		SessionManager.open(writer.path).appendCustomEntry("persistent_agent", { id: "writer" });
+		expect(findSessionsNeedingExtraction({ sessionDir: ws.sessionDir }).map((item) => item.sessionFile)).toEqual([
+			ordinary.path,
+		]);
+		expect(
+			findSessionsNeedingExtraction({ sessionDir: ws.sessionDir, persistentAgentId: "reviewer" }).map(
+				(item) => item.sessionFile,
+			),
+		).toEqual([reviewer.path]);
+		expect(
+			findSessionsNeedingExtraction({ sessionDir: ws.sessionDir, persistentAgentId: "writer" }).map(
+				(item) => item.sessionFile,
+			),
+		).toEqual([writer.path]);
+	});
+
 	it("reports sessions whose marker no longer covers the last message", () => {
 		const ws = workspace();
 		const { path } = createInterruptedSession(ws);

@@ -192,6 +192,35 @@ function abortableCompletion(): { complete: ExtractionCompletion; calls(): numbe
 }
 
 describe("MemoryService extraction", () => {
+	it("automatically extracts global Agent experience after one task turn", async () => {
+		const prompts: string[] = [];
+		const harness = createHarness({
+			settings: { extraction: { checkpointTurns: 1, minUserTurns: 1 } },
+			complete: async (input) => {
+				prompts.push(input.systemPrompt);
+				return JSON.stringify({
+					facts: [
+						factPayload("Review database rollback error paths before approval", {
+							applicability: "project",
+							projects: [projectRefForCwd(harness.cwd).key],
+						}),
+					],
+				});
+			},
+		});
+		harness.manager.appendCustomEntry("persistent_agent", { id: "reviewer" });
+		appendUser(harness.manager, "Review the rollback change");
+		appendAssistant(harness.manager, "The rollback error path needs cleanup");
+		harness.service.start();
+		await harness.hooks.emit("turn_end", harness.session as unknown as AgentSession);
+		await harness.service.flush();
+		expect(prompts[0]).toContain("reusable working lessons");
+		expect(harness.store.active()).toHaveLength(1);
+		expect(harness.store.active()[0].applicability).toBe("transferable");
+		expect(harness.store.active()[0].projects).toBeUndefined();
+		expect(harness.session.writes).toBe(1);
+	});
+
 	it("extracts pending messages, writes facts and the marker, and records the memory write", async () => {
 		const harness = createHarness({ complete: completionReturning([F1]) });
 		const firstId = appendUser(harness.manager, "Which indentation should we use?");

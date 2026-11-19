@@ -183,6 +183,32 @@ function seedFact(store: FactStore, text: string, overrides: Partial<FactDraft> 
 }
 
 describe("extractFacts", () => {
+	it("extracts evidence-backed Agent lessons without changing ordinary user-memory rules", async () => {
+		const { complete, prompts } = makeComplete(
+			factJson([
+				extractedFact("Review error handling before approving database changes", { applicability: "transferable" }),
+			]),
+		);
+		const entries = [
+			userEntry("Review this change"),
+			toolResultEntry("VERIFIED_TEST_EVIDENCE: rollback test fails"),
+			assistantEntry("The rollback path misses error cleanup"),
+		];
+		const facts = await extractFacts({
+			entries,
+			context: makeContext({ agentExperience: true }),
+			settings: makeSettings(),
+			complete,
+		});
+		expect(facts).toHaveLength(1);
+		expect(prompts[0].systemPrompt).toContain("reusable working lessons supported by tool evidence");
+		expect(prompts[0].userPrompt).toContain("VERIFIED_TEST_EVIDENCE");
+		expect(prompts[0].systemPrompt).toContain("never project");
+		await extractFacts({ entries, context: makeContext(), settings: makeSettings(), complete });
+		expect(prompts[1].systemPrompt).toContain("Every fact must be about the user");
+		expect(prompts[1].userPrompt).not.toContain("VERIFIED_TEST_EVIDENCE");
+	});
+
 	it("extracts facts from a normal model response", async () => {
 		const { complete } = makeComplete(
 			factJson([

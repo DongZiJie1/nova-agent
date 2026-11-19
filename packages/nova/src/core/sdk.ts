@@ -384,6 +384,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	const session = new AgentSession({
+		agentDir,
 		agent,
 		sessionManager,
 		settingsManager,

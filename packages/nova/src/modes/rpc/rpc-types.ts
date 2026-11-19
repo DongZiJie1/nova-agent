@@ -146,10 +146,12 @@ type RpcSessionCommand =
 	| { id?: string; type: "get_commands" };
 
 export type RpcCommand =
+	| { id?: string; type: "list_installed_agent_skills" | "list_agent_tools"; agentId?: string }
 	| (RpcSessionCommand & { agentId?: string })
 	| {
 			id?: string;
 			type: "agent_create";
+			persistentAgentId?: string;
 			agentId: string;
 			cwd: string;
 			sessionId?: string;
